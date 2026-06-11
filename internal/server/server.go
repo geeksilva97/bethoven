@@ -54,10 +54,15 @@ func New(svc *service.Service, addr, hostKeyPath string) (*ssh.Server, error) {
 // the registration flow.
 func teaHandler(svc *service.Service) bm.Handler {
 	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-		fp := "(no key)"
-		if pk := s.PublicKey(); pk != nil {
-			fp = auth.Fingerprint(pk)
+		pk := s.PublicKey()
+		if pk == nil {
+			// Identity is the key; without one there's nothing to bind to.
+			// Don't mint a shared "(no key)" account — close the session.
+			wish.Println(s, "BEThoven requires public-key authentication.")
+			_ = s.Exit(1)
+			return nil, nil
 		}
+		fp := auth.Fingerprint(pk)
 		isAdminKey := svc.IsAdmin(fp)
 		user, err := svc.Resolve(fp) // nil + err for unknown keys
 		if err != nil {
