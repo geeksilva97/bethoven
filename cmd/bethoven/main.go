@@ -13,7 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
+	"github.com/muesli/termenv"
 
 	"bethoven/internal/clock"
 	"bethoven/internal/config"
@@ -23,6 +25,13 @@ import (
 )
 
 func main() {
+	// Force a color profile for lipgloss's global renderer. Under systemd the
+	// process has no TTY/$TERM, so lipgloss would otherwise detect "no color"
+	// and strip every style server-side — before the output is ever sent to the
+	// client. Our clients are interactive SSH terminals, so pin ANSI256 (widely
+	// supported; the gold accent downsamples cleanly). See styles.go.
+	lipgloss.SetColorProfile(termenv.ANSI256)
+
 	cfg := config.Load()
 	if cfg.UsingDefaultInvite() {
 		log.Println("WARNING: running with the default invite code while admins are configured — " +
