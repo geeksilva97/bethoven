@@ -55,9 +55,7 @@ func (m Model) viewMatchRank() string {
 	if m.rankMatch == nil {
 		// pick mode
 		out := titleStyle.Render("Per-game ranking") + labelStyle.Render("  (pick a match)") + "\n\n"
-		for i, mt := range m.fixtures {
-			out += m.matchLine(mt, i == m.fixCursor) + "\n"
-		}
+		out += m.renderList(m.fixtures, m.fixCursor)
 		out += "\n" + statusLine(m) + helpStyle.Render("↑/↓: move · enter: rank · b: back · q: quit")
 		return out
 	}

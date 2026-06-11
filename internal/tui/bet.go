@@ -34,6 +34,7 @@ func scoreInput(val string) textinput.Model {
 	in := textinput.New()
 	in.CharLimit = 2
 	in.Prompt = ""
+	in.Cursor.Style = cursorOn // visible gold caret in the focused field
 	in.SetValue(val)
 	return in
 }

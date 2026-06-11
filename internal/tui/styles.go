@@ -18,4 +18,9 @@ var (
 	cursorOn   = lipgloss.NewStyle().Foreground(gold).Bold(true)
 	labelStyle = lipgloss.NewStyle().Foreground(subtle)
 	lockStyle  = lipgloss.NewStyle().Foreground(dim).Italic(true)
+
+	// selBar is the unmistakable "you are here" highlight: dark text on a solid
+	// gold bar. Used for the selected row in lists and the focused form field —
+	// a full-width background reads at a glance where a foreground tint doesn't.
+	selBar = lipgloss.NewStyle().Foreground(lipgloss.Color("232")).Background(gold).Bold(true)
 )

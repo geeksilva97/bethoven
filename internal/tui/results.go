@@ -28,17 +28,34 @@ func fmtResult(mt models.Match) string {
 }
 
 func (m Model) viewMyResults() string {
-	out := titleStyle.Render("My results") +
-		labelStyle.Render(fmt.Sprintf("   total: %s pts", okStyle.Render(strconv.Itoa(m.myTotal)))) + "\n\n"
+	// Show only matches the player actually bet on (skip the un-bet rows).
+	placed := 0
+	for _, r := range m.myRows {
+		if r.Bet != nil {
+			placed++
+		}
+	}
+
+	out := titleStyle.Render("My bets") +
+		labelStyle.Render(fmt.Sprintf("   (%d placed · %s pts)", placed, okStyle.Render(strconv.Itoa(m.myTotal)))) + "\n\n"
+
+	if placed == 0 {
+		out += helpStyle.Render("  No bets yet — pick some matches from the menu.\n")
+		out += "\n" + helpStyle.Render("any key: back · q: quit")
+		return out
+	}
 
 	out += labelStyle.Render(fmt.Sprintf("  %-30s %-8s %-7s %s", "match", "my pick", "result", "pts")) + "\n"
 	for _, r := range m.myRows {
+		if r.Bet == nil {
+			continue
+		}
 		match := fmt.Sprintf("%s v %s", r.Match.TeamA, r.Match.TeamB)
 		if len(match) > 30 {
 			match = match[:30]
 		}
 		pts := "·"
-		if r.Match.Finished && r.Bet != nil {
+		if r.Match.Finished {
 			pts = strconv.Itoa(r.Points)
 		}
 		out += fmt.Sprintf("  %-30s %-8s %-7s %s\n", match, fmtPick(r.Bet), fmtResult(r.Match), pts)

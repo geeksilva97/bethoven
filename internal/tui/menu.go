@@ -17,7 +17,7 @@ type menuItem struct {
 func (m *Model) buildMenu() {
 	items := []menuItem{
 		{"Place / edit bets", screenFixtures},
-		{"My results", screenMyResults},
+		{"My bets", screenMyResults},
 		{"Leaderboard", screenLeaderboard},
 		{"Per-game ranking", screenMatchRank},
 	}
@@ -66,7 +66,8 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			m.setStatus(err.Error(), true)
 			return m, nil
 		}
-		m.fixtures, m.fixCursor, m.screen = fx, 0, screenFixtures
+		m.fixtures, m.screen = fx, screenFixtures
+		m.resetFixFilter()
 	case screenMyResults:
 		rows, total, err := m.svc.MyResults(m.user.ID)
 		if err != nil {

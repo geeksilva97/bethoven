@@ -52,6 +52,13 @@ type Model struct {
 	fixtures  []models.Match
 	fixCursor int
 
+	// fixtures filtering (bet screen only): default shows the next-24h window;
+	// fixShowAll toggles the full schedule; fixSearching routes keys into
+	// fixSearch for a live substring filter.
+	fixShowAll   bool
+	fixSearching bool
+	fixSearch    textinput.Model
+
 	// bet form
 	betMatch  models.Match
 	betInputs []textinput.Model

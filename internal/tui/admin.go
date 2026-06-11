@@ -212,9 +212,7 @@ func (m Model) submitResult() (tea.Model, tea.Cmd) {
 func (m Model) viewEnterResult() string {
 	if m.resMatch == nil {
 		out := titleStyle.Render("⚙  Enter result") + labelStyle.Render("  (pick a match)") + "\n\n"
-		for i, mt := range m.fixtures {
-			out += m.matchLine(mt, i == m.resCursor) + "\n"
-		}
+		out += m.renderList(m.fixtures, m.resCursor)
 		out += "\n" + statusLine(m) + helpStyle.Render("↑/↓: move · enter: pick · b: back")
 		return out
 	}

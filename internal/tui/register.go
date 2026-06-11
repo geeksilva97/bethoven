@@ -13,19 +13,16 @@ func (m *Model) initRegister() {
 		code := textinput.New()
 		code.Placeholder = "invite code"
 		code.EchoMode = textinput.EchoPassword
-		code.Focus()
 		inputs = append(inputs, code)
 	}
 	name := textinput.New()
 	name.Placeholder = "display name"
 	name.CharLimit = 32
-	if m.isAdminKey {
-		name.Focus()
-	}
 	inputs = append(inputs, name)
 
 	m.regInputs = inputs
 	m.regFocus = 0
+	m.focusReg()
 }
 
 // codeAndName returns the entered (code, name) accounting for the admin layout.
@@ -66,13 +63,21 @@ func (m Model) updateRegister(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.updateRegInputs(msg)
 }
 
+// focusReg moves focus to m.regFocus and restyles every field so the active one
+// is obviously gold (matching prompt, text, caret) while the rest stay dim.
 func (m *Model) focusReg() {
 	for i := range m.regInputs {
 		if i == m.regFocus {
 			m.regInputs[i].Focus()
+			m.regInputs[i].PromptStyle = cursorOn
+			m.regInputs[i].TextStyle = cursorOn
+			m.regInputs[i].Cursor.Style = cursorOn
 		} else {
 			m.regInputs[i].Blur()
+			m.regInputs[i].PromptStyle = helpStyle
+			m.regInputs[i].TextStyle = labelStyle
 		}
+		m.regInputs[i].PlaceholderStyle = helpStyle
 	}
 }
 
@@ -90,7 +95,11 @@ func (m Model) viewRegister() string {
 		out += labelStyle.Render("Welcome! You're new here. Enter the invite code and pick a name.") + "\n\n"
 	}
 	for i := range m.regInputs {
-		out += "  " + m.regInputs[i].View() + "\n"
+		cursor := "  "
+		if i == m.regFocus {
+			cursor = cursorOn.Render("▸ ")
+		}
+		out += cursor + m.regInputs[i].View() + "\n"
 	}
 	out += "\n" + statusLine(m) + helpStyle.Render("\ntab: next field · enter: join · esc: quit")
 	return out
