@@ -24,6 +24,10 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if cfg.UsingDefaultInvite() {
+		log.Println("WARNING: running with the default invite code while admins are configured — " +
+			"set BETHOVEN_INVITE_CODE to a private value before sharing the address")
+	}
 
 	conn, err := db.Open(cfg.DBPath)
 	if err != nil {
