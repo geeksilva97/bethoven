@@ -88,21 +88,31 @@ func (s *Service) Lookup(fingerprint string) (*models.User, error) {
 	return s.store.UserByFingerprint(fingerprint)
 }
 
-// Resolve is what the server calls on each connect. It looks up the user and,
-// if their key is in the admin allowlist but they aren't an admin yet,
-// auto-promotes them. This keeps admin setup foolproof: add the fingerprint to
-// BETHOVEN_ADMINS and connect — order doesn't matter. Returns db.ErrNotFound
-// for an unknown key.
+// Resolve is what the server calls on each connect. It reconciles the user's
+// stored role with the admin allowlist in BOTH directions, treating
+// BETHOVEN_ADMINS as the single source of truth:
+//
+//   - a key in the allowlist is promoted to admin (so admin setup is foolproof:
+//     add the fingerprint and connect, order doesn't matter), and
+//   - a stored admin whose key is no longer in the allowlist is demoted to
+//     player (so removing a fingerprint actually revokes admin).
+//
+// Returns db.ErrNotFound for an unknown key.
 func (s *Service) Resolve(fingerprint string) (*models.User, error) {
 	u, err := s.store.UserByFingerprint(fingerprint)
 	if err != nil {
 		return nil, err
 	}
-	if s.IsAdmin(fingerprint) && u.Role != models.RoleAdmin {
-		if err := s.store.SetUserRole(u.ID, models.RoleAdmin); err != nil {
+
+	want := models.RolePlayer
+	if s.IsAdmin(fingerprint) {
+		want = models.RoleAdmin
+	}
+	if u.Role != want {
+		if err := s.store.SetUserRole(u.ID, want); err != nil {
 			return nil, err
 		}
-		u.Role = models.RoleAdmin
+		u.Role = want
 	}
 	return u, nil
 }

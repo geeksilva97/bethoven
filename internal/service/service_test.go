@@ -145,6 +145,27 @@ func TestResolveAutoPromotesAdmin(t *testing.T) {
 	}
 }
 
+func TestResolveDemotesRemovedAdmin(t *testing.T) {
+	svc, store, _ := newTestService(t)
+
+	// A stored admin whose fingerprint is NOT in this service's allowlist
+	// (allowlist here is only adminFP). Removing from BETHOVEN_ADMINS = revoke.
+	if _, err := store.CreateUser("SHA256:ex-admin", "Ex", models.RoleAdmin, base); err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	got, err := svc.Resolve("SHA256:ex-admin")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.Role != models.RolePlayer {
+		t.Errorf("expected demotion to player, got %q", got.Role)
+	}
+	reloaded, _ := svc.Lookup("SHA256:ex-admin")
+	if reloaded.Role != models.RolePlayer {
+		t.Errorf("demotion not persisted, got %q", reloaded.Role)
+	}
+}
+
 func TestLookupUnknownKey(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	if _, err := svc.Lookup("SHA256:ghost"); !errors.Is(err, db.ErrNotFound) {
