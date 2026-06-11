@@ -41,9 +41,10 @@ func New(svc *service.Service, addr, hostKeyPath string) (*ssh.Server, error) {
 		// generous for filling in a bet form.
 		wish.WithIdleTimeout(15*time.Minute),
 		wish.WithMiddleware(
-			bm.Middleware(teaHandler(svc)),
-			activeterm.Middleware(), // require an interactive PTY
+			bm.Middleware(teaHandler(svc)), // innermost: the TUI program
+			activeterm.Middleware(),        // require an interactive PTY
 			logging.Middleware(),
+			limitSessions(maxConcurrentSessions), // outermost: gate before any setup
 		),
 	)
 }

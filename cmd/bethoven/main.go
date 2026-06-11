@@ -44,12 +44,17 @@ func main() {
 		log.Fatalf("build server: %v", err)
 	}
 
+	ln, err := server.LimitedListen(addr, server.MaxConcurrentConns)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		log.Printf("BEThoven listening on %s (ssh -p %s ...)", addr, cfg.Port)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, ssh.ErrServerClosed) {
 			log.Fatalf("serve: %v", err)
 		}
 	}()
