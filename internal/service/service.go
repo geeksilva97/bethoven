@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"bethoven/internal/auth"
 	"bethoven/internal/clock"
@@ -19,7 +21,34 @@ import (
 var (
 	ErrBadInvite    = errors.New("invalid invite code")
 	ErrNameRequired = errors.New("a display name is required")
+	ErrBadName      = errors.New("display name has invalid characters")
 )
+
+// maxNameLen bounds a display name (also guarded by the input widget).
+const maxNameLen = 32
+
+// cleanName trims a display name and rejects it if, once control characters and
+// ANSI escapes are removed, nothing usable remains or it changed (i.e. it
+// contained such characters). Names are rendered verbatim into OTHER players'
+// terminals (leaderboard, per-match ranking, admin grid), so an unsanitized
+// name could inject cursor/color/clear escapes into their screens. We reject
+// rather than silently strip so the registrant sees what they'll actually get.
+func cleanName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", ErrNameRequired
+	}
+	if utf8.RuneCountInString(name) > maxNameLen {
+		return "", ErrBadName
+	}
+	for _, r := range name {
+		// Reject C0/C1 control codes (incl. ESC 0x1b) and unprintable runes.
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) || !unicode.IsPrint(r) {
+			return "", ErrBadName
+		}
+	}
+	return name, nil
+}
 
 // Service bundles the dependencies the business logic needs.
 type Service struct {
@@ -88,9 +117,9 @@ func (s *Service) Register(fingerprint, code, name string) (*models.User, error)
 		return nil, err
 	}
 
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, ErrNameRequired
+	name, err := cleanName(name)
+	if err != nil {
+		return nil, err
 	}
 
 	role := models.RolePlayer

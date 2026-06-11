@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,31 @@ func TestRegisterRequiresName(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	if _, err := svc.Register("SHA256:bob", testInvite, "   "); !errors.Is(err, ErrNameRequired) {
 		t.Errorf("expected ErrNameRequired, got %v", err)
+	}
+}
+
+func TestRegisterRejectsUnsafeNames(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	cases := map[string]string{
+		"ansi escape":  "\x1b[31mHACK\x1b[0m",
+		"cursor move":  "Bob\x1b[2J",
+		"control char": "Al\x07ice",
+		"newline":      "line1\nline2",
+		"too long":     strings.Repeat("x", 33),
+	}
+	for name, val := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := svc.Register("SHA256:"+name, testInvite, val); !errors.Is(err, ErrBadName) {
+				t.Errorf("expected ErrBadName for %q, got %v", val, err)
+			}
+		})
+	}
+	// A normal Unicode name is accepted.
+	if _, err := svc.Register("SHA256:ok", testInvite, "José 🇧🇷"); err != nil {
+		t.Errorf("normal name should be accepted, got %v", err)
+	}
+	if u, _ := store.UserByFingerprint("SHA256:ok"); u == nil || u.DisplayName != "José 🇧🇷" {
+		t.Errorf("name not stored correctly: %+v", u)
 	}
 }
 
