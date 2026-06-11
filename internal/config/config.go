@@ -11,6 +11,10 @@ import (
 // deployment with this is unsafe — see Config.UsingDefaultInvite.
 const DefaultInviteCode = "letmein"
 
+// DefaultTimezone is the IANA zone used to display kickoff/result times when
+// BETHOVEN_TIMEZONE is unset. The reference deployment is a Brazilian pool.
+const DefaultTimezone = "America/Sao_Paulo"
+
 // Config holds everything the server needs to boot. Values come from
 // BETHOVEN_* environment variables; see Load for defaults.
 type Config struct {
@@ -19,6 +23,7 @@ type Config struct {
 	HostKeyPath string   // persistent SSH host key (generated if absent)
 	InviteCode  string   // shared secret required on first connect
 	Admins      []string // SHA256 fingerprints granted the admin role
+	Timezone    string   // IANA zone for displaying times (e.g. America/Sao_Paulo)
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -37,6 +42,7 @@ func Load() Config {
 		HostKeyPath: env("BETHOVEN_HOST_KEY_PATH", "host_key"),
 		InviteCode:  env("BETHOVEN_INVITE_CODE", DefaultInviteCode),
 		Admins:      splitList(env("BETHOVEN_ADMINS", "")),
+		Timezone:    env("BETHOVEN_TIMEZONE", DefaultTimezone),
 	}
 }
 

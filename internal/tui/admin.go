@@ -32,7 +32,7 @@ func (m *Model) initAddMatch() {
 		teamA,
 		mk("team B"),
 		mk("group (optional, e.g. Group G)"),
-		mk("kickoff UTC, e.g. 2026-06-20 18:00"),
+		mk("kickoff (local tz), e.g. 2026-06-20 18:00"),
 	}
 	m.addFocus = 0
 	m.addPhase = models.PhaseRound16 // knockouts are the common admin add
@@ -99,9 +99,10 @@ func (m Model) submitAddMatch() (tea.Model, tea.Cmd) {
 	teamA := m.addInputs[0].Value()
 	teamB := m.addInputs[1].Value()
 	group := m.addInputs[2].Value()
-	startsAt, err := time.Parse("2006-01-02 15:04", m.addInputs[3].Value())
+	// Admin enters kickoff in the display timezone; store it as UTC.
+	startsAt, err := time.ParseInLocation("2006-01-02 15:04", m.addInputs[3].Value(), displayLoc)
 	if err != nil {
-		m.setStatus("kickoff must look like 2026-06-20 18:00 (UTC)", true)
+		m.setStatus("kickoff must look like 2026-06-20 18:00", true)
 		return m, nil
 	}
 	if teamA == "" || teamB == "" {
@@ -461,7 +462,7 @@ func (m Model) viewAllBets() string {
 func (m Model) viewBetsForMatch(mt models.Match) string {
 	g := m.grid
 	out := titleStyle.Render("⚙  Bets · "+mt.TeamA+" v "+mt.TeamB) + "\n"
-	sub := mt.StartsAt.UTC().Format("Mon 02 Jan 15:04 UTC")
+	sub := fmtKickoff(mt.StartsAt)
 	if mt.GroupLabel != "" {
 		sub += "  ·  " + mt.GroupLabel
 	}

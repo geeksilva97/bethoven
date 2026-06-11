@@ -93,7 +93,7 @@ func (m Model) submitBet() (tea.Model, tea.Cmd) {
 func (m Model) viewBet() string {
 	mt := m.betMatch
 	out := titleStyle.Render(fmt.Sprintf("%s  v  %s", mt.TeamA, mt.TeamB)) + "\n"
-	out += labelStyle.Render(mt.StartsAt.UTC().Format("Mon 02 Jan 15:04 UTC"))
+	out += labelStyle.Render(fmtKickoff(mt.StartsAt))
 	if mt.GroupLabel != "" {
 		out += labelStyle.Render("  ·  " + mt.GroupLabel)
 	}

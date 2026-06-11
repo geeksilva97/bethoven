@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed the IANA tz database so BETHOVEN_TIMEZONE works on any host
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
@@ -22,9 +23,17 @@ import (
 	"bethoven/internal/db"
 	"bethoven/internal/server"
 	"bethoven/internal/service"
+	"bethoven/internal/tui"
 )
 
 func main() {
+	// Admin subcommand: place a bet on a player's behalf (bypasses the kickoff
+	// lock). Handled before any server setup. See placebet.go.
+	if len(os.Args) > 1 && os.Args[1] == "place-bet" {
+		runPlaceBet(os.Args[2:])
+		return
+	}
+
 	// Force a color profile for lipgloss's global renderer. Under systemd the
 	// process has no TTY/$TERM, so lipgloss would otherwise detect "no color"
 	// and strip every style server-side — before the output is ever sent to the
@@ -36,6 +45,13 @@ func main() {
 	if cfg.UsingDefaultInvite() {
 		log.Println("WARNING: running with the default invite code while admins are configured — " +
 			"set BETHOVEN_INVITE_CODE to a private value before sharing the address")
+	}
+
+	// Times are stored/locked in UTC but displayed in the configured zone.
+	if loc, err := time.LoadLocation(cfg.Timezone); err != nil {
+		log.Printf("WARNING: BETHOVEN_TIMEZONE %q not found (%v); displaying times in UTC", cfg.Timezone, err)
+	} else {
+		tui.SetLocation(loc)
 	}
 
 	conn, err := db.Open(cfg.DBPath)

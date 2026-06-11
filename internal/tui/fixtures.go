@@ -16,7 +16,7 @@ const todayWindow = 48 * time.Hour
 // matchLine renders one fixture row for a list, marking lock state. The selected
 // row is drawn as a solid gold bar so it's unmistakable on any terminal.
 func (m Model) matchLine(mt models.Match, selected bool) string {
-	when := mt.StartsAt.UTC().Format("Mon 02 Jan 15:04")
+	when := fmtKickoff(mt.StartsAt)
 	label := fmt.Sprintf("%-14s v %-14s  %s", mt.TeamA, mt.TeamB, when)
 	if mt.GroupLabel != "" {
 		label += "  " + mt.GroupLabel
