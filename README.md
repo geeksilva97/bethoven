@@ -13,8 +13,14 @@ nobody can impersonate a teammate.
 - Before a match kicks off, you predict the **exact score**.
 - Once a match starts, betting is **locked** — the server clock is the only
   authority, so you can't bet on an ongoing or finished game.
-- Points per match (max 3):
-  - **3** exact score · **1** correct result (W/D/L)
+- Points per match (max **3**, no partial stacking):
+  - **3** — you nailed the **exact score** (e.g. you said 2–1 and it finished 2–1).
+  - **1** — you got the **result** right (win / draw / loss) but not the exact
+    score (e.g. you said 2–1, it finished 3–0 — both are home wins).
+  - **0** — wrong result.
+  - These are mutually exclusive: an exact score scores 3, not 3+1. Knockout
+    matches are scored on the **regulation 90' score**, so a 1–1 that goes to
+    penalties counts as a 1–1 draw.
 - Kickoff times are shown in the pool's timezone (configurable — defaults to
   Brasília / `America/Sao_Paulo`).
 - Standings come in three flavours: **per-game ranking**, **my bets**, and the
@@ -79,15 +85,15 @@ their key automatically and skip the invite-code field entirely.)
 **4. Play:**
 
 - **Place / edit bets** — pick an upcoming match, type the score (e.g. `2` and
-  `1`), toggle **over/under 2.5** goals with the space bar, and save. You can
-  edit any time until kickoff; after kickoff the match is locked.
+  `1`), and save. You can edit any time until kickoff; after kickoff the match
+  is locked.
 - **My results** — your picks, the actual scores, points per match, and total.
 - **Leaderboard** — everyone's running totals.
 - **Per-game ranking** — who nailed a specific match (picks reveal once the game
   has a result).
 
-Keys: `↑/↓` move · `enter` select · `tab` switch field · `space` toggle
-over/under · `b`/`esc` back · `q` quit.
+Keys: `↑/↓` move · `enter` select · `tab` switch field · `b`/`esc` back ·
+`q` quit.
 
 ## Run it locally
 

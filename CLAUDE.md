@@ -40,10 +40,11 @@ directly, with a fake clock, no terminal).
 - **Own-bets-only:** player queries are scoped to their `user_id`; players never
   see another player's individual picks. Only the admin `AllBets` grid exposes raw
   picks, and it's gated by `requireAdmin` in the service (not just hidden in the UI).
-- **Scoring** (`scoring.Points`, max 4/match): exact score = 3; correct result
-  (W/D/L) only = 1; +1 if over/under-2.5 bonus is right. `>2` goals == over 2.5.
-  Knockouts store the **regulation 90' score**, so ET/penalties are ignored and a
-  1-1 a.e.t. scores as a 1-1 draw.
+- **Scoring** (`scoring.Points`, max 3/match): exact score = 3; correct result
+  (W/D/L) only = 1; wrong result = 0. The tiers are **mutually exclusive** — an
+  exact score scores 3, not 3+1 (there is no over/under bonus). Knockouts store
+  the **regulation 90' score**, so ET/penalties are ignored and a 1-1 a.e.t.
+  scores as a 1-1 draw.
 - **Identity = SHA256 key fingerprint.** Set once at registration, immutable after.
 
 ## Onboarding & admin
@@ -72,8 +73,8 @@ Connect: `ssh -p 2222 localhost` (or set up a `~/.ssh/config` alias; see README)
 
 ## Tests
 
-- `scoring` — table-driven unit tests (watch the bonus: an "under" prediction that's
-  correct adds +1, which is easy to forget when hand-computing expected points).
+- `scoring` — table-driven unit tests covering the three tiers (exact 3 / result 1
+  / miss 0) and the knockout regulation-90' rule.
 - `service/*_test.go` — integration vs a **real temp SQLite** + **fake clock**. The
   headline is `TestKickoffLock`. Shared harness `newTestService` lives in `service_test.go`.
 - `server/server_test.go` — real wish server on `:0` + real `x/crypto/ssh` client;
