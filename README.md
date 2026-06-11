@@ -105,10 +105,23 @@ allowlist is the source of truth.
 
 ## Fixtures
 
-`fixtures.json` seeds the group stage on first boot (idempotent — it won't
-re-import into a populated tournament). Replace it with the official 2026 World
-Cup schedule. Knockout matches are added by an admin in the TUI as the bracket
-fills in.
+`fixtures.json` holds the 72 group-stage matches and seeds them on first boot
+(idempotent — it won't re-import into a populated tournament). Knockout matches
+are added by an admin in the TUI as the bracket fills in.
+
+It's generated from the public-domain [openfootball/worldcup.json](https://github.com/openfootball/worldcup.json)
+dataset (no API key) and converted to RFC3339 UTC:
+
+```sh
+python3 scripts/build_fixtures.py            # fetch latest from GitHub
+python3 scripts/build_fixtures.py local.json # or transform a local source file
+```
+
+Re-run it whenever the source updates (e.g. kickoff-time changes). The script
+only emits group-stage matches; for the **knockout rounds**, the openfootball
+data fills in real matchups as groups conclude — re-run the script against the
+updated source and add those matches via the admin TUI, or extend the script to
+emit them.
 
 ## Build
 
