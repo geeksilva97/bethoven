@@ -10,13 +10,14 @@ nobody can impersonate a teammate.
 ## How it works
 
 - Each player connects over SSH and is recognised by their key.
-- Before a match kicks off, you predict the **score** and an **over/under 2.5
-  goals** bonus.
+- Before a match kicks off, you predict the **exact score**.
 - Once a match starts, betting is **locked** — the server clock is the only
   authority, so you can't bet on an ongoing or finished game.
-- Points per match (max 4):
-  - **3** exact score · **1** correct result (W/D/L) · **+1** correct over/under
-- Standings come in three flavours: **per-game ranking**, **my results**, and the
+- Points per match (max 3):
+  - **3** exact score · **1** correct result (W/D/L)
+- Kickoff times are shown in the pool's timezone (configurable — defaults to
+  Brasília / `America/Sao_Paulo`).
+- Standings come in three flavours: **per-game ranking**, **my bets**, and the
   tournament **leaderboard**.
 
 ## How to play
@@ -121,6 +122,7 @@ allowlist is the source of truth.
 | `BETHOVEN_HOST_KEY_PATH` | `host_key` | persistent SSH host key |
 | `BETHOVEN_INVITE_CODE` | `letmein` | shared first-connect secret |
 | `BETHOVEN_ADMINS` | — | comma-separated admin fingerprints |
+| `BETHOVEN_TIMEZONE` | `America/Sao_Paulo` | IANA zone for displaying kickoff/result times (storage stays UTC) |
 
 ## Fixtures
 
@@ -199,6 +201,27 @@ Teammates then follow [How to play](#how-to-play): make a key, add the
 `sudo systemctl restart bethoven`. The DB and host key live in
 `/opt/bethoven/data`, so identities, bets, and the host fingerprint all survive
 restarts and upgrades.
+
+## Stack
+
+- **[Go](https://go.dev)** — a single static binary, no cgo (cross-compiles cleanly).
+- **[charmbracelet/wish](https://github.com/charmbracelet/wish)** — the SSH server
+  (built on [charmbracelet/ssh](https://github.com/charmbracelet/ssh)); a session
+  is bridged straight into a Bubble Tea program.
+- **[charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea)** +
+  **[bubbles](https://github.com/charmbracelet/bubbles)** +
+  **[lipgloss](https://github.com/charmbracelet/lipgloss)** — the terminal UI
+  (model/update/view, text inputs, styling).
+- **[modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)** — pure-Go SQLite
+  (no cgo) via `database/sql`; WAL mode, single writer.
+- **`time/tzdata`** — the IANA timezone database, embedded so display zones work
+  on any host.
+- **Standard library** for the rest (`net`, `os/signal`, `database/sql`); no web
+  framework, no ORM, no TLS (SSH provides transport security).
+
+Testing: Go's `testing` with `-race`, plus
+[`teatest`](https://pkg.go.dev/github.com/charmbracelet/x/exp/teatest) to drive
+the TUI and a real `x/crypto/ssh` client against the wish server.
 
 ## Architecture
 
