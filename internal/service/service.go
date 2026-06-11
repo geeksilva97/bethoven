@@ -22,6 +22,7 @@ var (
 	ErrBadInvite    = errors.New("invalid invite code")
 	ErrNameRequired = errors.New("a display name is required")
 	ErrBadName      = errors.New("display name has invalid characters")
+	ErrNameTaken    = errors.New("that display name is already taken")
 )
 
 // maxNameLen bounds a display name (also guarded by the input widget).
@@ -130,6 +131,11 @@ func (s *Service) Register(fingerprint, code, name string) (*models.User, error)
 	name, err := cleanName(name)
 	if err != nil {
 		return nil, err
+	}
+	if taken, err := s.store.DisplayNameTaken(name); err != nil {
+		return nil, err
+	} else if taken {
+		return nil, ErrNameTaken
 	}
 
 	role := models.RolePlayer

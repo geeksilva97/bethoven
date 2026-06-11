@@ -74,6 +74,18 @@ func (s *Store) CreateUser(fp, name string, role models.Role, now time.Time) (*m
 	return &models.User{ID: id, Fingerprint: fp, DisplayName: name, Role: role, CreatedAt: now.UTC()}, nil
 }
 
+// DisplayNameTaken reports whether a display name is already in use,
+// case-insensitively (ASCII). Used to keep leaderboard identities distinct.
+func (s *Store) DisplayNameTaken(name string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM users WHERE display_name = ? COLLATE NOCASE`, name).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("display name check: %w", err)
+	}
+	return n > 0, nil
+}
+
 // SetUserRole updates a user's role (used to auto-promote admins on login).
 func (s *Store) SetUserRole(userID int64, role models.Role) error {
 	_, err := s.db.Exec(`UPDATE users SET role=? WHERE id=?`, string(role), userID)

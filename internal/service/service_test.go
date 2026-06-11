@@ -101,6 +101,17 @@ func TestRegisterRejectsUnsafeNames(t *testing.T) {
 	}
 }
 
+func TestRegisterRejectsDuplicateName(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	if _, err := svc.Register("SHA256:k1", testInvite, "Goalmachine"); err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+	// Different key, same name (case-insensitive) -> rejected.
+	if _, err := svc.Register("SHA256:k2", testInvite, "goalMACHINE"); !errors.Is(err, ErrNameTaken) {
+		t.Errorf("expected ErrNameTaken, got %v", err)
+	}
+}
+
 func TestAdminSkipsInviteCode(t *testing.T) {
 	svc, _, _ := newTestService(t)
 
