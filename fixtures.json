@@ -1,0 +1,9 @@
+{
+  "_comment": "BEThoven group-stage seed. Replace these with the official 2026 World Cup schedule (72 group matches). Imported once on first boot into an empty tournament; edits afterward are done via the admin TUI. Times are RFC3339 UTC.",
+  "tournament": "World Cup 2026",
+  "matches": [
+    { "team_a": "Mexico",    "team_b": "TBD",     "group_label": "Group A", "starts_at": "2026-06-11T20:00:00Z" },
+    { "team_a": "Canada",    "team_b": "TBD",     "group_label": "Group B", "starts_at": "2026-06-12T20:00:00Z" },
+    { "team_a": "USA",       "team_b": "TBD",     "group_label": "Group D", "starts_at": "2026-06-12T23:00:00Z" }
+  ]
+}

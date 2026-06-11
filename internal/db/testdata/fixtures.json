@@ -1,0 +1,8 @@
+{
+  "tournament": "Test Cup",
+  "matches": [
+    { "team_a": "Brazil",    "team_b": "Serbia",      "group_label": "Group G", "starts_at": "2026-06-12T19:00:00Z" },
+    { "team_a": "Argentina", "team_b": "Mexico",      "group_label": "Group C", "starts_at": "2026-06-12T22:00:00Z" },
+    { "team_a": "France",    "team_b": "Denmark",     "group_label": "Group D", "starts_at": "2026-06-13T16:00:00Z" }
+  ]
+}

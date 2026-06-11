@@ -1,0 +1,40 @@
+# systemd unit for BEThoven. Install on the VM at:
+#   /etc/systemd/system/bethoven.service
+# then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now bethoven
+#
+# Runs as an unprivileged user. Binary, DB, host key, and fixtures live under
+# /opt/bethoven (a persistent disk). Edit Environment= lines to taste.
+
+[Unit]
+Description=BEThoven — World Cup prediction pool over SSH
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bethoven
+Group=bethoven
+WorkingDirectory=/opt/bethoven
+ExecStart=/opt/bethoven/bethoven
+Restart=on-failure
+RestartSec=3
+
+Environment=BETHOVEN_PORT=2222
+Environment=BETHOVEN_DB_PATH=/opt/bethoven/data/bethoven.db
+Environment=BETHOVEN_HOST_KEY_PATH=/opt/bethoven/data/host_key
+# Change this before launch and share it with the team:
+Environment=BETHOVEN_INVITE_CODE=change-me
+# Comma-separated SHA256 fingerprints (from `ssh-keygen -lf your_key.pub`):
+Environment=BETHOVEN_ADMINS=SHA256:REPLACE_WITH_YOUR_FINGERPRINT
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/bethoven/data
+
+[Install]
+WantedBy=multi-user.target
