@@ -3,12 +3,14 @@ package tui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"bethoven/internal/models"
+	"bethoven/internal/service"
 )
 
 // phaseCycle is the order the admin toggles through when adding a match.
@@ -34,6 +36,7 @@ func (m *Model) initAddMatch() {
 	}
 	m.addFocus = 0
 	m.addPhase = models.PhaseRound16 // knockouts are the common admin add
+	m.focusAdd()
 }
 
 func (m Model) updateAddMatch(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -65,13 +68,21 @@ func (m Model) updateAddMatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// focusAdd moves focus to m.addFocus and restyles the inputs so the active one
+// is gold with a visible caret while the rest stay dim (matching focusReg).
 func (m *Model) focusAdd() {
 	for i := range m.addInputs {
 		if i == m.addFocus {
 			m.addInputs[i].Focus()
+			m.addInputs[i].PromptStyle = cursorOn
+			m.addInputs[i].TextStyle = cursorOn
+			m.addInputs[i].Cursor.Style = cursorOn
 		} else {
 			m.addInputs[i].Blur()
+			m.addInputs[i].PromptStyle = helpStyle
+			m.addInputs[i].TextStyle = labelStyle
 		}
+		m.addInputs[i].PlaceholderStyle = helpStyle
 	}
 }
 
@@ -160,35 +171,78 @@ func (m Model) updateEnterResult(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Match-pick mode.
+	vis := filterMatches(m.fixtures, m.resSearch.query())
+
+	if m.resSearch.active {
+		switch key.String() {
+		case "esc":
+			m.resSearch.close()
+			m.resCursor = 0
+			return m, nil
+		case "enter":
+			if len(vis) == 0 {
+				return m, nil
+			}
+			return m.pickResult(vis)
+		case "up":
+			if m.resCursor > 0 {
+				m.resCursor--
+			}
+			return m, nil
+		case "down":
+			if m.resCursor < len(vis)-1 {
+				m.resCursor++
+			}
+			return m, nil
+		}
+		cmd := m.resSearch.update(msg)
+		if n := len(filterMatches(m.fixtures, m.resSearch.query())); m.resCursor >= n {
+			m.resCursor = n - 1
+		}
+		if m.resCursor < 0 {
+			m.resCursor = 0
+		}
+		return m, cmd
+	}
+
 	switch key.String() {
 	case "q":
 		return m, tea.Quit
 	case "esc", "b":
 		return m.goMenu(), nil
+	case "/":
+		return m, m.resSearch.open()
 	case "up", "k":
 		if m.resCursor > 0 {
 			m.resCursor--
 		}
 	case "down", "j":
-		if m.resCursor < len(m.fixtures)-1 {
+		if m.resCursor < len(vis)-1 {
 			m.resCursor++
 		}
 	case "enter":
-		if len(m.fixtures) == 0 {
+		if len(vis) == 0 {
 			return m, nil
 		}
-		mt := m.fixtures[m.resCursor]
-		m.resMatch = &mt
-		a, b := scoreInput(""), scoreInput("")
-		if mt.Finished && mt.ScoreA != nil {
-			a.SetValue(strconv.Itoa(*mt.ScoreA))
-			b.SetValue(strconv.Itoa(*mt.ScoreB))
-		}
-		a.Focus()
-		m.resInputs = []textinput.Model{a, b}
-		m.resFocus = 0
+		return m.pickResult(vis)
 	}
 	return m, nil
+}
+
+// pickResult opens the score-entry form for the highlighted match, pre-filling
+// any existing result.
+func (m Model) pickResult(vis []models.Match) (tea.Model, tea.Cmd) {
+	mt := vis[m.resCursor]
+	m.resMatch = &mt
+	a, b := scoreInput(""), scoreInput("")
+	if mt.Finished && mt.ScoreA != nil {
+		a.SetValue(strconv.Itoa(*mt.ScoreA))
+		b.SetValue(strconv.Itoa(*mt.ScoreB))
+	}
+	a.Focus()
+	m.resInputs = []textinput.Model{a, b}
+	m.resFocus = 0
+	return m, textinput.Blink
 }
 
 func (m Model) submitResult() (tea.Model, tea.Cmd) {
@@ -212,60 +266,258 @@ func (m Model) submitResult() (tea.Model, tea.Cmd) {
 func (m Model) viewEnterResult() string {
 	if m.resMatch == nil {
 		out := titleStyle.Render("⚙  Enter result") + labelStyle.Render("  (pick a match)") + "\n\n"
-		out += m.renderList(m.fixtures, m.resCursor)
-		out += "\n" + statusLine(m) + helpStyle.Render("↑/↓: move · enter: pick · b: back")
+		out += m.resSearch.view()
+		vis := filterMatches(m.fixtures, m.resSearch.query())
+		if len(vis) == 0 {
+			out += helpStyle.Render("  no matches.\n")
+		} else {
+			out += m.renderList(vis, m.resCursor)
+		}
+		help := "↑/↓: move · enter: pick · /: search · b: back"
+		if m.resSearch.active {
+			help = "type to filter · ↑/↓: move · enter: pick · esc: clear"
+		}
+		out += "\n" + statusLine(m) + helpStyle.Render(help)
 		return out
 	}
 	mt := *m.resMatch
 	out := titleStyle.Render("⚙  Result: "+mt.TeamA+" v "+mt.TeamB) + "\n"
 	out += helpStyle.Render("Enter the regulation (90') score — penalties/ET are ignored.") + "\n\n"
-	out += "  " + labelStyle.Render(mt.TeamA) + " [" + m.resInputs[0].View() + "]   " +
-		labelStyle.Render(mt.TeamB) + " [" + m.resInputs[1].View() + "]\n\n"
+	out += "  " + scoreField(m.resInputs[0], mt.TeamA, m.resFocus == 0) + "   " +
+		scoreField(m.resInputs[1], mt.TeamB, m.resFocus == 1) + "\n\n"
 	out += statusLine(m) + helpStyle.Render("tab: switch · enter: save · esc: back to list")
 	return out
 }
 
-// --- all bets grid -------------------------------------------------------
+// scoreField renders a labelled [ ] score box, highlighting the focused one in
+// gold (shared by the bet form and the admin result form).
+func scoreField(in textinput.Model, team string, focused bool) string {
+	box := "[" + in.View() + "]"
+	if focused {
+		box = cursorOn.Render(box)
+	}
+	return labelStyle.Render(team) + " " + box
+}
+
+// --- all bets browser ----------------------------------------------------
+
+// updateAllBets drives the admin bets browser: a scrollable/searchable grid of
+// every player's picks, with an enter-to-drill-down view of one match's picks.
+func (m Model) updateAllBets(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	g := m.grid
+	if g == nil || len(g.Users) == 0 {
+		if key.String() == "q" {
+			return m, tea.Quit
+		}
+		return m.goMenu(), nil
+	}
+
+	// Detail mode: one match's picks (read-only list; search filters players).
+	if m.allMatch != nil {
+		if m.allSearch.active {
+			if key.String() == "esc" {
+				m.allSearch.close()
+				return m, nil
+			}
+			return m, m.allSearch.update(msg)
+		}
+		switch key.String() {
+		case "q":
+			return m, tea.Quit
+		case "esc", "b":
+			m.allMatch = nil
+			m.allSearch.close()
+			return m, nil
+		case "/":
+			return m, m.allSearch.open()
+		}
+		return m, nil
+	}
+
+	// Grid mode: navigate match rows, search filters them.
+	vis := filterMatches(g.Matches, m.allSearch.query())
+	if m.allSearch.active {
+		switch key.String() {
+		case "esc":
+			m.allSearch.close()
+			m.allCursor = 0
+			return m, nil
+		case "enter":
+			if len(vis) == 0 {
+				return m, nil
+			}
+			mt := vis[m.allCursor]
+			m.allMatch = &mt
+			m.allSearch.close()
+			return m, nil
+		case "up":
+			if m.allCursor > 0 {
+				m.allCursor--
+			}
+			return m, nil
+		case "down":
+			if m.allCursor < len(vis)-1 {
+				m.allCursor++
+			}
+			return m, nil
+		}
+		cmd := m.allSearch.update(msg)
+		if n := len(filterMatches(g.Matches, m.allSearch.query())); m.allCursor >= n {
+			m.allCursor = n - 1
+		}
+		if m.allCursor < 0 {
+			m.allCursor = 0
+		}
+		return m, cmd
+	}
+
+	switch key.String() {
+	case "q":
+		return m, tea.Quit
+	case "esc", "b":
+		return m.goMenu(), nil
+	case "/":
+		return m, m.allSearch.open()
+	case "up", "k":
+		if m.allCursor > 0 {
+			m.allCursor--
+		}
+	case "down", "j":
+		if m.allCursor < len(vis)-1 {
+			m.allCursor++
+		}
+	case "enter":
+		if len(vis) == 0 {
+			return m, nil
+		}
+		mt := vis[m.allCursor]
+		m.allMatch = &mt
+	}
+	return m, nil
+}
 
 func (m Model) viewAllBets() string {
 	g := m.grid
-	out := titleStyle.Render("⚙  All bets") + "\n\n"
 	if g == nil || len(g.Users) == 0 {
+		out := titleStyle.Render("⚙  All bets") + "\n\n"
 		out += helpStyle.Render("No players yet.\n")
 		out += "\n" + helpStyle.Render("any key: back · q: quit")
 		return out
 	}
-
-	// Header row: match column + one column per player.
-	out += labelStyle.Render(fmt.Sprintf("%-22s", "match"))
-	for _, u := range g.Users {
-		out += labelStyle.Render(fmt.Sprintf(" %-10s", trunc(u.DisplayName, 10)))
+	if m.allMatch != nil {
+		return m.viewBetsForMatch(*m.allMatch)
 	}
-	out += "\n"
 
-	for _, mt := range g.Matches {
-		name := trunc(fmt.Sprintf("%s v %s", mt.TeamA, mt.TeamB), 22)
-		out += fmt.Sprintf("%-22s", name)
-		for _, u := range g.Users {
-			cell := "—"
-			if c, ok := g.Cells[mt.ID][u.ID]; ok {
-				cell = fmtPick(c.Bet)
-				if mt.Finished {
-					cell += fmt.Sprintf("(%d)", c.Points)
-				}
+	out := titleStyle.Render("⚙  All bets") + labelStyle.Render("  (enter: see one match's picks)") + "\n\n"
+	out += m.allSearch.view()
+	vis := filterMatches(g.Matches, m.allSearch.query())
+
+	// Fixed header row: match column + one column per player.
+	header := fmt.Sprintf("%-22s", "match")
+	for _, u := range g.Users {
+		header += fmt.Sprintf(" %-10s", trunc(u.DisplayName, 10))
+	}
+	out += labelStyle.Render(header) + "\n"
+
+	if len(vis) == 0 {
+		out += helpStyle.Render("  no matches.\n")
+	} else {
+		rows := make([]string, len(vis))
+		for i, mt := range vis {
+			row := fmt.Sprintf("%-22s", trunc(fmt.Sprintf("%s v %s", mt.TeamA, mt.TeamB), 22))
+			for _, u := range g.Users {
+				row += fmt.Sprintf(" %-10s", trunc(betCellText(g, mt, u.ID), 10))
 			}
-			out += fmt.Sprintf(" %-10s", trunc(cell, 10))
+			if i == m.allCursor {
+				row = selBar.Render(row)
+			}
+			rows[i] = row
 		}
-		out += "\n"
+		for _, r := range windowRows(rows, m.allCursor, m.listCapacity()) {
+			out += r + "\n"
+		}
 	}
 
-	// Totals row.
-	out += labelStyle.Render(fmt.Sprintf("%-22s", "TOTAL"))
+	// Fixed totals row.
+	totals := fmt.Sprintf("%-22s", "TOTAL")
 	for _, u := range g.Users {
-		out += okStyle.Render(fmt.Sprintf(" %-10d", g.Totals[u.ID]))
+		totals += fmt.Sprintf(" %-10d", g.Totals[u.ID])
 	}
-	out += "\n\n" + helpStyle.Render("any key: back · q: quit")
+	out += okStyle.Render(totals) + "\n"
+
+	help := "↑/↓: move · enter: see picks · /: search · b: back · q: quit"
+	if m.allSearch.active {
+		help = "type to filter · ↑/↓: move · enter: see picks · esc: clear"
+	}
+	out += "\n" + helpStyle.Render(help)
 	return out
+}
+
+// viewBetsForMatch is the by-match drill-down: every player's pick for one match.
+func (m Model) viewBetsForMatch(mt models.Match) string {
+	g := m.grid
+	out := titleStyle.Render("⚙  Bets · "+mt.TeamA+" v "+mt.TeamB) + "\n"
+	sub := mt.StartsAt.UTC().Format("Mon 02 Jan 15:04 UTC")
+	if mt.GroupLabel != "" {
+		sub += "  ·  " + mt.GroupLabel
+	}
+	if mt.Finished {
+		sub += "  ·  result " + fmtResult(mt)
+	}
+	out += labelStyle.Render(sub) + "\n\n"
+	out += m.allSearch.view()
+
+	q := m.allSearch.query()
+	var rows []string
+	for _, u := range g.Users {
+		if q != "" && !strings.Contains(strings.ToLower(u.DisplayName), q) {
+			continue
+		}
+		pick := "—"
+		if c, ok := g.Cells[mt.ID][u.ID]; ok {
+			pick = fmtPick(c.Bet)
+		}
+		line := fmt.Sprintf("  %-20s %-8s", trunc(u.DisplayName, 20), pick)
+		if mt.Finished {
+			if c, ok := g.Cells[mt.ID][u.ID]; ok {
+				line += fmt.Sprintf("  %d pts", c.Points)
+			}
+		}
+		rows = append(rows, line)
+	}
+
+	if len(rows) == 0 {
+		out += helpStyle.Render("  no players.\n")
+	} else {
+		for _, r := range windowRows(rows, 0, m.listCapacity()) {
+			out += r + "\n"
+		}
+	}
+
+	help := "/: search players · b: back to grid · q: quit"
+	if m.allSearch.active {
+		help = "type to filter players · esc: clear"
+	}
+	out += "\n" + helpStyle.Render(help)
+	return out
+}
+
+// betCellText renders one grid cell: a player's pick on a match, plus points in
+// parentheses once the match is finished, or "—" if they didn't bet.
+func betCellText(g *service.AllBetsGrid, mt models.Match, userID int64) string {
+	c, ok := g.Cells[mt.ID][userID]
+	if !ok {
+		return "—"
+	}
+	cell := fmtPick(c.Bet)
+	if mt.Finished {
+		cell += fmt.Sprintf("(%d)", c.Points)
+	}
+	return cell
 }
 
 func trunc(s string, n int) string {

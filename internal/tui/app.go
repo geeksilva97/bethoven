@@ -53,11 +53,9 @@ type Model struct {
 	fixCursor int
 
 	// fixtures filtering (bet screen only): default shows the next-24h window;
-	// fixShowAll toggles the full schedule; fixSearching routes keys into
-	// fixSearch for a live substring filter.
-	fixShowAll   bool
-	fixSearching bool
-	fixSearch    textinput.Model
+	// fixShowAll toggles the full schedule; fixSearch is the live "/" filter.
+	fixShowAll bool
+	fixSearch  searchBox
 
 	// bet form
 	betMatch  models.Match
@@ -73,8 +71,9 @@ type Model struct {
 	standings []service.Standing
 
 	// per-match ranking
-	rankMatch *models.Match
-	rankRows  []service.MatchStanding
+	rankMatch  *models.Match
+	rankRows   []service.MatchStanding
+	rankSearch searchBox
 
 	// admin: add match
 	addInputs []textinput.Model
@@ -86,9 +85,13 @@ type Model struct {
 	resInputs []textinput.Model
 	resFocus  int
 	resMatch  *models.Match
+	resSearch searchBox
 
-	// admin: all-bets grid
-	grid *service.AllBetsGrid
+	// admin: all-bets grid + by-match drill-down
+	grid      *service.AllBetsGrid
+	allCursor int
+	allMatch  *models.Match // set => showing one match's picks
+	allSearch searchBox
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -146,7 +149,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenEnterResult:
 		return m.updateEnterResult(msg)
 	case screenAllBets:
-		return m.updateList(msg)
+		return m.updateAllBets(msg)
 	}
 	return m, nil
 }

@@ -119,13 +119,7 @@ func (m Model) viewBet() string {
 }
 
 func (m Model) betScoreField(i int, team string) string {
-	box := m.betInputs[i].View()
-	if i == m.betFocus {
-		box = cursorOn.Render("[" + box + "]")
-	} else {
-		box = "[" + box + "]"
-	}
-	return labelStyle.Render(team) + " " + box
+	return scoreField(m.betInputs[i], team, i == m.betFocus)
 }
 
 func overOption(over bool) string {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"bethoven/internal/models"
 )
 
 // updateMatchRank has two modes: picking a match from the fixtures list, then
@@ -23,31 +25,70 @@ func (m Model) updateMatchRank(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.goMenu(), nil
 	}
 
-	// Pick mode: navigate the fixtures list.
+	// Pick mode: navigate the (optionally filtered) fixtures list.
+	vis := filterMatches(m.fixtures, m.rankSearch.query())
+
+	if m.rankSearch.active {
+		switch key.String() {
+		case "esc":
+			m.rankSearch.close()
+			m.fixCursor = 0
+			return m, nil
+		case "enter":
+			return m.openRank(vis)
+		case "up":
+			if m.fixCursor > 0 {
+				m.fixCursor--
+			}
+			return m, nil
+		case "down":
+			if m.fixCursor < len(vis)-1 {
+				m.fixCursor++
+			}
+			return m, nil
+		}
+		cmd := m.rankSearch.update(msg)
+		if n := len(filterMatches(m.fixtures, m.rankSearch.query())); m.fixCursor >= n {
+			m.fixCursor = n - 1
+		}
+		if m.fixCursor < 0 {
+			m.fixCursor = 0
+		}
+		return m, cmd
+	}
+
 	switch key.String() {
 	case "q":
 		return m, tea.Quit
 	case "esc", "b":
 		return m.goMenu(), nil
+	case "/":
+		return m, m.rankSearch.open()
 	case "up", "k":
 		if m.fixCursor > 0 {
 			m.fixCursor--
 		}
 	case "down", "j":
-		if m.fixCursor < len(m.fixtures)-1 {
+		if m.fixCursor < len(vis)-1 {
 			m.fixCursor++
 		}
 	case "enter":
-		if len(m.fixtures) == 0 {
-			return m, nil
-		}
-		mt, rows, err := m.svc.MatchLeaderboard(m.fixtures[m.fixCursor].ID)
-		if err != nil {
-			m.setStatus(err.Error(), true)
-			return m, nil
-		}
-		m.rankMatch, m.rankRows = mt, rows
+		return m.openRank(vis)
 	}
+	return m, nil
+}
+
+// openRank loads and shows the per-match ranking for the highlighted match.
+func (m Model) openRank(vis []models.Match) (tea.Model, tea.Cmd) {
+	if len(vis) == 0 {
+		return m, nil
+	}
+	mt, rows, err := m.svc.MatchLeaderboard(vis[m.fixCursor].ID)
+	if err != nil {
+		m.setStatus(err.Error(), true)
+		return m, nil
+	}
+	m.rankMatch, m.rankRows = mt, rows
 	return m, nil
 }
 
@@ -55,8 +96,18 @@ func (m Model) viewMatchRank() string {
 	if m.rankMatch == nil {
 		// pick mode
 		out := titleStyle.Render("Per-game ranking") + labelStyle.Render("  (pick a match)") + "\n\n"
-		out += m.renderList(m.fixtures, m.fixCursor)
-		out += "\n" + statusLine(m) + helpStyle.Render("↑/↓: move · enter: rank · b: back · q: quit")
+		out += m.rankSearch.view()
+		vis := filterMatches(m.fixtures, m.rankSearch.query())
+		if len(vis) == 0 {
+			out += helpStyle.Render("  no matches.\n")
+		} else {
+			out += m.renderList(vis, m.fixCursor)
+		}
+		help := "↑/↓: move · enter: rank · /: search · b: back · q: quit"
+		if m.rankSearch.active {
+			help = "type to filter · ↑/↓: move · enter: rank · esc: clear"
+		}
+		out += "\n" + statusLine(m) + helpStyle.Render(help)
 		return out
 	}
 

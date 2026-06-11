@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -47,22 +46,11 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 	return "  " + labelStyle.Render(label) + styledTag
 }
 
-// newSearchInput builds the fixtures filter box.
-func newSearchInput() textinput.Model {
-	in := textinput.New()
-	in.Placeholder = "filter teams…"
-	in.Prompt = "/ "
-	in.PromptStyle = cursorOn
-	in.Cursor.Style = cursorOn
-	return in
-}
-
 // resetFixFilter clears the fixtures view back to its default (next-24h window,
 // no search). Called whenever the bet screen is (re)entered from the menu.
 func (m *Model) resetFixFilter() {
 	m.fixShowAll = false
-	m.fixSearching = false
-	m.fixSearch = newSearchInput()
+	m.fixSearch = newSearchBox("filter teams…")
 	m.fixCursor = 0
 }
 
@@ -94,18 +82,7 @@ func (m Model) visibleFixtures() []models.Match {
 		list = window
 	}
 
-	q := strings.TrimSpace(strings.ToLower(m.fixSearch.Value()))
-	if q == "" {
-		return list
-	}
-	var out []models.Match
-	for _, mt := range list {
-		hay := strings.ToLower(mt.TeamA + " " + mt.TeamB + " " + mt.GroupLabel)
-		if strings.Contains(hay, q) {
-			out = append(out, mt)
-		}
-	}
-	return out
+	return filterMatches(list, m.fixSearch.query())
 }
 
 // clampFixCursor keeps the cursor within the (possibly shrunken) visible list.
@@ -127,12 +104,10 @@ func (m Model) updateFixtures(msg tea.Msg) (tea.Model, tea.Cmd) {
 	vis := m.visibleFixtures()
 
 	// Search mode: most keys edit the query; arrows still move; enter bets.
-	if m.fixSearching {
+	if m.fixSearch.active {
 		switch key.String() {
 		case "esc":
-			m.fixSearching = false
-			m.fixSearch.SetValue("")
-			m.fixSearch.Blur()
+			m.fixSearch.close()
 			m.fixCursor = 0
 			return m, nil
 		case "enter":
@@ -151,8 +126,7 @@ func (m Model) updateFixtures(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		var cmd tea.Cmd
-		m.fixSearch, cmd = m.fixSearch.Update(msg)
+		cmd := m.fixSearch.update(msg)
 		m.clampFixCursor()
 		return m, cmd
 	}
@@ -163,9 +137,7 @@ func (m Model) updateFixtures(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "esc", "b":
 		return m.goMenu(), nil
 	case "/":
-		m.fixSearching = true
-		m.fixSearch.Focus()
-		return m, textinput.Blink
+		return m, m.fixSearch.open()
 	case "a":
 		m.fixShowAll = !m.fixShowAll
 		m.fixCursor = 0
@@ -207,9 +179,7 @@ func (m Model) viewFixtures() string {
 	}
 	out := titleStyle.Render("Fixtures") + labelStyle.Render("  ("+scope+")") + "\n\n"
 
-	if m.fixSearching || m.fixSearch.Value() != "" {
-		out += "  " + m.fixSearch.View() + "\n\n"
-	}
+	out += m.fixSearch.view()
 
 	if len(vis) == 0 {
 		out += helpStyle.Render("  no matches.\n")
@@ -218,7 +188,7 @@ func (m Model) viewFixtures() string {
 	}
 
 	help := "↑/↓: move · enter: bet · /: search · a: today/all · b: back · q: quit"
-	if m.fixSearching {
+	if m.fixSearch.active {
 		help = "type to filter · ↑/↓: move · enter: bet · esc: clear"
 	}
 	out += "\n" + statusLine(m) + helpStyle.Render(help)

@@ -91,6 +91,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		}
 		m.fixtures, m.fixCursor = fx, 0
 		m.rankRows, m.rankMatch = nil, nil
+		m.rankSearch = newSearchBox("filter teams…")
 		m.screen = screenMatchRank
 	case screenAddMatch:
 		m.initAddMatch()
@@ -102,6 +103,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.fixtures, m.resCursor, m.resMatch = fx, 0, nil
+		m.resSearch = newSearchBox("filter teams…")
 		m.screen = screenEnterResult
 	case screenAllBets:
 		grid, err := m.svc.AllBets(m.user)
@@ -110,6 +112,8 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.grid, m.screen = grid, screenAllBets
+		m.allCursor, m.allMatch = 0, nil
+		m.allSearch = newSearchBox("filter teams…")
 	}
 	return m, nil
 }
