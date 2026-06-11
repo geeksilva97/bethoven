@@ -22,13 +22,18 @@ import (
 // New builds a wish SSH server bound to the given service, listening on addr
 // (host:port) with a persistent host key at hostKeyPath.
 func New(svc *service.Service, addr, hostKeyPath string) (*ssh.Server, error) {
-	signer, err := ensureHostKey(hostKeyPath)
+	keyPEM, err := hostKeyPEM(hostKeyPath)
 	if err != nil {
 		return nil, err
 	}
 
-	srv, err := wish.NewServer(
+	// Pass the host key as a construction OPTION (not via AddHostKey afterward):
+	// wish.NewServer writes its own throwaway "id_ed25519" into the working dir
+	// if no host signer is set by the time it runs, so the key must be present
+	// during construction.
+	return wish.NewServer(
 		wish.WithAddress(addr),
+		wish.WithHostKeyPEM(keyPEM),
 		// Accept every public key at the transport layer; identity and
 		// authorization are resolved per-session from the key fingerprint.
 		ssh.PublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool { return true }),
@@ -41,11 +46,6 @@ func New(svc *service.Service, addr, hostKeyPath string) (*ssh.Server, error) {
 			logging.Middleware(),
 		),
 	)
-	if err != nil {
-		return nil, err
-	}
-	srv.AddHostKey(signer)
-	return srv, nil
 }
 
 // teaHandler resolves the connecting key to a user and builds the session's

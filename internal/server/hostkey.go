@@ -10,17 +10,21 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
-// ensureHostKey loads the server's persistent ed25519 host key from path,
+// hostKeyPEM loads the server's persistent ed25519 host key from path as PEM,
 // generating and writing one on first run. A stable host key is what lets
 // clients pin the server's identity (TOFU) and avoids spurious
 // "host key changed" warnings across redeploys.
-func ensureHostKey(path string) (gossh.Signer, error) {
+//
+// We return PEM (not a Signer) so it can be passed into wish.NewServer as a
+// construction option — that keeps wish from generating its own throwaway
+// "id_ed25519" key in the working directory.
+func hostKeyPEM(path string) ([]byte, error) {
 	if data, err := os.ReadFile(path); err == nil {
-		signer, err := gossh.ParsePrivateKey(data)
-		if err != nil {
+		// Validate it parses before trusting it.
+		if _, err := gossh.ParsePrivateKey(data); err != nil {
 			return nil, fmt.Errorf("parse host key %s: %w", path, err)
 		}
-		return signer, nil
+		return data, nil
 	}
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -31,12 +35,9 @@ func ensureHostKey(path string) (gossh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal host key: %w", err)
 	}
-	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+	data := pem.EncodeToMemory(block)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return nil, fmt.Errorf("write host key %s: %w", path, err)
 	}
-	signer, err := gossh.NewSignerFromKey(priv)
-	if err != nil {
-		return nil, fmt.Errorf("signer from host key: %w", err)
-	}
-	return signer, nil
+	return data, nil
 }
