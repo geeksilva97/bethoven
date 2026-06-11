@@ -89,7 +89,9 @@ BETHOVEN_ADMINS=SHA256:xxxx... make run
 ```
 
 A key in that list is auto-promoted to admin on connect (order doesn't matter —
-even if you registered as a player first) and skips the invite code.
+even if you registered as a player first) and skips the invite code. Removing a
+fingerprint from the list **revokes** admin on the next connect — the env
+allowlist is the source of truth.
 
 ## Configuration (env vars)
 

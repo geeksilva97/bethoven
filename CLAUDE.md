@@ -51,9 +51,15 @@ directly, with a fake clock, no terminal).
 - First connect with an **unknown key** -> registration screen (invite code +
   display name). Wrong code -> rejected, no user created. Admin keys skip the code.
 - **Admins** are set via `BETHOVEN_ADMINS` (comma-separated fingerprints from
-  `ssh-keygen -lf key.pub`). `service.Resolve` **auto-promotes** an allowlisted key
-  to admin on connect — so order doesn't matter (you can register as a player first,
-  add your fingerprint later, and you're upgraded on next connect).
+  `ssh-keygen -lf key.pub`). `service.Resolve` **reconciles the role both ways** on
+  connect: an allowlisted key is promoted to admin, and a stored admin no longer in
+  the list is **demoted** to player. The env allowlist is the single source of
+  truth — add a fingerprint and connect (order doesn't matter); remove it and the
+  next connect revokes admin.
+- **Display names** are validated server-side in `Register`: rejected (not silently
+  stripped) if they contain control chars/ANSI escapes (`ErrBadName`) or duplicate an
+  existing name case-insensitively (`ErrNameTaken`). They're rendered into other
+  players' terminals, so this is a security boundary, not cosmetics.
 
 ## Run / test / build
 
