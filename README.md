@@ -52,9 +52,28 @@ Host bethoven
 ssh bethoven
 ```
 
-On first connect you'll be asked for the **invite code** (the organiser shares
-it) and a **display name**. After that, your key *is* you — no code or password
-again.
+The invite code is **not** a command-line flag — there's nothing to pass to
+`ssh`. On first connect a registration form appears in the terminal; you type
+the code into it:
+
+```
+┌─ BEThoven ───────────────────────────────┐
+│  Welcome! You're new here.                │
+│                                           │
+│  Invite code:  ••••••••••                 │
+│  Display name: Antonio                    │
+│                                           │
+│  tab: next field · enter: join · esc: quit│
+└───────────────────────────────────────────┘
+```
+
+- Type the **invite code** the organiser shared (it shows as dots — it's masked).
+- Press **Tab** (or ↓) to move to **Display name** and type your name.
+- Press **Enter** to join.
+
+That's a one-time step. After it, your key *is* you — every future `ssh bethoven`
+goes straight to the menu, no code or password again. (Admins are recognised by
+their key automatically and skip the invite-code field entirely.)
 
 **4. Play:**
 
