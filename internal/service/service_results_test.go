@@ -165,6 +165,62 @@ func TestMyResultsIsolation(t *testing.T) {
 	}
 }
 
+// TestMyResultsMultiMatchNoLeak verifies that across several matches, a player
+// sees a row per match with their own bet (or nil where they didn't bet), and
+// never another player's pick.
+func TestMyResultsMultiMatchNoLeak(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
+	m1 := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
+	m2 := addMatch(t, store, svc.tournamentID, base.Add(2*time.Hour))
+
+	_ = svc.PlaceBet(alice.ID, m1, 1, 0, false) // Alice bets m1 only
+	_ = svc.PlaceBet(bob.ID, m1, 3, 3, true)    // Bob bets m1
+	_ = svc.PlaceBet(bob.ID, m2, 0, 0, false)   // Bob bets m2
+
+	rows, _, err := svc.MyResults(alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected a row per match (2), got %d", len(rows))
+	}
+	for _, r := range rows {
+		switch r.Match.ID {
+		case m1:
+			if r.Bet == nil || r.Bet.UserID != alice.ID || r.Bet.PredA != 1 {
+				t.Errorf("m1 should show Alice's own bet, got %+v", r.Bet)
+			}
+		case m2:
+			if r.Bet != nil {
+				t.Errorf("m2 should be un-bet for Alice (nil), got %+v", r.Bet)
+			}
+		}
+	}
+}
+
+// TestEnterResultValidation checks admin result entry rejects bad scores and
+// unknown matches, and that a nil requester is forbidden.
+func TestEnterResultValidation(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	admin, _ := svc.Register(adminFP, "", "Boss")
+	mid := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
+
+	if err := svc.EnterResult(admin, mid, -1, 0); !errors.Is(err, ErrInvalidScore) {
+		t.Errorf("negative score should be rejected, got %v", err)
+	}
+	if err := svc.EnterResult(admin, mid, 0, 100); !errors.Is(err, ErrInvalidScore) {
+		t.Errorf("out-of-range score should be rejected, got %v", err)
+	}
+	if err := svc.EnterResult(admin, 9999, 1, 0); !errors.Is(err, ErrMatchNotFound) {
+		t.Errorf("unknown match should be ErrMatchNotFound, got %v", err)
+	}
+	if err := svc.EnterResult(nil, mid, 1, 0); !errors.Is(err, ErrForbidden) {
+		t.Errorf("nil requester should be forbidden, got %v", err)
+	}
+}
+
 // TestAllBetsRequiresAdmin verifies the all-bets grid is admin-gated in the
 // service itself — a player cannot reach it.
 func TestAllBetsRequiresAdmin(t *testing.T) {

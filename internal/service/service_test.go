@@ -177,6 +177,18 @@ func TestResolveDemotesRemovedAdmin(t *testing.T) {
 	}
 }
 
+func TestResolvePassthroughForPlayer(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	created, _ := svc.Register("SHA256:plain", testInvite, "Plain")
+	got, err := svc.Resolve("SHA256:plain")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.Role != models.RolePlayer || got.ID != created.ID {
+		t.Errorf("non-admin should pass through unchanged, got %+v", got)
+	}
+}
+
 func TestLookupUnknownKey(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	if _, err := svc.Lookup("SHA256:ghost"); !errors.Is(err, db.ErrNotFound) {

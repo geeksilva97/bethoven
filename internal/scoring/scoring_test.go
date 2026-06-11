@@ -49,6 +49,33 @@ func TestPoints(t *testing.T) {
 	}
 }
 
+// TestPointsEdges covers boundary cases the main matrix skips: 0-0, high
+// scores, and the over/under boundary again from the 0-0 side.
+func TestPointsEdges(t *testing.T) {
+	tests := []struct {
+		name         string
+		predA, predB int
+		bonusOver    bool
+		match        models.Match
+		want         int
+	}{
+		{"0-0 exact, under correct", 0, 0, false, finished(0, 0), 4}, // exact 3 + under bonus 1
+		{"0-0 exact, bonus wrong", 0, 0, true, finished(0, 0), 3},    // exact 3, predicted over (wrong)
+		{"draw result, bonus right", 2, 2, false, finished(0, 0), 2}, // draw result 1 + under bonus 1
+		{"high score exact over", 5, 4, true, finished(5, 4), 4},     // exact 3 + over bonus 1
+		{"high score result only", 9, 0, true, finished(4, 1), 2},    // home win 1 + over bonus 1
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			bet := models.Bet{PredA: tc.predA, PredB: tc.predB, BonusOver: tc.bonusOver}
+			if got := Points(bet, tc.match); got != tc.want {
+				t.Errorf("Points(%d-%d over=%v vs %d-%d)=%d, want %d",
+					tc.predA, tc.predB, tc.bonusOver, *tc.match.ScoreA, *tc.match.ScoreB, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPointsUnfinishedIsZero(t *testing.T) {
 	bet := models.Bet{PredA: 2, PredB: 1, BonusOver: true}
 	if got := Points(bet, models.Match{Finished: false}); got != 0 {
@@ -56,7 +83,10 @@ func TestPointsUnfinishedIsZero(t *testing.T) {
 	}
 	a := 2
 	if got := Points(bet, models.Match{Finished: true, ScoreA: &a, ScoreB: nil}); got != 0 {
-		t.Errorf("match with missing score should score 0, got %d", got)
+		t.Errorf("match with missing away score should score 0, got %d", got)
+	}
+	if got := Points(bet, models.Match{Finished: true, ScoreA: nil, ScoreB: &a}); got != 0 {
+		t.Errorf("match with missing home score should score 0, got %d", got)
 	}
 }
 
