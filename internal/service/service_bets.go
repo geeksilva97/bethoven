@@ -38,7 +38,7 @@ func (s *Service) MyBet(userID, matchID int64) (*models.Bet, error) {
 // kickoff lock using the injected clock — the single most important rule — so a
 // bet is rejected the instant the match's start time has passed. The server
 // clock is the only authority; nothing client-supplied is trusted.
-func (s *Service) PlaceBet(userID, matchID, predA, predB int64, bonusOver bool) error {
+func (s *Service) PlaceBet(userID, matchID, predA, predB int64) error {
 	if predA < 0 || predA > 99 || predB < 0 || predB > 99 {
 		return ErrInvalidScore
 	}
@@ -60,11 +60,10 @@ func (s *Service) PlaceBet(userID, matchID, predA, predB int64, bonusOver bool) 
 	}
 
 	if err := s.store.UpsertBet(models.Bet{
-		UserID:    userID,
-		MatchID:   matchID,
-		PredA:     int(predA),
-		PredB:     int(predB),
-		BonusOver: bonusOver,
+		UserID:  userID,
+		MatchID: matchID,
+		PredA:   int(predA),
+		PredB:   int(predB),
 	}, s.clock.Now().UTC()); err != nil {
 		return fmt.Errorf("place bet: %w", err)
 	}

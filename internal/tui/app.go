@@ -61,7 +61,6 @@ type Model struct {
 	betMatch  models.Match
 	betInputs []textinput.Model
 	betFocus  int
-	betOver   bool
 
 	// my results
 	myRows  []service.MatchResult

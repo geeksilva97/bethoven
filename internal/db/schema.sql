@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS bets (
     match_id   INTEGER NOT NULL REFERENCES matches(id),
     pred_a     INTEGER NOT NULL,
     pred_b     INTEGER NOT NULL,
-    bonus_over INTEGER NOT NULL DEFAULT 0,
     created_at TEXT    NOT NULL,
     updated_at TEXT    NOT NULL,
     UNIQUE(user_id, match_id)

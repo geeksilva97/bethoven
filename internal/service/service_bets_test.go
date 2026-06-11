@@ -32,27 +32,27 @@ func TestKickoffLock(t *testing.T) {
 	mid := addMatch(t, store, svc.tournamentID, kickoff)
 
 	// Before kickoff: accepted.
-	if err := svc.PlaceBet(user.ID, mid, 2, 1, true); err != nil {
+	if err := svc.PlaceBet(user.ID, mid, 2, 1); err != nil {
 		t.Fatalf("pre-kickoff bet should succeed: %v", err)
 	}
 	// Still before kickoff: editable.
-	if err := svc.PlaceBet(user.ID, mid, 3, 0, false); err != nil {
+	if err := svc.PlaceBet(user.ID, mid, 3, 0); err != nil {
 		t.Fatalf("pre-kickoff edit should succeed: %v", err)
 	}
 	got, _ := svc.MyBet(user.ID, mid)
-	if got == nil || got.PredA != 3 || got.PredB != 0 || got.BonusOver {
+	if got == nil || got.PredA != 3 || got.PredB != 0 {
 		t.Errorf("edit not persisted: %+v", got)
 	}
 
 	// Advance to exactly kickoff: locked.
 	fc.T = kickoff
-	if err := svc.PlaceBet(user.ID, mid, 1, 1, true); !errors.Is(err, ErrMatchLocked) {
+	if err := svc.PlaceBet(user.ID, mid, 1, 1); !errors.Is(err, ErrMatchLocked) {
 		t.Errorf("bet at kickoff should be locked, got %v", err)
 	}
 
 	// Past kickoff: still locked, and the stored bet is unchanged.
 	fc.Add(time.Hour)
-	if err := svc.PlaceBet(user.ID, mid, 0, 5, true); !errors.Is(err, ErrMatchLocked) {
+	if err := svc.PlaceBet(user.ID, mid, 0, 5); !errors.Is(err, ErrMatchLocked) {
 		t.Errorf("bet after kickoff should be locked, got %v", err)
 	}
 	got, _ = svc.MyBet(user.ID, mid)
@@ -66,10 +66,10 @@ func TestPlaceBetValidatesScores(t *testing.T) {
 	user, _ := svc.Register("SHA256:p", testInvite, "Player")
 	mid := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
 
-	if err := svc.PlaceBet(user.ID, mid, -1, 0, false); !errors.Is(err, ErrInvalidScore) {
+	if err := svc.PlaceBet(user.ID, mid, -1, 0); !errors.Is(err, ErrInvalidScore) {
 		t.Errorf("negative score should be rejected, got %v", err)
 	}
-	if err := svc.PlaceBet(user.ID, mid, 0, 100, false); !errors.Is(err, ErrInvalidScore) {
+	if err := svc.PlaceBet(user.ID, mid, 0, 100); !errors.Is(err, ErrInvalidScore) {
 		t.Errorf("out-of-range score should be rejected, got %v", err)
 	}
 }
@@ -87,7 +87,7 @@ func TestCannotBetFinishedMatch(t *testing.T) {
 		t.Fatalf("EnterResult: %v", err)
 	}
 
-	if err := svc.PlaceBet(user.ID, mid, 2, 2, false); !errors.Is(err, ErrMatchLocked) {
+	if err := svc.PlaceBet(user.ID, mid, 2, 2); !errors.Is(err, ErrMatchLocked) {
 		t.Errorf("betting a finished match must be locked, got %v", err)
 	}
 }
@@ -95,7 +95,7 @@ func TestCannotBetFinishedMatch(t *testing.T) {
 func TestPlaceBetUnknownMatch(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	user, _ := svc.Register("SHA256:p", testInvite, "Player")
-	if err := svc.PlaceBet(user.ID, 9999, 1, 0, false); !errors.Is(err, ErrMatchNotFound) {
+	if err := svc.PlaceBet(user.ID, 9999, 1, 0); !errors.Is(err, ErrMatchNotFound) {
 		t.Errorf("expected ErrMatchNotFound, got %v", err)
 	}
 }

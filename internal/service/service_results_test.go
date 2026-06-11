@@ -19,12 +19,12 @@ func TestScoringEndToEnd(t *testing.T) {
 	kickoff := base.Add(time.Hour)
 	mid := addMatch(t, store, svc.tournamentID, kickoff)
 
-	// Alice nails the exact score (2-1, over 2.5) -> 4. Bob gets the result
-	// only (home win) with wrong bonus -> 1.
-	if err := svc.PlaceBet(alice.ID, mid, 2, 1, true); err != nil {
+	// Alice nails the exact score (2-1) -> 3. Bob gets the result only
+	// (home win, wrong scoreline) -> 1.
+	if err := svc.PlaceBet(alice.ID, mid, 2, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.PlaceBet(bob.ID, mid, 3, 0, false); err != nil {
+	if err := svc.PlaceBet(bob.ID, mid, 3, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -39,14 +39,14 @@ func TestScoringEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 4 {
-		t.Errorf("Alice total = %d, want 4", total)
+	if total != 3 {
+		t.Errorf("Alice total = %d, want 3", total)
 	}
-	if len(rows) != 1 || rows[0].Points != 4 {
-		t.Errorf("Alice row points = %+v, want 4", rows)
+	if len(rows) != 1 || rows[0].Points != 3 {
+		t.Errorf("Alice row points = %+v, want 3", rows)
 	}
 
-	// Leaderboard: Alice (4) ahead of Bob (1); admin (0) last.
+	// Leaderboard: Alice (3) ahead of Bob (1); admin (0) last.
 	board, err := svc.Leaderboard()
 	if err != nil {
 		t.Fatal(err)
@@ -54,8 +54,8 @@ func TestScoringEndToEnd(t *testing.T) {
 	if len(board) != 3 {
 		t.Fatalf("expected 3 standings, got %d", len(board))
 	}
-	if board[0].User.ID != alice.ID || board[0].Total != 4 {
-		t.Errorf("leader = %+v, want Alice/4", board[0])
+	if board[0].User.ID != alice.ID || board[0].Total != 3 {
+		t.Errorf("leader = %+v, want Alice/3", board[0])
 	}
 	if board[1].User.ID != bob.ID || board[1].Total != 1 {
 		t.Errorf("second = %+v, want Bob/1", board[1])
@@ -72,9 +72,9 @@ func TestMatchLeaderboard(t *testing.T) {
 	kickoff := base.Add(time.Hour)
 	mid := addMatch(t, store, svc.tournamentID, kickoff)
 
-	// Bob exact (4), Alice result-only (1). Admin didn't bet.
-	_ = svc.PlaceBet(bob.ID, mid, 2, 1, true)
-	_ = svc.PlaceBet(alice.ID, mid, 3, 0, false)
+	// Bob exact (3), Alice result-only (1). Admin didn't bet.
+	_ = svc.PlaceBet(bob.ID, mid, 2, 1)
+	_ = svc.PlaceBet(alice.ID, mid, 3, 0)
 	fc.T = kickoff.Add(time.Hour)
 	if err := svc.EnterResult(admin, mid, 2, 1); err != nil {
 		t.Fatal(err)
@@ -90,8 +90,8 @@ func TestMatchLeaderboard(t *testing.T) {
 	if len(rows) != 2 { // only bettors appear
 		t.Fatalf("expected 2 rows (bettors only), got %d", len(rows))
 	}
-	if rows[0].User.ID != bob.ID || rows[0].Points != 4 {
-		t.Errorf("game winner = %+v, want Bob/4", rows[0])
+	if rows[0].User.ID != bob.ID || rows[0].Points != 3 {
+		t.Errorf("game winner = %+v, want Bob/3", rows[0])
 	}
 	if rows[1].User.ID != alice.ID || rows[1].Points != 1 {
 		t.Errorf("runner-up = %+v, want Alice/1", rows[1])
@@ -109,8 +109,8 @@ func TestMatchLeaderboardHidesPicksUntilFinished(t *testing.T) {
 	kickoff := base.Add(time.Hour)
 	mid := addMatch(t, store, svc.tournamentID, kickoff)
 
-	_ = svc.PlaceBet(alice.ID, mid, 2, 1, true)
-	_ = svc.PlaceBet(bob.ID, mid, 0, 0, false)
+	_ = svc.PlaceBet(alice.ID, mid, 2, 1)
+	_ = svc.PlaceBet(bob.ID, mid, 0, 0)
 
 	// Before any result exists, NO rows (no picks) may come back.
 	m, rows, err := svc.MatchLeaderboard(mid)
@@ -146,10 +146,10 @@ func TestMyResultsIsolation(t *testing.T) {
 	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
 	mid := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
 
-	if err := svc.PlaceBet(alice.ID, mid, 1, 0, false); err != nil {
+	if err := svc.PlaceBet(alice.ID, mid, 1, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.PlaceBet(bob.ID, mid, 0, 3, true); err != nil {
+	if err := svc.PlaceBet(bob.ID, mid, 0, 3); err != nil {
 		t.Fatal(err)
 	}
 
@@ -175,9 +175,9 @@ func TestMyResultsMultiMatchNoLeak(t *testing.T) {
 	m1 := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
 	m2 := addMatch(t, store, svc.tournamentID, base.Add(2*time.Hour))
 
-	_ = svc.PlaceBet(alice.ID, m1, 1, 0, false) // Alice bets m1 only
-	_ = svc.PlaceBet(bob.ID, m1, 3, 3, true)    // Bob bets m1
-	_ = svc.PlaceBet(bob.ID, m2, 0, 0, false)   // Bob bets m2
+	_ = svc.PlaceBet(alice.ID, m1, 1, 0) // Alice bets m1 only
+	_ = svc.PlaceBet(bob.ID, m1, 3, 3)   // Bob bets m1
+	_ = svc.PlaceBet(bob.ID, m2, 0, 0)   // Bob bets m2
 
 	rows, _, err := svc.MyResults(alice.ID)
 	if err != nil {
@@ -228,7 +228,7 @@ func TestAllBetsRequiresAdmin(t *testing.T) {
 	player, _ := svc.Register("SHA256:p", testInvite, "Player")
 	admin, _ := svc.Register(adminFP, "", "Boss")
 	mid := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
-	_ = svc.PlaceBet(player.ID, mid, 1, 1, false)
+	_ = svc.PlaceBet(player.ID, mid, 1, 1)
 
 	if _, err := svc.AllBets(player); !errors.Is(err, ErrForbidden) {
 		t.Errorf("player must not access all-bets grid, got %v", err)

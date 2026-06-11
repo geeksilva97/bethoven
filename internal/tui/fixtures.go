@@ -10,8 +10,8 @@ import (
 	"bethoven/internal/models"
 )
 
-// todayWindow is how far ahead the default ("today") fixtures view looks.
-const todayWindow = 24 * time.Hour
+// todayWindow is how far ahead the default fixtures view looks (the next 48h).
+const todayWindow = 48 * time.Hour
 
 // matchLine renders one fixture row for a list, marking lock state. The selected
 // row is drawn as a solid gold bar so it's unmistakable on any terminal.
@@ -173,9 +173,9 @@ func (m Model) betFromList(vis []models.Match) (tea.Model, tea.Cmd) {
 func (m Model) viewFixtures() string {
 	vis := m.visibleFixtures()
 
-	scope := "today · a: all"
+	scope := "next 48h · a: all"
 	if m.fixShowAll {
-		scope = "all · a: today"
+		scope = "all · a: 48h"
 	}
 	out := titleStyle.Render("Fixtures") + labelStyle.Render("  ("+scope+")") + "\n\n"
 

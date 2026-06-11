@@ -57,15 +57,14 @@ type Match struct {
 	Finished     bool
 }
 
-// Bet is a user's prediction for a match: a scoreline plus an over/under-2.5
-// bonus pick. One editable bet per (user, match) until kickoff.
+// Bet is a user's prediction for a match: a scoreline. One editable bet per
+// (user, match) until kickoff.
 type Bet struct {
 	ID        int64
 	UserID    int64
 	MatchID   int64
 	PredA     int
 	PredB     int
-	BonusOver bool // true = predicting total goals > 2.5
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

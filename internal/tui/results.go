@@ -7,16 +7,12 @@ import (
 	"bethoven/internal/models"
 )
 
-// fmtPick renders a player's pick compactly, e.g. "2-1 O".
+// fmtPick renders a player's pick compactly, e.g. "2-1".
 func fmtPick(b *models.Bet) string {
 	if b == nil {
 		return "—"
 	}
-	ou := "U"
-	if b.BonusOver {
-		ou = "O"
-	}
-	return fmt.Sprintf("%d-%d %s", b.PredA, b.PredB, ou)
+	return fmt.Sprintf("%d-%d", b.PredA, b.PredB)
 }
 
 // fmtResult renders a match's final score, or "—" if not played.

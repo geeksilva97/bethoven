@@ -14,13 +14,11 @@ import (
 func (m Model) openBet(mt models.Match) Model {
 	m.betMatch = mt
 	m.betFocus = 0
-	m.betOver = false
 
 	a, b := "", ""
 	if existing, _ := m.svc.MyBet(m.user.ID, mt.ID); existing != nil {
 		a = strconv.Itoa(existing.PredA)
 		b = strconv.Itoa(existing.PredB)
-		m.betOver = existing.BonusOver
 	}
 	ia, ib := scoreInput(a), scoreInput(b)
 	ia.Focus()
@@ -58,9 +56,6 @@ func (m Model) updateBet(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.betFocus = (m.betFocus + 1) % 2
 		m.focusBet()
 		return m, nil
-	case " ", "o":
-		m.betOver = !m.betOver
-		return m, nil
 	case "enter":
 		return m.submitBet()
 	}
@@ -86,20 +81,13 @@ func (m Model) submitBet() (tea.Model, tea.Cmd) {
 		m.setStatus("enter whole numbers for both scores", true)
 		return m, nil
 	}
-	if err := m.svc.PlaceBet(m.user.ID, m.betMatch.ID, int64(a), int64(b), m.betOver); err != nil {
+	if err := m.svc.PlaceBet(m.user.ID, m.betMatch.ID, int64(a), int64(b)); err != nil {
 		m.setStatus(err.Error(), true)
 		return m, nil
 	}
 	mdl := m.goMenu()
-	mdl.setStatus(fmt.Sprintf("pick saved: %s %d-%d %s", m.betMatch.TeamA, a, b, overLabel(m.betOver)), false)
+	mdl.setStatus(fmt.Sprintf("pick saved: %s %d-%d %s", m.betMatch.TeamA, a, b, m.betMatch.TeamB), false)
 	return mdl, nil
-}
-
-func overLabel(over bool) string {
-	if over {
-		return "(over 2.5)"
-	}
-	return "(under 2.5)"
 }
 
 func (m Model) viewBet() string {
@@ -113,19 +101,10 @@ func (m Model) viewBet() string {
 
 	out += "  " + m.betScoreField(0, mt.TeamA) + "   " + m.betScoreField(1, mt.TeamB) + "\n\n"
 
-	out += "  " + labelStyle.Render("Total goals:") + "  " + overOption(m.betOver) + "\n\n"
-	out += statusLine(m) + helpStyle.Render("type scores · tab: switch · space: toggle over/under · enter: save · b: back")
+	out += statusLine(m) + helpStyle.Render("type scores · tab: switch · enter: save · b: back")
 	return out
 }
 
 func (m Model) betScoreField(i int, team string) string {
 	return scoreField(m.betInputs[i], team, i == m.betFocus)
-}
-
-func overOption(over bool) string {
-	o, u := "Over 2.5", "Under 2.5"
-	if over {
-		return cursorOn.Render("("+o+")") + "  " + labelStyle.Render(u)
-	}
-	return labelStyle.Render(o) + "  " + cursorOn.Render("("+u+")")
 }
