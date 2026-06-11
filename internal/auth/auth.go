@@ -4,6 +4,8 @@
 package auth
 
 import (
+	"crypto/subtle"
+
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -25,7 +27,11 @@ func IsAdmin(fingerprint string, admins []string) bool {
 }
 
 // ValidInvite reports whether the supplied code matches the configured invite
-// code. An empty configured code rejects everything (fail closed).
+// code. An empty configured code rejects everything (fail closed). The
+// comparison is constant-time to avoid leaking the code via timing.
 func ValidInvite(supplied, configured string) bool {
-	return configured != "" && supplied == configured
+	if configured == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(supplied), []byte(configured)) == 1
 }
