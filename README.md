@@ -186,3 +186,7 @@ internal/tui        terminal UI (presentation only)
 The server and TUI are thin; every rule lives in `service`, which depends only
 on the store and a clock. That seam is what makes the kickoff lock and scoring
 testable against a real DB with deterministic time.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
