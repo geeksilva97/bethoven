@@ -70,9 +70,12 @@ func (s *Service) MyResults(userID int64) ([]MatchResult, int, error) {
 
 // MatchLeaderboard ranks every player by the points they earned on a single
 // match — the "who nailed this game" view. Players who bet on the match are
-// ranked by points (desc) then name; players who didn't bet are omitted. Note
-// this exposes individual picks, so the TUI only shows it once the match has a
-// result (by which point everything is locked anyway).
+// ranked by points (desc) then name; players who didn't bet are omitted.
+//
+// This view exposes individual picks, so it is gated server-side: until the
+// match has a recorded result, it returns the match with NO rows — picks are
+// never fetched across the trust boundary for an unstarted/ongoing game. (The
+// TUI also hides them, as defense in depth, but the rule lives here.)
 func (s *Service) MatchLeaderboard(matchID int64) (*models.Match, []MatchStanding, error) {
 	m, err := s.store.MatchByID(matchID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -80,6 +83,11 @@ func (s *Service) MatchLeaderboard(matchID int64) (*models.Match, []MatchStandin
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Gate: don't reveal anyone's picks before the match has a result.
+	if !m.Finished {
+		return m, nil, nil
 	}
 
 	bets, err := s.store.BetsForMatch(matchID)

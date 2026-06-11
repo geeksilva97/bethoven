@@ -98,6 +98,46 @@ func TestMatchLeaderboard(t *testing.T) {
 	}
 }
 
+// TestMatchLeaderboardHidesPicksUntilFinished verifies the service refuses to
+// return any individual picks for a match that has no result yet — the
+// disclosure gate lives in the service, not just the TUI.
+func TestMatchLeaderboardHidesPicksUntilFinished(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
+	admin, _ := svc.Register(adminFP, "", "Boss")
+	kickoff := base.Add(time.Hour)
+	mid := addMatch(t, store, svc.tournamentID, kickoff)
+
+	_ = svc.PlaceBet(alice.ID, mid, 2, 1, true)
+	_ = svc.PlaceBet(bob.ID, mid, 0, 0, false)
+
+	// Before any result exists, NO rows (no picks) may come back.
+	m, rows, err := svc.MatchLeaderboard(mid)
+	if err != nil {
+		t.Fatalf("MatchLeaderboard (unfinished): %v", err)
+	}
+	if m.ID != mid {
+		t.Errorf("wrong match: %d", m.ID)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("unfinished match must expose 0 picks, got %d rows: %+v", len(rows), rows)
+	}
+
+	// After a result, picks are revealed and ranked.
+	fc.T = kickoff.Add(time.Hour)
+	if err := svc.EnterResult(admin, mid, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+	_, rows, err = svc.MatchLeaderboard(mid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Errorf("finished match should reveal both bettors, got %d", len(rows))
+	}
+}
+
 // TestMyResultsIsolation verifies a player's results contain only their own
 // bets, never another player's picks.
 func TestMyResultsIsolation(t *testing.T) {
