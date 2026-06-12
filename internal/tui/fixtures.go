@@ -177,7 +177,7 @@ func (m Model) viewFixtures() string {
 	if m.fixShowAll {
 		scope = "all · a: 48h"
 	}
-	out := titleStyle.Render("Fixtures") + labelStyle.Render("  ("+scope+")") + "\n\n"
+	out := titleStyle.Render("Place / edit bets") + labelStyle.Render("  ("+scope+")") + "\n\n"
 
 	out += m.fixSearch.view()
 

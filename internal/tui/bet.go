@@ -47,7 +47,10 @@ func (m Model) updateBet(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch key.String() {
 	case "esc", "b":
-		return m.goMenu(), nil
+		// Back to the fixtures list we opened this from, not the main menu.
+		m.screen = screenFixtures
+		m.status = ""
+		return m, nil
 	case "tab", "down", "right":
 		m.betFocus = (m.betFocus + 1) % 2
 		m.focusBet()
@@ -85,9 +88,12 @@ func (m Model) submitBet() (tea.Model, tea.Cmd) {
 		m.setStatus(err.Error(), true)
 		return m, nil
 	}
-	mdl := m.goMenu()
-	mdl.setStatus(fmt.Sprintf("pick saved: %s %d-%d %s", m.betMatch.TeamA, a, b, m.betMatch.TeamB), false)
-	return mdl, nil
+	// Back to the fixtures list (where we came from), not all the way to the
+	// menu — cursor and filters are still in m, so the user lands right where
+	// they were, with a confirmation.
+	m.screen = screenFixtures
+	m.setStatus(fmt.Sprintf("pick saved: %s %d-%d %s", m.betMatch.TeamA, a, b, m.betMatch.TeamB), false)
+	return m, nil
 }
 
 func (m Model) viewBet() string {
