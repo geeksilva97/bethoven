@@ -17,7 +17,7 @@ const todayWindow = 48 * time.Hour
 // row is drawn as a solid gold bar so it's unmistakable on any terminal.
 func (m Model) matchLine(mt models.Match, selected bool) string {
 	when := fmtKickoff(mt.StartsAt)
-	label := fmt.Sprintf("%-14s v %-14s  %s", mt.TeamA, mt.TeamB, when)
+	label := fmt.Sprintf("%s v %s  %s", teamCell(mt.TeamA, 17), teamCell(mt.TeamB, 17), when)
 	if mt.GroupLabel != "" {
 		label += "  " + mt.GroupLabel
 	}

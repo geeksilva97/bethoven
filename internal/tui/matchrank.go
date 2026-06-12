@@ -113,7 +113,7 @@ func (m Model) viewMatchRank() string {
 
 	// display mode
 	mt := *m.rankMatch
-	out := titleStyle.Render(fmt.Sprintf("%s v %s", mt.TeamA, mt.TeamB))
+	out := titleStyle.Render(fmt.Sprintf("%s v %s", withFlag(mt.TeamA), withFlag(mt.TeamB)))
 	out += labelStyle.Render("   result: "+fmtResult(mt)) + "\n\n"
 	if !mt.Finished {
 		out += lockStyle.Render("Picks are revealed once the match has a result.\n")
