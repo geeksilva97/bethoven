@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS bets (
     UNIQUE(user_id, match_id)
 );
 
+-- Runtime-mutable key/value settings, toggled live by admins (e.g. public_bets).
+-- Distinct from BETHOVEN_* env config, which is immutable and read once at boot.
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_matches_tournament ON matches(tournament_id);
 CREATE INDEX IF NOT EXISTS idx_bets_match ON bets(match_id);
 CREATE INDEX IF NOT EXISTS idx_bets_user ON bets(user_id);

@@ -66,19 +66,51 @@ func (s *Service) EnterResult(by *models.User, matchID int64, scoreA, scoreB int
 	return nil
 }
 
-// AllBets builds the admin grid of every player's bets and points. Admin only.
+// AllBets builds the admin grid of every player's bets and points, across every
+// match (including upcoming ones). Admin only.
 func (s *Service) AllBets(by *models.User) (*AllBetsGrid, error) {
 	if err := requireAdmin(by); err != nil {
 		return nil, err
 	}
+	return s.buildBetsGrid(func(models.Match) bool { return true })
+}
 
-	matches, err := s.store.ListMatches(s.tournamentID)
+// PublicBetsGrid is the player-facing all-bets view, available only when an
+// admin has enabled the public_bets setting (admins may always view it). To
+// preserve blind betting it reveals a match's picks only once it has kicked off
+// (or finished) — upcoming matches are omitted entirely, so picks are never
+// exposed across the trust boundary before kickoff.
+func (s *Service) PublicBetsGrid(by *models.User) (*AllBetsGrid, error) {
+	if requireAdmin(by) != nil {
+		enabled, err := s.PublicBetsEnabled()
+		if err != nil {
+			return nil, err
+		}
+		if !enabled {
+			return nil, ErrForbidden
+		}
+	}
+	return s.buildBetsGrid(func(m models.Match) bool {
+		return m.Finished || !s.Now().Before(m.StartsAt)
+	})
+}
+
+// buildBetsGrid assembles the bets grid for the active tournament, including
+// only matches for which reveal returns true. Per-player totals are unaffected
+// by hiding matches: a hidden match is always unstarted and so scores 0 points.
+func (s *Service) buildBetsGrid(reveal func(models.Match) bool) (*AllBetsGrid, error) {
+	all, err := s.store.ListMatches(s.tournamentID)
 	if err != nil {
 		return nil, err
 	}
-	matchByID := make(map[int64]models.Match, len(matches))
-	for _, m := range matches {
+	matchByID := make(map[int64]models.Match, len(all))
+	matches := make([]models.Match, 0, len(all))
+	for _, m := range all {
+		if !reveal(m) {
+			continue
+		}
 		matchByID[m.ID] = m
+		matches = append(matches, m)
 	}
 	users, err := s.store.AllUsers()
 	if err != nil {
@@ -98,7 +130,7 @@ func (s *Service) AllBets(by *models.User) (*AllBetsGrid, error) {
 	for _, b := range bets {
 		m, ok := matchByID[b.MatchID]
 		if !ok {
-			continue
+			continue // match hidden (not yet revealed) — skip its cells
 		}
 		pts := scoring.Points(b, m)
 		if grid.Cells[b.MatchID] == nil {
