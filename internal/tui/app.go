@@ -51,6 +51,10 @@ type Model struct {
 	// fixtures list
 	fixtures  []models.Match
 	fixCursor int
+	// myBets maps match id -> the user's current pick, so the bet list can mark
+	// games already bet on. Refreshed when the fixtures screen is entered and
+	// after each save.
+	myBets map[int64]models.Bet
 
 	// fixtures filtering (bet screen only): default shows the next-24h window;
 	// fixShowAll toggles the full schedule; fixSearch is the live "/" filter.

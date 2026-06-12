@@ -66,7 +66,12 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			m.setStatus(err.Error(), true)
 			return m, nil
 		}
-		m.fixtures, m.screen = fx, screenFixtures
+		bets, err := m.svc.MyBets(m.user.ID)
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.fixtures, m.myBets, m.screen = fx, bets, screenFixtures
 		m.resetFixFilter()
 	case screenMyResults:
 		rows, total, err := m.svc.MyResults(m.user.ID)

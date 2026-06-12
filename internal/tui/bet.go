@@ -88,6 +88,16 @@ func (m Model) submitBet() (tea.Model, tea.Cmd) {
 		m.setStatus(err.Error(), true)
 		return m, nil
 	}
+	// Reflect the new pick in the list marker without a round-trip to the DB.
+	if m.myBets == nil {
+		m.myBets = make(map[int64]models.Bet)
+	}
+	m.myBets[m.betMatch.ID] = models.Bet{
+		UserID:  m.user.ID,
+		MatchID: m.betMatch.ID,
+		PredA:   a,
+		PredB:   b,
+	}
 	// Back to the fixtures list (where we came from), not all the way to the
 	// menu — cursor and filters are still in m, so the user lands right where
 	// they were, with a confirmation.

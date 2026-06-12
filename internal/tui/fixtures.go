@@ -23,12 +23,21 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 	}
 
 	locked := !m.svc.Now().Before(mt.StartsAt.UTC())
+	// The "your pick" marker only makes sense on the betting list, where myBets
+	// is freshly loaded; other screens reuse matchLine with a stale/empty map.
+	bet, hasBet := models.Bet{}, false
+	if m.screen == screenFixtures {
+		bet, hasBet = m.myBets[mt.ID]
+	}
+
 	tag := ""
 	switch {
 	case mt.Finished && mt.ScoreA != nil:
 		tag = fmt.Sprintf("  [%d-%d]", *mt.ScoreA, *mt.ScoreB)
 	case locked:
 		tag = "  🔒 locked"
+	case hasBet:
+		tag = fmt.Sprintf("  ✓ %d-%d", bet.PredA, bet.PredB)
 	}
 
 	if selected {
@@ -42,6 +51,8 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 		styledTag = okStyle.Render(tag)
 	case locked:
 		styledTag = lockStyle.Render(tag)
+	case hasBet:
+		styledTag = okStyle.Render(tag)
 	}
 	return "  " + labelStyle.Render(label) + styledTag
 }

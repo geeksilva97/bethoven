@@ -34,6 +34,20 @@ func (s *Service) MyBet(userID, matchID int64) (*models.Bet, error) {
 	return b, err
 }
 
+// MyBets returns the user's bets in the active tournament keyed by match id, so
+// the fixtures list can mark which games already have a pick.
+func (s *Service) MyBets(userID int64) (map[int64]models.Bet, error) {
+	bets, err := s.store.BetsForUser(userID, s.tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	byMatch := make(map[int64]models.Bet, len(bets))
+	for _, b := range bets {
+		byMatch[b.MatchID] = b
+	}
+	return byMatch, nil
+}
+
 // PlaceBet creates or updates a user's prediction for a match. It enforces the
 // kickoff lock using the injected clock — the single most important rule — so a
 // bet is rejected the instant the match's start time has passed. The server
