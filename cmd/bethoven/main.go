@@ -22,7 +22,7 @@ import (
 	"bethoven/internal/config"
 	"bethoven/internal/db"
 	"bethoven/internal/results"
-	"bethoven/internal/results/footballdata"
+	"bethoven/internal/results/espn"
 	"bethoven/internal/server"
 	"bethoven/internal/service"
 	"bethoven/internal/tui"
@@ -113,20 +113,14 @@ func main() {
 	}
 }
 
-// startResultsPoller launches the background results poller if enabled. A
-// missing API key is a misconfiguration, not a crash: we log and skip, leaving
-// results to be entered manually via the admin TUI.
+// startResultsPoller launches the background results poller if enabled. The
+// ESPN feed needs no API key, so enabling it is all the configuration there is.
 func startResultsPoller(ctx context.Context, cfg config.Results, svc *service.Service) {
 	if !cfg.Enabled {
 		return
 	}
-	if cfg.APIKey == "" {
-		log.Println("WARNING: BETHOVEN_RESULTS_ENABLED is set but BETHOVEN_RESULTS_API_KEY is empty — " +
-			"automatic results disabled; enter results via the admin TUI")
-		return
-	}
-	fetcher := footballdata.New(cfg.APIKey, cfg.Competition, "")
-	log.Printf("results: auto-update enabled (competition %s, every %s)", cfg.Competition, cfg.Interval)
+	fetcher := espn.New(cfg.League, "")
+	log.Printf("results: auto-update enabled (league %s, every %s)", cfg.League, cfg.Interval)
 	go results.RunPoller(ctx, fetcher, svc, cfg.Interval)
 }
 

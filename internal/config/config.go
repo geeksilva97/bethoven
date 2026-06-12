@@ -17,11 +17,11 @@ const DefaultInviteCode = "letmein"
 // BETHOVEN_TIMEZONE is unset. The reference deployment is a Brazilian pool.
 const DefaultTimezone = "America/Sao_Paulo"
 
-// Results defaults: the World Cup competition code and a poll cadence that sits
-// comfortably under football-data.org's free-tier rate limit.
+// Results defaults: ESPN's World Cup league slug and a gentle poll cadence
+// (the feed is final-only, so there's no reason to hammer it).
 const (
-	DefaultResultsCompetition = "WC"
-	DefaultResultsInterval    = 5 * time.Minute
+	DefaultResultsLeague   = "fifa.world"
+	DefaultResultsInterval = 5 * time.Minute
 )
 
 // Config holds everything the server needs to boot. Values come from
@@ -37,13 +37,13 @@ type Config struct {
 }
 
 // Results configures the background poller that pulls finished match results
-// from an external feed. Disabled by default: the server ships dormant and a
-// real deployment opts in by setting BETHOVEN_RESULTS_ENABLED + an API key.
+// from ESPN's public scoreboard. Disabled by default: the server ships dormant
+// and a real deployment opts in by setting BETHOVEN_RESULTS_ENABLED. No API key
+// — the ESPN endpoint is keyless.
 type Results struct {
-	Enabled     bool          // BETHOVEN_RESULTS_ENABLED
-	APIKey      string        // BETHOVEN_RESULTS_API_KEY (football-data.org token)
-	Competition string        // BETHOVEN_RESULTS_COMPETITION (default "WC")
-	Interval    time.Duration // BETHOVEN_RESULTS_INTERVAL (default 5m)
+	Enabled  bool          // BETHOVEN_RESULTS_ENABLED
+	League   string        // BETHOVEN_RESULTS_LEAGUE (ESPN slug, default "fifa.world")
+	Interval time.Duration // BETHOVEN_RESULTS_INTERVAL (default 5m)
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -64,10 +64,9 @@ func Load() Config {
 		Admins:      splitList(env("BETHOVEN_ADMINS", "")),
 		Timezone:    env("BETHOVEN_TIMEZONE", DefaultTimezone),
 		Results: Results{
-			Enabled:     env("BETHOVEN_RESULTS_ENABLED", "") == "true",
-			APIKey:      env("BETHOVEN_RESULTS_API_KEY", ""),
-			Competition: env("BETHOVEN_RESULTS_COMPETITION", DefaultResultsCompetition),
-			Interval:    envDuration("BETHOVEN_RESULTS_INTERVAL", DefaultResultsInterval),
+			Enabled:  env("BETHOVEN_RESULTS_ENABLED", "") == "true",
+			League:   env("BETHOVEN_RESULTS_LEAGUE", DefaultResultsLeague),
+			Interval: envDuration("BETHOVEN_RESULTS_INTERVAL", DefaultResultsInterval),
 		},
 	}
 }

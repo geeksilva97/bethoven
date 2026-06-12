@@ -1,7 +1,7 @@
 // Package results pulls finished match results from an external feed and feeds
 // them into the service so the leaderboard updates without an admin typing
 // scores. It holds the I/O-free types and the polling loop; concrete providers
-// (e.g. football-data.org) live in subpackages and implement Fetcher.
+// (e.g. ESPN) live in subpackages and implement Fetcher.
 //
 // The layering mirrors the rest of BEThoven: this package and its providers do
 // the I/O, while every betting/scoring rule stays in internal/service. The

@@ -26,19 +26,19 @@ func addTeamMatch(t *testing.T, store interface {
 func score(a, b int) *results.Score { return &results.Score{A: a, B: b} }
 
 // TestTeamNamesReconcile pins the verified team-name mismatches between the
-// football-data.org "WC" feed and fixtures.json: each pair must normalise to the
-// same canonical string, or reconciliation silently misses that match. Pairs
-// where the feed already agrees with us are included as a regression guard.
+// ESPN "fifa.world" scoreboard and fixtures.json: each pair must normalise to
+// the same canonical string, or reconciliation silently misses that match.
+// Pairs where ESPN already agrees with us are included as a regression guard.
 func TestTeamNamesReconcile(t *testing.T) {
 	pairs := []struct{ feed, ours string }{
 		{"Bosnia-Herzegovina", "Bosnia & Herzegovina"},
-		{"Cape Verde Islands", "Cape Verde"},
 		{"Congo DR", "DR Congo"},
 		{"Czechia", "Czech Republic"},
 		{"United States", "USA"},
-		{"South Korea", "South Korea"},
-		{"Ivory Coast", "Ivory Coast"},
-		{"Türkiye", "Turkey"}, // defensive: feed currently says "Turkey", but guard the alternate
+		{"Türkiye", "Turkey"},
+		{"Cape Verde", "Cape Verde"},   // ESPN agrees — guard against drift
+		{"South Korea", "South Korea"}, // ESPN agrees — guard against drift
+		{"Ivory Coast", "Ivory Coast"}, // ESPN agrees — guard against drift
 	}
 	for _, p := range pairs {
 		if got, want := normTeam(p.feed), normTeam(p.ours); got != want {
@@ -111,10 +111,10 @@ func TestApplyFeedResultsOrientation(t *testing.T) {
 func TestApplyFeedResultsTeamAlias(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	kick := base.Add(time.Hour)
-	mid := addTeamMatch(t, store, svc.tournamentID, "South Korea", "Mexico", kick)
+	mid := addTeamMatch(t, store, svc.tournamentID, "Czech Republic", "Mexico", kick)
 
 	feed := []results.FeedMatch{{
-		ExternalRef: "102", HomeTeam: "Korea Republic", AwayTeam: "Mexico",
+		ExternalRef: "102", HomeTeam: "Czechia", AwayTeam: "Mexico",
 		KickoffUTC: kick, Finished: true, Reg90: score(0, 3),
 	}}
 	rep, err := svc.ApplyFeedResults(feed)

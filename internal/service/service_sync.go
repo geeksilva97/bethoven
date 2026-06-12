@@ -21,19 +21,15 @@ const reconcileWindow = 48 * time.Hour
 // collapsed (the form normTeam produces). Extend this from the poller's
 // "unmatched" log if new mismatches surface (e.g. once knockout teams resolve).
 var teamAliases = map[string]string{
-	// Verified against the live football-data.org "WC" feed (2026-06-12): every
-	// team whose feed spelling differs from fixtures.json. Left = feed, right = ours.
+	// Verified against the live ESPN "fifa.world" scoreboard vs fixtures.json
+	// (2026-06-12): every team whose ESPN spelling differs from ours. Left = ESPN,
+	// right = ours. The rest (Ivory Coast, South Korea, Cape Verde, Curaçao, …)
+	// already match and need no entry.
 	"bosnia-herzegovina": "bosnia and herzegovina",
-	"cape verde islands": "cape verde",
 	"congo dr":           "dr congo",
 	"czechia":            "czech republic",
 	"united states":      "usa",
-	// Defensive: well-known feed alternates for teams in this tournament, in case
-	// the feed's spelling shifts (it currently matches ours for these).
-	"korea republic": "south korea",
-	"cote d'ivoire":  "ivory coast",
-	"côte d'ivoire":  "ivory coast",
-	"türkiye":        "turkey",
+	"türkiye":            "turkey",
 }
 
 // ApplyFeedResults reconciles a batch of external feed matches against the

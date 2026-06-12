@@ -22,7 +22,7 @@ internal/db         SQLite: Open, embedded schema.sql, Store (typed queries), se
 internal/auth       key fingerprint, admin allowlist, invite-code check
 internal/scoring    PURE Points(bet, match) — the heavily unit-tested core
 internal/service    ALL business rules. Depends only on Store + Clock. The integration-test seam.
-internal/results    results feed: I/O-free FeedMatch types + poller; footballdata/ is the HTTP provider
+internal/results    results feed: I/O-free FeedMatch types + poller; espn/ is the HTTP provider
 internal/server     thin wish SSH server -> resolves key to user -> launches TUI
 internal/tui        presentation only; every action calls a service method
 ```
@@ -65,13 +65,16 @@ directly, with a fake clock, no terminal).
 
 ## Automatic results (opt-in)
 
-Off by default. With `BETHOVEN_RESULTS_ENABLED=true` + an API key, a background
-poller (`internal/results.RunPoller`, started in `main.go`) pulls finished
-matches from football-data.org and records results so the leaderboard updates
-with no admin input. **Final-only by design** — results land after full time, not
-live (live scoring would thrash the board and can't honour the regulation-90'
-rule mid-match). The layering holds: the `results` package + `footballdata`
-provider do the I/O; every rule lives in `service.ApplyFeedResults`.
+Off by default. With `BETHOVEN_RESULTS_ENABLED=true`, a background poller
+(`internal/results.RunPoller`, started in `main.go`) pulls finished matches from
+ESPN's public scoreboard and records results so the leaderboard updates with no
+admin input. **No API key** — the ESPN endpoint is keyless (that's why we use it
+over football-data.org); it's also unofficial, so treat its JSON shape as
+something to re-verify with `check-feed`, not a contract. **Final-only by
+design** — results land after full time, not live (live scoring would thrash the
+board and can't honour the regulation-90' rule mid-match). The layering holds:
+the `results` package + `espn` provider do the I/O; every rule lives in
+`service.ApplyFeedResults`.
 
 - **`ApplyFeedResults` is the seam** — system-initiated, takes `[]FeedMatch` (not
   a network client), so it's tested like `TestKickoffLock`: real temp DB + a
@@ -87,10 +90,13 @@ provider do the I/O; every rule lives in `service.ApplyFeedResults`.
   authoritative. Unmatched feed matches are logged (`unmatched=[...]`) — extend
   `teamAliases` from that log. The feed score is re-oriented to the fixture's
   `team_a`/`team_b` order (the feed's "home" may be our `team_b`).
-- **Regulation 90' for knockouts:** `footballdata.toReg90` returns nil (→ skipped,
-  left for the admin) when it can't isolate the 90' score for an ET match. **Verify
-  the feed's regulation-time field against a live response before launch** — see
-  the IMPORTANT note in `internal/results/footballdata/client.go`.
+- **Regulation 90' for knockouts:** the ESPN scoreboard exposes only the final
+  score (no per-period breakdown), so `espn.reg90` trusts it only when the match
+  finished in regulation (`STATUS_FULL_TIME`); any ET/penalty finish returns nil
+  (→ skipped, left for the admin) rather than recording the post-ET score as the
+  90' figure. **Confirm ESPN's status name for an ET/penalty finish with
+  `check-feed` once knockouts play (July)** — see the IMPORTANT note in
+  `internal/results/espn/client.go`.
 
 ## Run / test / build
 

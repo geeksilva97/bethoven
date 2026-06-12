@@ -17,9 +17,8 @@ id_rsa
 id_rsa.pub
 *.pem
 
-# secrets (API tokens etc.) — only ever live on the server, never in git
+# local env files — never in git
 *.env
-secrets.env
 
 # personal deploy script (contains invite code + admin fingerprint)
 deploy/local-deploy.sh

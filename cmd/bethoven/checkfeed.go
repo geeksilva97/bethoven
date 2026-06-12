@@ -9,35 +9,32 @@ import (
 
 	"bethoven/internal/config"
 	"bethoven/internal/results"
-	"bethoven/internal/results/footballdata"
+	"bethoven/internal/results/espn"
 )
 
 // runCheckFeed is a diagnostic: it hits the real results feed once and prints
-// what we'd get, WITHOUT touching the database. Use it after setting an API key
-// to confirm the competition code is right, the World Cup is in your tier, and
-// the regulation-90' score is derivable for finished matches.
+// what we'd get, WITHOUT touching the database. Use it to confirm the ESPN
+// league slug is right and the regulation-90' score is derivable for finished
+// matches before the first poll (no API key needed — the feed is keyless).
 //
-// Usage: bethoven check-feed [COMPETITION]
+// Usage: bethoven check-feed [LEAGUE]
 //
-// API key comes from BETHOVEN_RESULTS_API_KEY; competition defaults to
-// BETHOVEN_RESULTS_COMPETITION (or "WC") and can be overridden by the argument.
+// League defaults to BETHOVEN_RESULTS_LEAGUE (or "fifa.world") and can be
+// overridden by the argument.
 func runCheckFeed(args []string) {
 	cfg := config.Load()
-	if cfg.Results.APIKey == "" {
-		log.Fatal("set BETHOVEN_RESULTS_API_KEY first (the football-data.org token)")
-	}
-	competition := cfg.Results.Competition
+	league := cfg.Results.League
 	if len(args) > 0 && args[0] != "" {
-		competition = args[0]
+		league = args[0]
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	client := footballdata.New(cfg.Results.APIKey, competition, "")
+	client := espn.New(league, "")
 	feed, err := client.Fetch(ctx)
 	if err != nil {
-		log.Fatalf("fetch %q failed: %v", competition, err)
+		log.Fatalf("fetch %q failed: %v", league, err)
 	}
 
 	var finished, withReg90 int
@@ -57,7 +54,7 @@ func runCheckFeed(args []string) {
 		}
 	}
 
-	fmt.Printf("competition %q: %d matches, %d finished\n", competition, len(feed), finished)
+	fmt.Printf("league %q: %d matches, %d finished\n", league, len(feed), finished)
 	fmt.Printf("  regulation-90' score derivable: %d/%d finished\n", withReg90, finished)
 	if len(noReg90) > 0 {
 		fmt.Printf("  %d finished match(es) WITHOUT a derivable 90' score (would be left for the admin):\n", len(noReg90))

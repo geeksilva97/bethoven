@@ -57,8 +57,8 @@ type Match struct {
 	ScoreB       *int
 	Finished     bool
 	// ExternalRef links this match to its row in the external results feed
-	// (football-data.org match id). Empty until the poller reconciles it. Lets
-	// us re-find the same match across polls without re-matching on team names.
+	// (ESPN event id). Empty until the poller reconciles it. Lets us re-find the
+	// same match across polls without re-matching on team names.
 	ExternalRef string
 }
 

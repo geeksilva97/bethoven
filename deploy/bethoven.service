@@ -29,16 +29,11 @@ Environment=BETHOVEN_INVITE_CODE=change-me
 # Comma-separated SHA256 fingerprints (from `ssh-keygen -lf your_key.pub`):
 Environment=BETHOVEN_ADMINS=SHA256:REPLACE_WITH_YOUR_FINGERPRINT
 
-# Automatic results (football-data.org). The API key is a SECRET, so it does NOT
-# live here — keep it in a root-owned 600 file the unit loads at start:
-#   sudo install -m 600 /dev/null /opt/bethoven/data/secrets.env
-#   echo 'BETHOVEN_RESULTS_API_KEY=your-token' | sudo tee /opt/bethoven/data/secrets.env
-# The leading "-" means the unit still starts if the file is absent (results then
-# just stay off, with a warning in the log).
+# Automatic results from ESPN's public scoreboard — no API key, no secret file.
+# Set ENABLED=false to turn it off and enter results in the admin TUI instead.
 Environment=BETHOVEN_RESULTS_ENABLED=true
-Environment=BETHOVEN_RESULTS_COMPETITION=WC
+Environment=BETHOVEN_RESULTS_LEAGUE=fifa.world
 Environment=BETHOVEN_RESULTS_INTERVAL=5m
-EnvironmentFile=-/opt/bethoven/data/secrets.env
 
 # Hardening
 NoNewPrivileges=true
