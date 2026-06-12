@@ -92,7 +92,7 @@ func (m Model) submitBet() (tea.Model, tea.Cmd) {
 
 func (m Model) viewBet() string {
 	mt := m.betMatch
-	out := titleStyle.Render(fmt.Sprintf("%s  v  %s", mt.TeamA, mt.TeamB)) + "\n"
+	out := titleStyle.Render(fmt.Sprintf("%s  v  %s", withFlag(mt.TeamA), withFlag(mt.TeamB))) + "\n"
 	out += labelStyle.Render(fmtKickoff(mt.StartsAt))
 	if mt.GroupLabel != "" {
 		out += labelStyle.Render("  ·  " + mt.GroupLabel)
@@ -106,5 +106,5 @@ func (m Model) viewBet() string {
 }
 
 func (m Model) betScoreField(i int, team string) string {
-	return scoreField(m.betInputs[i], team, i == m.betFocus)
+	return scoreField(m.betInputs[i], withFlag(team), i == m.betFocus)
 }

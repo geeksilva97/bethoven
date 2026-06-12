@@ -282,10 +282,10 @@ func (m Model) viewEnterResult() string {
 		return out
 	}
 	mt := *m.resMatch
-	out := titleStyle.Render("⚙  Result: "+mt.TeamA+" v "+mt.TeamB) + "\n"
+	out := titleStyle.Render("⚙  Result: "+withFlag(mt.TeamA)+" v "+withFlag(mt.TeamB)) + "\n"
 	out += helpStyle.Render("Enter the regulation (90') score — penalties/ET are ignored.") + "\n\n"
-	out += "  " + scoreField(m.resInputs[0], mt.TeamA, m.resFocus == 0) + "   " +
-		scoreField(m.resInputs[1], mt.TeamB, m.resFocus == 1) + "\n\n"
+	out += "  " + scoreField(m.resInputs[0], withFlag(mt.TeamA), m.resFocus == 0) + "   " +
+		scoreField(m.resInputs[1], withFlag(mt.TeamB), m.resFocus == 1) + "\n\n"
 	out += statusLine(m) + helpStyle.Render("tab: switch · enter: save · esc: back to list")
 	return out
 }
@@ -418,7 +418,7 @@ func (m Model) viewAllBets() string {
 	vis := filterMatches(g.Matches, m.allSearch.query())
 
 	// Fixed header row: match column + one column per player.
-	header := fmt.Sprintf("%-22s", "match")
+	header := fmt.Sprintf("%-26s", "match")
 	for _, u := range g.Users {
 		header += fmt.Sprintf(" %-10s", trunc(u.DisplayName, 10))
 	}
@@ -429,7 +429,8 @@ func (m Model) viewAllBets() string {
 	} else {
 		rows := make([]string, len(vis))
 		for i, mt := range vis {
-			row := fmt.Sprintf("%-22s", trunc(fmt.Sprintf("%s v %s", mt.TeamA, mt.TeamB), 22))
+			// 11 + " v " (3) + 12 = 26 display cols, matching the header/total rows.
+			row := teamCell(mt.TeamA, 11) + " v " + teamCell(mt.TeamB, 12)
 			for _, u := range g.Users {
 				row += fmt.Sprintf(" %-10s", trunc(betCellText(g, mt, u.ID), 10))
 			}
@@ -444,7 +445,7 @@ func (m Model) viewAllBets() string {
 	}
 
 	// Fixed totals row.
-	totals := fmt.Sprintf("%-22s", "TOTAL")
+	totals := fmt.Sprintf("%-26s", "TOTAL")
 	for _, u := range g.Users {
 		totals += fmt.Sprintf(" %-10d", g.Totals[u.ID])
 	}
@@ -461,7 +462,7 @@ func (m Model) viewAllBets() string {
 // viewBetsForMatch is the by-match drill-down: every player's pick for one match.
 func (m Model) viewBetsForMatch(mt models.Match) string {
 	g := m.grid
-	out := titleStyle.Render("⚙  Bets · "+mt.TeamA+" v "+mt.TeamB) + "\n"
+	out := titleStyle.Render("⚙  Bets · "+withFlag(mt.TeamA)+" v "+withFlag(mt.TeamB)) + "\n"
 	sub := fmtKickoff(mt.StartsAt)
 	if mt.GroupLabel != "" {
 		sub += "  ·  " + mt.GroupLabel

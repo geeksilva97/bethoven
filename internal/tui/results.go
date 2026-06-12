@@ -46,15 +46,13 @@ func (m Model) viewMyResults() string {
 		if r.Bet == nil {
 			continue
 		}
-		match := fmt.Sprintf("%s v %s", r.Match.TeamA, r.Match.TeamB)
-		if len(match) > 30 {
-			match = match[:30]
-		}
+		// 13 + " v " (3) + 14 = 30 display cols, matching the "%-30s" header.
+		match := teamCell(r.Match.TeamA, 13) + " v " + teamCell(r.Match.TeamB, 14)
 		pts := "·"
 		if r.Match.Finished {
 			pts = strconv.Itoa(r.Points)
 		}
-		out += fmt.Sprintf("  %-30s %-8s %-7s %s\n", match, fmtPick(r.Bet), fmtResult(r.Match), pts)
+		out += fmt.Sprintf("  %s %-8s %-7s %s\n", match, fmtPick(r.Bet), fmtResult(r.Match), pts)
 	}
 	out += "\n" + helpStyle.Render("any key: back · q: quit")
 	return out
