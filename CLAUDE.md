@@ -116,6 +116,24 @@ Connect: `ssh -p 2222 localhost` (or set up a `~/.ssh/config` alias; see README)
   before launch. Seeding is idempotent — it only imports into an *empty* tournament,
   so editing the file after first boot does nothing; knockouts are added via the admin TUI.
 
+## Backup (do this BEFORE risky ops)
+
+**Rule:** any operation that restarts the VM, changes the running model/binary, or
+mutates data (migrations, manual data edits, schema changes, restoring fixtures)
+**must be preceded by a database backup.** No exceptions — the DB is the only
+non-reproducible state (apostas + results); the binary and `fixtures.json` aren't.
+
+**How — single consistent file, WAL-safe:**
+```sh
+sqlite3 /opt/bethoven/data/bethoven.db \
+  ".backup '/opt/bethoven/backups/bethoven-$(date +%F-%H%M%S).db'"
+```
+The DB runs in **WAL mode** (`journal_mode(WAL)`, see `db.Open`), so committed
+data may live in the `-wal` file, not yet in `bethoven.db`. **Do NOT `cp` the
+`.db` alone** — you'd capture a stale snapshot. `.backup` (or `VACUUM INTO`) reads
+a consistent snapshot *including the WAL* and writes one self-contained file, so
+you never have to copy `-wal`/`-shm`. Works with the server running or stopped.
+
 ## Deploy (short)
 
 Static binary + `fixtures.json` to `/opt/bethoven`, install
