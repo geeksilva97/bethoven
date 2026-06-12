@@ -58,6 +58,27 @@ func TestSyncOnceSkipsApplyOnFetchError(t *testing.T) {
 	}
 }
 
+// panicFetcher panics instead of returning — simulating an unforeseen crash in
+// the feed path (the kind an unofficial endpoint could provoke).
+type panicFetcher struct{}
+
+func (panicFetcher) Fetch(context.Context) ([]FeedMatch, error) {
+	panic("boom from the feed")
+}
+
+// TestSyncOnceRecoversFromPanic: a panic in the feed path must be contained, not
+// propagated — otherwise it would crash the whole SSH server. syncOnce returning
+// normally here proves the recover guard holds.
+func TestSyncOnceRecoversFromPanic(t *testing.T) {
+	a := &recordingApplier{}
+
+	syncOnce(context.Background(), panicFetcher{}, a) // must not panic
+
+	if len(a.batches) != 0 {
+		t.Errorf("apply must not run after a fetch panic, got %d batches", len(a.batches))
+	}
+}
+
 // TestRunPollerRunsImmediatelyThenStops verifies the poller does one pass up
 // front (not after a full interval) and exits when its context is cancelled.
 func TestRunPollerRunsImmediatelyThenStops(t *testing.T) {

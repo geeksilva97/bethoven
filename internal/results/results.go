@@ -11,6 +11,7 @@ package results
 import (
 	"context"
 	"log"
+	"runtime/debug"
 	"time"
 )
 
@@ -75,8 +76,19 @@ func RunPoller(ctx context.Context, f Fetcher, a Applier, interval time.Duration
 	}
 }
 
-// syncOnce performs a single fetch+apply pass and logs the outcome.
+// syncOnce performs a single fetch+apply pass and logs the outcome. A panic in
+// the feed path (an unforeseen shape from an unofficial endpoint, say) is
+// recovered here rather than allowed to crash the process: an unrecovered panic
+// in this background goroutine would take the whole SSH server down with it. So
+// a panic degrades to a logged error, exactly like every other failure, and the
+// next tick retries.
 func syncOnce(ctx context.Context, f Fetcher, a Applier) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("results: recovered from panic in sync pass: %v\n%s", r, debug.Stack())
+		}
+	}()
+
 	matches, err := f.Fetch(ctx)
 	if err != nil {
 		log.Printf("results: fetch failed: %v", err)
