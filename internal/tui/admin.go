@@ -404,7 +404,7 @@ func (m Model) updateAllBets(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) viewAllBets() string {
 	g := m.grid
 	if g == nil || len(g.Users) == 0 {
-		out := titleStyle.Render("⚙  All bets") + "\n\n"
+		out := titleStyle.Render(m.gridTitle()) + "\n\n"
 		out += helpStyle.Render("No players yet.\n")
 		out += "\n" + helpStyle.Render("any key: back · q: quit")
 		return out
@@ -413,7 +413,7 @@ func (m Model) viewAllBets() string {
 		return m.viewBetsForMatch(*m.allMatch)
 	}
 
-	out := titleStyle.Render("⚙  All bets") + labelStyle.Render("  (enter: see one match's picks)") + "\n\n"
+	out := titleStyle.Render(m.gridTitle()) + labelStyle.Render("  (enter: see one match's picks)") + "\n\n"
 	out += m.allSearch.view()
 	vis := filterMatches(g.Matches, m.allSearch.query())
 
@@ -462,7 +462,11 @@ func (m Model) viewAllBets() string {
 // viewBetsForMatch is the by-match drill-down: every player's pick for one match.
 func (m Model) viewBetsForMatch(mt models.Match) string {
 	g := m.grid
-	out := titleStyle.Render("⚙  Bets · "+withFlag(mt.TeamA)+" v "+withFlag(mt.TeamB)) + "\n"
+	prefix := "⚙  Bets · "
+	if m.gridPublic {
+		prefix = "Bets · "
+	}
+	out := titleStyle.Render(prefix+withFlag(mt.TeamA)+" v "+withFlag(mt.TeamB)) + "\n"
 	sub := fmtKickoff(mt.StartsAt)
 	if mt.GroupLabel != "" {
 		sub += "  ·  " + mt.GroupLabel

@@ -21,11 +21,18 @@ func (m *Model) buildMenu() {
 		{"Leaderboard", screenLeaderboard},
 		{"Per-game ranking", screenMatchRank},
 	}
-	if m.user != nil && m.user.Role == models.RoleAdmin {
+	isAdmin := m.user != nil && m.user.Role == models.RoleAdmin
+	// Players get the all-bets grid only when an admin has enabled public bets.
+	// Admins skip it — they already have the full "⚙ Admin: all bets" grid.
+	if m.publicBets && !isAdmin {
+		items = append(items, menuItem{"All players' bets", screenPublicBets})
+	}
+	if isAdmin {
 		items = append(items,
 			menuItem{"⚙  Admin: add match", screenAddMatch},
 			menuItem{"⚙  Admin: enter result", screenEnterResult},
 			menuItem{"⚙  Admin: all bets", screenAllBets},
+			menuItem{"⚙  Admin: settings", screenSettings},
 		)
 	}
 	m.menuItems = items
@@ -116,9 +123,22 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			m.setStatus(err.Error(), true)
 			return m, nil
 		}
-		m.grid, m.screen = grid, screenAllBets
+		m.grid, m.screen, m.gridPublic = grid, screenAllBets, false
 		m.allCursor, m.allMatch = 0, nil
 		m.allSearch = newSearchBox("filter teams…")
+	case screenPublicBets:
+		grid, err := m.svc.PublicBetsGrid(m.user)
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.grid, m.screen, m.gridPublic = grid, screenPublicBets, true
+		m.allCursor, m.allMatch = 0, nil
+		m.allSearch = newSearchBox("filter teams…")
+	case screenSettings:
+		m.publicBets, _ = m.svc.PublicBetsEnabled()
+		m.settingsCursor = 0
+		m.screen = screenSettings
 	}
 	return m, nil
 }

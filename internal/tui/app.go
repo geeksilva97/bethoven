@@ -26,6 +26,8 @@ const (
 	screenAddMatch
 	screenEnterResult
 	screenAllBets
+	screenPublicBets // player-facing, kickoff-filtered; reuses the all-bets view
+	screenSettings
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -90,11 +92,18 @@ type Model struct {
 	resMatch  *models.Match
 	resSearch searchBox
 
-	// admin: all-bets grid + by-match drill-down
-	grid      *service.AllBetsGrid
-	allCursor int
-	allMatch  *models.Match // set => showing one match's picks
-	allSearch searchBox
+	// all-bets grid + by-match drill-down. gridPublic marks the player-facing
+	// public view (kickoff-filtered, no admin framing) vs the admin grid.
+	grid       *service.AllBetsGrid
+	allCursor  int
+	allMatch   *models.Match // set => showing one match's picks
+	allSearch  searchBox
+	gridPublic bool
+
+	// settings screen (admin) + cached public_bets flag (drives the player's
+	// "All players' bets" menu entry).
+	settingsCursor int
+	publicBets     bool
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -110,6 +119,7 @@ func New(svc *service.Service, fingerprint string, isAdminKey bool, user *models
 		m.initRegister()
 	} else {
 		m.screen = screenMenu
+		m.publicBets, _ = svc.PublicBetsEnabled()
 		m.buildMenu()
 	}
 	return m
@@ -151,8 +161,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAddMatch(msg)
 	case screenEnterResult:
 		return m.updateEnterResult(msg)
-	case screenAllBets:
+	case screenAllBets, screenPublicBets:
 		return m.updateAllBets(msg)
+	case screenSettings:
+		return m.updateSettings(msg)
 	}
 	return m, nil
 }
@@ -178,8 +190,10 @@ func (m Model) View() string {
 		return m.viewAddMatch()
 	case screenEnterResult:
 		return m.viewEnterResult()
-	case screenAllBets:
+	case screenAllBets, screenPublicBets:
 		return m.viewAllBets()
+	case screenSettings:
+		return m.viewSettings()
 	}
 	return ""
 }
@@ -207,6 +221,7 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) goMenu() Model {
 	m.status = ""
 	m.screen = screenMenu
+	m.publicBets, _ = m.svc.PublicBetsEnabled()
 	m.buildMenu()
 	return m
 }

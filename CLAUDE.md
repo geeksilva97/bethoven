@@ -37,9 +37,15 @@ directly, with a fake clock, no terminal).
   match.StartsAt`. Enforced in `service.PlaceBet` using the **server clock only** —
   never trust client time. Also rejects `match.Finished` (belt-and-suspenders for
   clock skew / early result entry). Invariant: *cannot bet an ongoing or ended match.*
-- **Own-bets-only:** player queries are scoped to their `user_id`; players never
-  see another player's individual picks. Only the admin `AllBets` grid exposes raw
-  picks, and it's gated by `requireAdmin` in the service (not just hidden in the UI).
+- **Own-bets-only (default):** player queries are scoped to their `user_id`;
+  players never see another player's individual picks. The admin `AllBets` grid
+  exposes raw picks and is gated by `requireAdmin` in the service (not just hidden
+  in the UI). **Exception — `public_bets`:** an admin can flip the DB-backed
+  `public_bets` setting (admin TUI → Settings) to open the grid to all players via
+  `service.PublicBetsGrid`. Even then, picks are revealed **only for matches that
+  have kicked off or finished** (`m.Finished || now >= m.StartsAt`) — upcoming
+  matches are omitted entirely, mirroring the `MatchLeaderboard` reveal rule, so
+  blind betting is preserved. Enforced server-side, not just in the UI.
 - **Scoring** (`scoring.Points`, max 3/match): exact score = 3; correct result
   (W/D/L) only = 1; wrong result = 0. The tiers are **mutually exclusive** — an
   exact score scores 3, not 3+1 (there is no over/under bonus). Knockouts store
