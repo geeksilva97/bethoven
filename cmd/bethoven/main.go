@@ -21,6 +21,8 @@ import (
 	"bethoven/internal/clock"
 	"bethoven/internal/config"
 	"bethoven/internal/db"
+	"bethoven/internal/results"
+	"bethoven/internal/results/footballdata"
 	"bethoven/internal/server"
 	"bethoven/internal/service"
 	"bethoven/internal/tui"
@@ -31,6 +33,13 @@ func main() {
 	// lock). Handled before any server setup. See placebet.go.
 	if len(os.Args) > 1 && os.Args[1] == "place-bet" {
 		runPlaceBet(os.Args[2:])
+		return
+	}
+
+	// Diagnostic subcommand: probe the results feed and print what we'd get,
+	// without touching the database or starting the server. See checkfeed.go.
+	if len(os.Args) > 1 && os.Args[1] == "check-feed" {
+		runCheckFeed(os.Args[2:])
 		return
 	}
 
@@ -78,6 +87,12 @@ func main() {
 		log.Fatalf("listen: %v", err)
 	}
 
+	// Background results poller (opt-in). Its context is cancelled on shutdown so
+	// the goroutine exits cleanly with the server.
+	pollCtx, stopPoller := context.WithCancel(context.Background())
+	defer stopPoller()
+	startResultsPoller(pollCtx, cfg.Results, svc)
+
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
@@ -90,11 +105,29 @@ func main() {
 
 	<-done
 	log.Println("shutting down...")
+	stopPoller()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("shutdown: %v", err)
 	}
+}
+
+// startResultsPoller launches the background results poller if enabled. A
+// missing API key is a misconfiguration, not a crash: we log and skip, leaving
+// results to be entered manually via the admin TUI.
+func startResultsPoller(ctx context.Context, cfg config.Results, svc *service.Service) {
+	if !cfg.Enabled {
+		return
+	}
+	if cfg.APIKey == "" {
+		log.Println("WARNING: BETHOVEN_RESULTS_ENABLED is set but BETHOVEN_RESULTS_API_KEY is empty — " +
+			"automatic results disabled; enter results via the admin TUI")
+		return
+	}
+	fetcher := footballdata.New(cfg.APIKey, cfg.Competition, "")
+	log.Printf("results: auto-update enabled (competition %s, every %s)", cfg.Competition, cfg.Interval)
+	go results.RunPoller(ctx, fetcher, svc, cfg.Interval)
 }
 
 // seed loads fixtures.json (if present) into an empty tournament and returns

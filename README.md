@@ -129,6 +129,47 @@ allowlist is the source of truth.
 | `BETHOVEN_INVITE_CODE` | `letmein` | shared first-connect secret |
 | `BETHOVEN_ADMINS` | — | comma-separated admin fingerprints |
 | `BETHOVEN_TIMEZONE` | `America/Sao_Paulo` | IANA zone for displaying kickoff/result times (storage stays UTC) |
+| `BETHOVEN_RESULTS_ENABLED` | `false` | set to `true` to auto-update results from the feed |
+| `BETHOVEN_RESULTS_API_KEY` | — | [football-data.org](https://www.football-data.org/) API token |
+| `BETHOVEN_RESULTS_COMPETITION` | `WC` | competition code to poll |
+| `BETHOVEN_RESULTS_INTERVAL` | `5m` | how often to poll (Go duration, e.g. `90s`, `10m`) |
+
+## Automatic results
+
+With `BETHOVEN_RESULTS_ENABLED=true` and an API key, a background poller pulls
+finished match results from [football-data.org](https://www.football-data.org/)
+and records them — no admin typing scores. Scoring and the leaderboard are
+computed live from match scores, so standings update within one poll interval of
+a match ending.
+
+It's **final-only**: results land once a match is over, not live during play. A
+few things to know:
+
+- **It never overwrites a result that's already recorded** — re-polls are no-ops,
+  and anything an admin entered by hand always wins. So if the feed is ever wrong,
+  an admin correction in the TUI sticks.
+- **Matches are linked** to the feed by team names + kickoff time on first sight,
+  then by a stored id afterwards. Name mismatches between the feed and our
+  fixtures are handled by a small alias map in `internal/service/service_sync.go`;
+  anything it can't match is logged as `unmatched=[...]` so you can extend the map.
+- **Knockouts store the regulation 90' score.** When the feed doesn't expose the
+  90-minute score for a match that went to extra time, the poller leaves it for an
+  admin to enter rather than recording the post-ET result. (Verify the feed's
+  regulation-time field against a live response before relying on it — see the
+  note in `internal/results/footballdata/client.go`.)
+
+Disabled by default: the server runs fine without it, and admins enter results in
+the TUI as before.
+
+**Verify your setup** without starting the server or touching the database:
+
+```sh
+BETHOVEN_RESULTS_API_KEY=your-token bethoven check-feed   # or: ... check-feed WC
+```
+
+It prints how many matches the feed returned, how many are finished, whether the
+90' score is derivable for each, and the feed's exact team spellings — handy for
+spotting name mismatches to add to the alias map before the first poll.
 
 ## Fixtures
 
@@ -185,12 +226,26 @@ ssh you@<vm> 'sudo mv /tmp/bethoven /opt/bethoven/bethoven && sudo mv /tmp/fixtu
 **3. Install the service.** Copy `deploy/bethoven.service` to
 `/etc/systemd/system/`, then edit its `Environment=` lines — set a real
 `BETHOVEN_INVITE_CODE` and your `BETHOVEN_ADMINS` fingerprint
-(`ssh-keygen -lf ~/.ssh/bethoven.pub`). Then:
+(`ssh-keygen -lf ~/.ssh/bethoven.pub`).
+
+For [automatic results](#automatic-results), the unit reads the API key from a
+secrets file (kept out of git). Create it on the server with the token straight
+from football-data.org — it never goes in the unit file or the repo:
+
+```sh
+sudo install -m 600 /dev/null /opt/bethoven/data/secrets.env
+echo 'BETHOVEN_RESULTS_API_KEY=your-token' | sudo tee /opt/bethoven/data/secrets.env >/dev/null
+sudo chown bethoven:bethoven /opt/bethoven/data/secrets.env
+```
+
+(Skip that step to leave results off; the unit still starts and you enter results
+in the admin TUI.) Then:
 
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now bethoven
 sudo systemctl status bethoven         # confirm it's listening
+journalctl -u bethoven | grep results  # confirm "auto-update enabled"
 ```
 
 **4. Share with the team:** the static IP, the invite code, and the server's

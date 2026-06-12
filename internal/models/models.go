@@ -42,8 +42,9 @@ type User struct {
 	CreatedAt   time.Time
 }
 
-// Match is a single fixture. ScoreA/ScoreB are nil until the admin records a
-// result; for knockouts they hold the regulation 90-minute score.
+// Match is a single fixture. ScoreA/ScoreB are nil until a result is recorded
+// (by the admin or the results poller); for knockouts they hold the regulation
+// 90-minute score.
 type Match struct {
 	ID           int64
 	TournamentID int64
@@ -55,6 +56,10 @@ type Match struct {
 	ScoreA       *int
 	ScoreB       *int
 	Finished     bool
+	// ExternalRef links this match to its row in the external results feed
+	// (football-data.org match id). Empty until the poller reconciles it. Lets
+	// us re-find the same match across polls without re-matching on team names.
+	ExternalRef string
 }
 
 // Bet is a user's prediction for a match: a scoreline. One editable bet per

@@ -137,7 +137,7 @@ func (s *Store) CountMatches(tournamentID int64) (int, error) {
 // MatchByID returns a single match or ErrNotFound.
 func (s *Store) MatchByID(id int64) (*models.Match, error) {
 	row := s.db.QueryRow(
-		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, finished
+		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, finished, external_ref
 		 FROM matches WHERE id=?`, id)
 	return scanMatch(rowScanner{row})
 }
@@ -145,7 +145,7 @@ func (s *Store) MatchByID(id int64) (*models.Match, error) {
 // ListMatches returns a tournament's matches ordered by kickoff time.
 func (s *Store) ListMatches(tournamentID int64) ([]models.Match, error) {
 	rows, err := s.db.Query(
-		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, finished
+		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, finished, external_ref
 		 FROM matches WHERE tournament_id=? ORDER BY starts_at, id`, tournamentID)
 	if err != nil {
 		return nil, fmt.Errorf("list matches: %w", err)
@@ -176,6 +176,19 @@ func (s *Store) SetResult(matchID int64, scoreA, scoreB int) error {
 	return nil
 }
 
+// SetExternalRef links a match to its id in the external results feed, so later
+// polls can re-find it without re-matching on team names.
+func (s *Store) SetExternalRef(matchID int64, ref string) error {
+	res, err := s.db.Exec(`UPDATE matches SET external_ref=? WHERE id=?`, ref, matchID)
+	if err != nil {
+		return fmt.Errorf("set external ref: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // scanner abstracts *sql.Row and *sql.Rows so scanMatch serves both.
 type scanner interface{ Scan(dest ...any) error }
 type rowScanner struct{ r *sql.Row }
@@ -189,7 +202,7 @@ func scanMatch(sc scanner) (*models.Match, error) {
 	var phase, group, starts string
 	var sa, sb sql.NullInt64
 	var finished int
-	switch err := sc.Scan(&m.ID, &m.TournamentID, &m.TeamA, &m.TeamB, &phase, &group, &starts, &sa, &sb, &finished); {
+	switch err := sc.Scan(&m.ID, &m.TournamentID, &m.TeamA, &m.TeamB, &phase, &group, &starts, &sa, &sb, &finished, &m.ExternalRef); {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil, ErrNotFound
 	case err != nil:

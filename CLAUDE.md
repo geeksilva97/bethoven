@@ -22,6 +22,7 @@ internal/db         SQLite: Open, embedded schema.sql, Store (typed queries), se
 internal/auth       key fingerprint, admin allowlist, invite-code check
 internal/scoring    PURE Points(bet, match) — the heavily unit-tested core
 internal/service    ALL business rules. Depends only on Store + Clock. The integration-test seam.
+internal/results    results feed: I/O-free FeedMatch types + poller; footballdata/ is the HTTP provider
 internal/server     thin wish SSH server -> resolves key to user -> launches TUI
 internal/tui        presentation only; every action calls a service method
 ```
@@ -61,6 +62,35 @@ directly, with a fake clock, no terminal).
   stripped) if they contain control chars/ANSI escapes (`ErrBadName`) or duplicate an
   existing name case-insensitively (`ErrNameTaken`). They're rendered into other
   players' terminals, so this is a security boundary, not cosmetics.
+
+## Automatic results (opt-in)
+
+Off by default. With `BETHOVEN_RESULTS_ENABLED=true` + an API key, a background
+poller (`internal/results.RunPoller`, started in `main.go`) pulls finished
+matches from football-data.org and records results so the leaderboard updates
+with no admin input. **Final-only by design** — results land after full time, not
+live (live scoring would thrash the board and can't honour the regulation-90'
+rule mid-match). The layering holds: the `results` package + `footballdata`
+provider do the I/O; every rule lives in `service.ApplyFeedResults`.
+
+- **`ApplyFeedResults` is the seam** — system-initiated, takes `[]FeedMatch` (not
+  a network client), so it's tested like `TestKickoffLock`: real temp DB + a
+  hand-built feed, no HTTP. It is NOT admin-gated and NOT exposed over SSH; only
+  the in-process poller calls it.
+- **Never overwrites a finished match.** This one guard gives idempotency AND
+  "manual admin entry always wins": a re-poll, or a match the admin already
+  entered, is a no-op. So a wrong feed result is fixable in the admin TUI and stays
+  fixed.
+- **Match identity:** `matches.external_ref` links a fixture to its feed id. First
+  contact reconciles by team identity (`teamAliases` map handles name
+  differences) within `reconcileWindow`; thereafter the stored ref is
+  authoritative. Unmatched feed matches are logged (`unmatched=[...]`) — extend
+  `teamAliases` from that log. The feed score is re-oriented to the fixture's
+  `team_a`/`team_b` order (the feed's "home" may be our `team_b`).
+- **Regulation 90' for knockouts:** `footballdata.toReg90` returns nil (→ skipped,
+  left for the admin) when it can't isolate the 90' score for an ET match. **Verify
+  the feed's regulation-time field against a live response before launch** — see
+  the IMPORTANT note in `internal/results/footballdata/client.go`.
 
 ## Run / test / build
 

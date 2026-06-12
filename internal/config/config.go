@@ -3,8 +3,10 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 // DefaultInviteCode is the dev fallback used by `make run`. Running a real
@@ -15,6 +17,13 @@ const DefaultInviteCode = "letmein"
 // BETHOVEN_TIMEZONE is unset. The reference deployment is a Brazilian pool.
 const DefaultTimezone = "America/Sao_Paulo"
 
+// Results defaults: the World Cup competition code and a poll cadence that sits
+// comfortably under football-data.org's free-tier rate limit.
+const (
+	DefaultResultsCompetition = "WC"
+	DefaultResultsInterval    = 5 * time.Minute
+)
+
 // Config holds everything the server needs to boot. Values come from
 // BETHOVEN_* environment variables; see Load for defaults.
 type Config struct {
@@ -24,6 +33,17 @@ type Config struct {
 	InviteCode  string   // shared secret required on first connect
 	Admins      []string // SHA256 fingerprints granted the admin role
 	Timezone    string   // IANA zone for displaying times (e.g. America/Sao_Paulo)
+	Results     Results  // automatic results-feed polling
+}
+
+// Results configures the background poller that pulls finished match results
+// from an external feed. Disabled by default: the server ships dormant and a
+// real deployment opts in by setting BETHOVEN_RESULTS_ENABLED + an API key.
+type Results struct {
+	Enabled     bool          // BETHOVEN_RESULTS_ENABLED
+	APIKey      string        // BETHOVEN_RESULTS_API_KEY (football-data.org token)
+	Competition string        // BETHOVEN_RESULTS_COMPETITION (default "WC")
+	Interval    time.Duration // BETHOVEN_RESULTS_INTERVAL (default 5m)
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -43,7 +63,28 @@ func Load() Config {
 		InviteCode:  env("BETHOVEN_INVITE_CODE", DefaultInviteCode),
 		Admins:      splitList(env("BETHOVEN_ADMINS", "")),
 		Timezone:    env("BETHOVEN_TIMEZONE", DefaultTimezone),
+		Results: Results{
+			Enabled:     env("BETHOVEN_RESULTS_ENABLED", "") == "true",
+			APIKey:      env("BETHOVEN_RESULTS_API_KEY", ""),
+			Competition: env("BETHOVEN_RESULTS_COMPETITION", DefaultResultsCompetition),
+			Interval:    envDuration("BETHOVEN_RESULTS_INTERVAL", DefaultResultsInterval),
+		},
 	}
+}
+
+// envDuration parses a Go duration string (e.g. "5m", "90s") from the
+// environment, falling back to the default on an unset or unparseable value.
+func envDuration(key string, fallback time.Duration) time.Duration {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		log.Printf("WARNING: %s %q is not a valid duration (%v); using %s", key, raw, err, fallback)
+		return fallback
+	}
+	return d
 }
 
 func env(key, fallback string) string {

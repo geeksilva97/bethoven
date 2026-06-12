@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS matches (
     starts_at     TEXT    NOT NULL,
     score_a       INTEGER,
     score_b       INTEGER,
-    finished      INTEGER NOT NULL DEFAULT 0
+    finished      INTEGER NOT NULL DEFAULT 0,
+    external_ref  TEXT    NOT NULL DEFAULT ''  -- results-feed match id; '' until reconciled
 );
 
 CREATE TABLE IF NOT EXISTS bets (
