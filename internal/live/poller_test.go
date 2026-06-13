@@ -105,6 +105,27 @@ func TestPoller_AliasAndOrientation(t *testing.T) {
 	}
 }
 
+func TestCanonicalMatchesESPNSpellings(t *testing.T) {
+	p := NewPoller(fakeProvider{}, NewCache(), nil, nil, &clock.Fake{T: kickoff()}, time.Minute)
+	// Each pair is (our fixtures.json spelling, ESPN displayName) that must
+	// resolve to the same canonical key — incl. accents and word-order diffs.
+	pairs := [][2]string{
+		{"Turkey", "Türkiye"},
+		{"DR Congo", "Congo DR"},
+		{"Czech Republic", "Czechia"},
+		{"South Korea", "Korea Republic"},
+		{"United States", "USA"},
+		{"Bosnia & Herzegovina", "Bosnia-Herzegovina"},
+		{"Curaçao", "Curacao"},
+		{"Côte d'Ivoire", "Ivory Coast"},
+	}
+	for _, pr := range pairs {
+		if a, b := p.canonical(pr[0]), p.canonical(pr[1]); a != b {
+			t.Errorf("%q (%s) != %q (%s)", pr[0], a, pr[1], b)
+		}
+	}
+}
+
 func TestPoller_DateGuardRejectsFarApart(t *testing.T) {
 	// Same team pair as match 1, but kickoff is days away (e.g. a group pairing
 	// recurring in the knockouts). The date guard must reject it, not bind.

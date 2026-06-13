@@ -8,6 +8,8 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/text/unicode/norm"
+
 	"bethoven/internal/clock"
 	"bethoven/internal/models"
 )
@@ -159,14 +161,28 @@ func (p *Poller) canonical(name string) string {
 	return n
 }
 
-// normalize lowercases and strips everything but letters/digits, so spacing,
-// punctuation, and case never break a match.
+// normalize folds accents then lowercases and strips everything but
+// letters/digits, so spacing, punctuation, case, and diacritics never break a
+// match (e.g. ESPN's "Türkiye" matches our "Turkey" once aliased).
 func normalize(s string) string {
 	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
+	for _, r := range strings.ToLower(foldAccents(s)) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(r)
 		}
+	}
+	return b.String()
+}
+
+// foldAccents strips diacritics by NFD-decomposing and dropping the combining
+// marks, so "Türkiye" -> "Turkiye", "Curaçao" -> "Curacao".
+func foldAccents(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(s) {
+		if unicode.Is(unicode.Mn, r) { // Mn = nonspacing combining mark
+			continue
+		}
+		b.WriteRune(r)
 	}
 	return b.String()
 }
@@ -190,5 +206,7 @@ func defaultAliases() map[string]string {
 		"bosniaandherzegovina": "bosniaherzegovina",
 		"czechrepublic":        "czechia",
 		"ivorycoast":           "cotedivoire",
+		"turkey":               "turkiye", // ESPN: "Türkiye" (accent-folded)
+		"drcongo":              "congodr", // ESPN: "Congo DR"
 	}
 }

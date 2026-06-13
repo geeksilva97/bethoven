@@ -11,6 +11,7 @@ require (
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260608090822-c3ad58c6c9e5
 	github.com/muesli/termenv v0.16.0
 	golang.org/x/crypto v0.53.0
+	golang.org/x/text v0.38.0
 	modernc.org/sqlite v1.52.0
 )
 
@@ -51,7 +52,6 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
