@@ -23,15 +23,12 @@ var (
 	// liveStyle marks anything live/provisional (in-play scores, partial
 	// leaderboard points) so it's never mistaken for a settled value.
 	liveStyle = lipgloss.NewStyle().Foreground(cyan).Bold(true)
-)
-
-// liveLegend is the shared one-liner shown on screens that display live values.
-const liveLegend = "⚡ live — provisional, from matches in play (not final)"
-
-var (
 
 	// selBar is the unmistakable "you are here" highlight: dark text on a solid
 	// gold bar. Used for the selected row in lists and the focused form field —
 	// a full-width background reads at a glance where a foreground tint doesn't.
 	selBar = lipgloss.NewStyle().Foreground(lipgloss.Color("232")).Background(gold).Bold(true)
 )
+
+// liveLegend is the shared one-liner shown on screens that display live values.
+const liveLegend = "⚡ live — provisional, from matches in play (not final)"

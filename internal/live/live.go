@@ -40,7 +40,7 @@ func ParseState(s string) State {
 type Score struct {
 	A, B   int
 	State  State
-	Minute int
+	Minute int    // feed "period" (half number), not a clock minute; UI shows Clock
 	Clock  string // display clock, e.g. "67'"
 }
 
@@ -73,11 +73,14 @@ type Cache struct {
 // NewCache returns an empty Cache.
 func NewCache() *Cache { return &Cache{byMatch: make(map[int64]Score)} }
 
-// Set records (or replaces) the live score for a match. Called by the Poller.
-func (c *Cache) Set(matchID int64, s Score) {
+// Replace atomically swaps the entire set of live scores. The poller rebuilds
+// the map every poll so a match the feed stops reporting — a gap, or a missed
+// finish while the server was down — drops out instead of lingering forever as
+// a stale in-play score (which would keep adding phantom provisional points).
+func (c *Cache) Replace(scores map[int64]Score) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.byMatch[matchID] = s
+	c.byMatch = scores
 }
 
 // Snapshot returns a copy of the current live scores, safe for the caller to

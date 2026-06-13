@@ -176,6 +176,20 @@ func (s *Store) SetResult(matchID int64, scoreA, scoreB int) error {
 	return nil
 }
 
+// SetResultIfUnfinished records a result only when the match is not already
+// finished, in a single atomic statement. Returns whether it wrote. Used by the
+// live feed so an admin result set concurrently can never be clobbered.
+func (s *Store) SetResultIfUnfinished(matchID int64, scoreA, scoreB int) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE matches SET score_a=?, score_b=?, finished=1 WHERE id=? AND finished=0`,
+		scoreA, scoreB, matchID)
+	if err != nil {
+		return false, fmt.Errorf("set result if unfinished: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // scanner abstracts *sql.Row and *sql.Rows so scanMatch serves both.
 type scanner interface{ Scan(dest ...any) error }
 type rowScanner struct{ r *sql.Row }

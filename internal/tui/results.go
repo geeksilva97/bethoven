@@ -10,39 +10,41 @@ import (
 	"bethoven/internal/models"
 )
 
-// leaderTickMsg drives the live leaderboard's auto-refresh.
-type leaderTickMsg time.Time
+// leaderTickMsg drives the live leaderboard's auto-refresh. epoch ties a tick to
+// the visit that scheduled it, so a stale loop from a prior visit is ignored.
+type leaderTickMsg struct{ epoch int }
 
 // leaderRefresh is how often the live leaderboard re-polls while it's open.
 const leaderRefresh = 20 * time.Second
 
-// leaderTick schedules the next leaderboard refresh.
-func leaderTick() tea.Cmd {
-	return tea.Tick(leaderRefresh, func(t time.Time) tea.Msg { return leaderTickMsg(t) })
+// leaderTick schedules the next leaderboard refresh for the given epoch.
+func leaderTick(epoch int) tea.Cmd {
+	return tea.Tick(leaderRefresh, func(time.Time) tea.Msg { return leaderTickMsg{epoch} })
 }
 
 // onLeaderTick re-fetches the standings + in-play matches and reschedules — but
-// only while the leaderboard is the active screen, so the loop self-terminates
-// when the user navigates away.
-func (m Model) onLeaderTick() (tea.Model, tea.Cmd) {
-	if m.screen != screenLeaderboard {
+// only while the leaderboard is the active screen AND the tick belongs to the
+// current visit, so leaving (or re-entering) the screen never leaves overlapping
+// refresh loops running.
+func (m Model) onLeaderTick(msg leaderTickMsg) (tea.Model, tea.Cmd) {
+	if m.screen != screenLeaderboard || msg.epoch != m.leaderEpoch {
 		return m, nil
 	}
 	if board, err := m.svc.Leaderboard(); err == nil {
 		m.standings = board
 	}
 	m.liveMatches, _ = m.svc.LiveMatches()
-	return m, leaderTick()
+	return m, leaderTick(msg.epoch)
 }
 
 // liveScore renders a match's running score with the live accent, e.g.
-// "⚡67' 1–0". Caller guarantees mt.Live.
+// "⚡67' 1–0" (or "⚡ 1–0" when the feed gives no clock). Caller guarantees mt.Live.
 func liveScore(mt models.Match) string {
-	clock := mt.LiveClock
-	if clock == "" {
-		clock = fmt.Sprintf("%d'", mt.LiveMinute)
+	prefix := "⚡"
+	if mt.LiveClock != "" {
+		prefix = "⚡" + mt.LiveClock + " "
 	}
-	return liveStyle.Render(fmt.Sprintf("⚡%s %d–%d", clock, mt.LiveScoreA, mt.LiveScoreB))
+	return liveStyle.Render(fmt.Sprintf("%s%d–%d", prefix, mt.LiveScoreA, mt.LiveScoreB))
 }
 
 // fmtPick renders a player's pick compactly, e.g. "2-1".

@@ -105,6 +105,43 @@ func TestPoller_AliasAndOrientation(t *testing.T) {
 	}
 }
 
+// seqProvider returns a different batch of events on each Fetch.
+type seqProvider struct {
+	batches [][]Event
+	i       int
+}
+
+func (s *seqProvider) Fetch(_ context.Context, _ []time.Time) ([]Event, error) {
+	b := s.batches[s.i]
+	if s.i < len(s.batches)-1 {
+		s.i++
+	}
+	return b, nil
+}
+
+func TestPoller_StaleScoreExpires(t *testing.T) {
+	// Poll 1: Brazil v Serbia in play. Poll 2: feed no longer reports it (gap or
+	// missed finish). The stale in-play score must drop out, not linger.
+	prov := &seqProvider{batches: [][]Event{
+		{{Home: "Brazil", Away: "Serbia", HomeScore: 1, AwayScore: 0, Date: kickoff(), State: StateIn, Clock: "40'"}},
+		{}, // nothing reported this poll
+	}}
+	cache := NewCache()
+	fc := &clock.Fake{T: kickoff().Add(time.Hour)}
+	p := NewPoller(prov, cache,
+		func() ([]models.Match, error) { return testMatches(), nil },
+		func(int64, int, int) error { return nil }, fc, time.Minute)
+
+	p.poll(context.Background())
+	if _, ok := cache.Snapshot()[1]; !ok {
+		t.Fatal("poll 1 should have cached match 1")
+	}
+	p.poll(context.Background())
+	if len(cache.Snapshot()) != 0 {
+		t.Fatalf("stale score not expired: %+v", cache.Snapshot())
+	}
+}
+
 func TestPoller_OrientationSwapped(t *testing.T) {
 	// ESPN reports Serbia as home, Brazil away — opposite of our TeamA/TeamB.
 	p, cache, _ := newTestPoller(t, []Event{

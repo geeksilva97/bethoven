@@ -73,6 +73,9 @@ func (s *Service) LiveMatches() ([]models.Match, error) {
 // settled result or an admin correction. The admin override path (EnterResult)
 // overwrites unconditionally and wins.
 func (s *Service) FinalizeFromFeed(matchID int64, scoreA, scoreB int) error {
+	if scoreA < 0 || scoreA > 99 || scoreB < 0 || scoreB > 99 {
+		return ErrInvalidScore
+	}
 	m, err := s.store.MatchByID(matchID)
 	if errors.Is(err, db.ErrNotFound) {
 		return ErrMatchNotFound
@@ -83,10 +86,11 @@ func (s *Service) FinalizeFromFeed(matchID int64, scoreA, scoreB int) error {
 	if m.Finished {
 		return nil // already settled (by an earlier poll or by an admin) — leave it
 	}
-	if scoreA < 0 || scoreA > 99 || scoreB < 0 || scoreB > 99 {
-		return ErrInvalidScore
-	}
-	return s.store.SetResult(matchID, scoreA, scoreB)
+	// Conditional write: if an admin's EnterResult landed between the read above
+	// and here, finished=1 already and this is a no-op, so the feed never
+	// clobbers an admin correction (admin always wins).
+	_, err = s.store.SetResultIfUnfinished(matchID, scoreA, scoreB)
+	return err
 }
 
 // MyResults returns the player's per-match results plus their running total.

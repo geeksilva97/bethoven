@@ -90,6 +90,8 @@ func (p *Poller) poll(ctx context.Context) {
 		return
 	}
 
+	// Rebuild the snapshot from scratch each pass so stale matches expire.
+	fresh := make(map[int64]Score)
 	for _, ev := range events {
 		if ev.State == StatePre {
 			continue // nothing to show; never reveal an unstarted match
@@ -103,14 +105,18 @@ func (p *Poller) poll(ctx context.Context) {
 		if swapped {
 			a, b = b, a
 		}
-		p.cache.Set(m.ID, Score{A: a, B: b, State: ev.State, Minute: ev.Minute, Clock: ev.Clock})
-
+		// Only in-play matches belong in the live cache; finished ones are
+		// settled to the DB below and read from the authoritative result.
+		if ev.State == StateIn {
+			fresh[m.ID] = Score{A: a, B: b, State: StateIn, Minute: ev.Minute, Clock: ev.Clock}
+		}
 		if ev.State == StatePost && !m.Finished {
 			if err := p.finalize(m.ID, a, b); err != nil {
 				p.logger.Printf("live: finalize match %d: %v", m.ID, err)
 			}
 		}
 	}
+	p.cache.Replace(fresh)
 }
 
 // resolve maps an event to a stored match by canonical team pair + a generous

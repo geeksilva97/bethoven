@@ -63,7 +63,7 @@ type Match struct {
 	Live       bool
 	LiveScoreA int
 	LiveScoreB int
-	LiveMinute int
+	LiveMinute int    // feed "period" (half number), not a clock minute; display uses LiveClock
 	LiveClock  string // display clock, e.g. "67'"
 }
 
