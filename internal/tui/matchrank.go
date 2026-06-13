@@ -16,13 +16,14 @@ func (m Model) updateMatchRank(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Display mode: ranking already loaded; any key goes back to the menu.
+	// Display mode: ranking already loaded; any key goes back to the match
+	// list so you can pick another game without returning to the menu.
 	if m.rankMatch != nil {
 		if key.String() == "q" {
 			return m, tea.Quit
 		}
 		m.rankMatch, m.rankRows = nil, nil
-		return m.goMenu(), nil
+		return m, nil
 	}
 
 	// Pick mode: navigate the (optionally filtered) fixtures list.
@@ -138,6 +139,6 @@ func (m Model) viewMatchRank() string {
 			}
 		}
 	}
-	out += "\n" + helpStyle.Render("any key: back · q: quit")
+	out += "\n" + helpStyle.Render("any key: back to games · q: quit")
 	return out
 }
