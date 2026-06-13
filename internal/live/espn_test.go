@@ -69,6 +69,46 @@ func TestDecodeEvents(t *testing.T) {
 	}
 }
 
+func TestDecodeEventsSanitizesClock(t *testing.T) {
+	// The feed is untrusted and the clock renders into every player's terminal.
+	// An ANSI/control-char payload must be neutralized (no ESC, no letters).
+	const evil = `{"events":[{"date":"2026-06-12T19:00Z","competitions":[{` +
+		`"competitors":[{"homeAway":"home","score":"1","team":{"displayName":"A"}},` +
+		`{"homeAway":"away","score":"0","team":{"displayName":"B"}}],` +
+		`"status":{"displayClock":"\u001b[31mHACK\u001b[2J67'","period":2,"type":{"state":"in"}}}]}]}`
+	evs, err := decodeEvents(strings.NewReader(evil))
+	if err != nil {
+		t.Fatalf("decodeEvents: %v", err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1", len(evs))
+	}
+	clock := evs[0].Clock
+	if strings.ContainsRune(clock, '\x1b') || strings.ContainsAny(clock, "HACKJmh[") {
+		t.Errorf("clock not sanitized: %q", clock)
+	}
+	// The benign digits/quote survive.
+	if !strings.Contains(clock, "67'") {
+		t.Errorf("sanitized clock lost legit content: %q", clock)
+	}
+}
+
+func TestDecodeEventsRejectsBadScores(t *testing.T) {
+	for _, score := range []string{"-3", "150"} {
+		body := `{"events":[{"date":"2026-06-12T19:00Z","competitions":[{` +
+			`"competitors":[{"homeAway":"home","score":"` + score + `","team":{"displayName":"A"}},` +
+			`{"homeAway":"away","score":"0","team":{"displayName":"B"}}],` +
+			`"status":{"type":{"state":"in"}}}]}]}`
+		evs, err := decodeEvents(strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("decodeEvents(%s): %v", score, err)
+		}
+		if len(evs) != 0 {
+			t.Errorf("score %s should be rejected, got %+v", score, evs)
+		}
+	}
+}
+
 func TestDecodeEventsSkipsMalformed(t *testing.T) {
 	// An event missing a competitor must be skipped, not panic.
 	const bad = `{"events":[{"date":"2026-06-12T19:00Z","competitions":[{"competitors":[{"homeAway":"home","score":"1","team":{"displayName":"Solo"}}],"status":{"type":{"state":"in"}}}]}]}`

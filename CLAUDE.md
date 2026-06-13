@@ -64,7 +64,11 @@ directly, with a fake clock, no terminal).
   `post` event **only if `!Finished`**, so it never clobbers a settled result;
   admin `EnterResult` always overrides. Disable with `BETHOVEN_LIVE_ENABLED=false`
   (a nil LiveStore ⇒ behaviour identical to no feed). Picks stay hidden pre-kickoff;
-  only the live score is shown, preserving blind betting.
+  only the live score is shown, preserving blind betting. **The feed is untrusted**:
+  `decodeEvents` rejects impossible scores (outside 0–99) and sanitizes the display
+  clock to a digit/punctuation whitelist (`cleanClock`) — it renders into every
+  player's terminal, so it's the same ANSI-injection boundary as display names
+  (`cleanName`). Feed team names are only used for resolution, never rendered.
 
 ## Onboarding & admin
 

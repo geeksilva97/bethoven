@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // espnBase is ESPN's unofficial, keyless scoreboard API. No token or signup is
@@ -32,6 +34,30 @@ func parseESPNDate(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// validScore rejects scores no real football match produces, so a malformed or
+// hostile feed can't push garbage (or negatives) into the live cache.
+func validScore(n int) bool { return n >= 0 && n <= 99 }
+
+// cleanClock strips the feed's display clock to a safe, printable subset. The
+// feed is UNTRUSTED and this string is rendered into every connected player's
+// terminal, so — exactly like display names (see service.cleanName) — anything
+// outside a small whitelist (digits and clock punctuation) is dropped to
+// neutralize ANSI/control-char injection. Length-capped so it can't overrun the
+// fixed-width table columns either.
+func cleanClock(s string) string {
+	const maxLen = 12
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len() >= maxLen {
+			break
+		}
+		if unicode.IsDigit(r) || strings.ContainsRune("'+:. ", r) {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // ESPNProvider fetches live scores from ESPN's keyless scoreboard endpoint.
@@ -150,6 +176,11 @@ func decodeEvents(r io.Reader) ([]Event, error) {
 		if !haveHome || !haveAway {
 			continue // malformed event; skip rather than guess
 		}
+		// The feed is untrusted: reject impossible scores so garbage never reaches
+		// the cache, provisional scoring, or the screen.
+		if !validScore(home.score) || !validScore(away.score) {
+			continue
+		}
 		out = append(out, Event{
 			Home:      home.name,
 			Away:      away.name,
@@ -158,7 +189,7 @@ func decodeEvents(r io.Reader) ([]Event, error) {
 			Date:      parseESPNDate(ev.Date),
 			State:     ParseState(comp.Status.Type.State),
 			Minute:    comp.Status.Period,
-			Clock:     comp.Status.DisplayClock,
+			Clock:     cleanClock(comp.Status.DisplayClock),
 		})
 	}
 	return out, nil
