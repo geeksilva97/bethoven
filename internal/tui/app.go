@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"bethoven/internal/models"
+	"bethoven/internal/scoring"
 	"bethoven/internal/service"
 )
 
@@ -28,6 +29,7 @@ const (
 	screenAllBets
 	screenPublicBets // player-facing, kickoff-filtered; reuses the all-bets view
 	screenSettings
+	screenScoringRules // read-only: explains the active scoring mode
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -108,6 +110,10 @@ type Model struct {
 	// "All players' bets" menu entry).
 	settingsCursor int
 	publicBets     bool
+
+	// active scoring mode, cached for the settings selector and the player-facing
+	// "How scoring works" screen.
+	scoringMode scoring.Mode
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -172,6 +178,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAllBets(msg)
 	case screenSettings:
 		return m.updateSettings(msg)
+	case screenScoringRules:
+		return m.updateScoringRules(msg)
 	}
 	return m, nil
 }
@@ -201,6 +209,8 @@ func (m Model) View() string {
 		return m.viewAllBets()
 	case screenSettings:
 		return m.viewSettings()
+	case screenScoringRules:
+		return m.viewScoringRules()
 	}
 	return ""
 }

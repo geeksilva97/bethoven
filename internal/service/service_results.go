@@ -7,7 +7,6 @@ import (
 	"bethoven/internal/db"
 	"bethoven/internal/live"
 	"bethoven/internal/models"
-	"bethoven/internal/scoring"
 )
 
 // MatchResult is one row of a player's "My results" view: a match, their bet on
@@ -108,6 +107,10 @@ func (s *Service) MyResults(userID int64) ([]MatchResult, int, error) {
 	for _, b := range bets {
 		byMatch[b.MatchID] = b
 	}
+	sc, err := s.newScorer()
+	if err != nil {
+		return nil, 0, err
+	}
 
 	snap := s.liveSnapshot()
 	out := make([]MatchResult, 0, len(matches))
@@ -118,7 +121,7 @@ func (s *Service) MyResults(userID int64) ([]MatchResult, int, error) {
 		if b, ok := byMatch[m.ID]; ok {
 			bcopy := b
 			row.Bet = &bcopy
-			row.Points = scoring.Points(b, m)
+			row.Points = sc.points(b, m)
 			total += row.Points
 		}
 		out = append(out, row)
@@ -166,6 +169,10 @@ func (s *Service) MatchLeaderboard(matchID int64) (*models.Match, []MatchStandin
 	if err != nil {
 		return nil, nil, err
 	}
+	sc, err := s.newScorer()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	rows := make([]MatchStanding, 0, len(bets))
 	for _, b := range bets {
@@ -173,7 +180,7 @@ func (s *Service) MatchLeaderboard(matchID int64) (*models.Match, []MatchStandin
 		rows = append(rows, MatchStanding{
 			User:   users[b.UserID],
 			Bet:    &bcopy,
-			Points: scoring.Points(b, *m),
+			Points: sc.points(b, *m),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -203,6 +210,10 @@ func (s *Service) Leaderboard() ([]Standing, error) {
 	if err != nil {
 		return nil, err
 	}
+	sc, err := s.newScorer()
+	if err != nil {
+		return nil, err
+	}
 	snap := s.liveSnapshot()
 	totals := make(map[int64]int)
 	livePts := make(map[int64]int) // provisional points from in-play matches
@@ -212,16 +223,16 @@ func (s *Service) Leaderboard() ([]Standing, error) {
 			continue
 		}
 		if m.Finished {
-			totals[b.UserID] += scoring.Points(b, m)
+			totals[b.UserID] += sc.points(b, m)
 			continue
 		}
 		// In-play match: score the bet against the current live score by treating
-		// it as if final — a synthetic match keeps scoring.Points untouched.
+		// it as if final — a synthetic match keeps the scorer untouched.
 		if ls, inPlay := snap[b.MatchID]; inPlay && ls.State == live.StateIn {
 			prov := m
 			a, bb := ls.A, ls.B
 			prov.Finished, prov.ScoreA, prov.ScoreB = true, &a, &bb
-			p := scoring.Points(b, prov)
+			p := sc.points(b, prov)
 			totals[b.UserID] += p
 			livePts[b.UserID] += p
 		}
