@@ -44,7 +44,7 @@ func liveScore(mt models.Match) string {
 	if mt.LiveClock != "" {
 		prefix = "⚡" + mt.LiveClock + " "
 	}
-	return liveStyle.Render(fmt.Sprintf("%s%d–%d", prefix, mt.LiveScoreA, mt.LiveScoreB))
+	return liveStyle.Render(fmt.Sprintf("%s%d-%d", prefix, mt.LiveScoreA, mt.LiveScoreB))
 }
 
 // fmtPick renders a player's pick compactly, e.g. "2-1".

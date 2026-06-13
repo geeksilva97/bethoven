@@ -31,7 +31,6 @@ type Poller struct {
 	interval time.Duration
 	aliases  map[string]string // normalized name -> canonical normalized name
 	logger   *log.Logger
-	resolved map[string]int64 // canonical team-pair -> match ID (resolution memo)
 }
 
 // NewPoller wires a poller. interval is the time between fetches.
@@ -45,7 +44,6 @@ func NewPoller(p Provider, c *Cache, matches MatchesFunc, finalize FinalizeFunc,
 		interval: interval,
 		aliases:  defaultAliases(),
 		logger:   log.Default(),
-		resolved: make(map[string]int64),
 	}
 }
 
@@ -98,7 +96,9 @@ func (p *Poller) poll(ctx context.Context) {
 		}
 		m, swapped, ok := p.resolve(ev, matches)
 		if !ok {
-			p.logger.Printf("live: unresolved event %s v %s", ev.Home, ev.Away)
+			// %q escapes the untrusted feed names so they can't inject control
+			// chars into the operator's log/terminal (same boundary as cleanClock).
+			p.logger.Printf("live: unresolved event %q v %q", ev.Home, ev.Away)
 			continue
 		}
 		a, b := ev.HomeScore, ev.AwayScore
@@ -122,22 +122,17 @@ func (p *Poller) poll(ctx context.Context) {
 // resolve maps an event to a stored match by canonical team pair + a generous
 // kickoff-date tolerance. Returns the match, whether home/away is swapped
 // relative to our TeamA/TeamB, and whether a match was found.
+//
+// No memoization: the match list is tiny (~104) and only a handful of events
+// poll at a time, so a full scan is cheap — and it keeps the date guard always
+// active, so a group pairing that recurs in the knockouts binds to the right
+// fixture instead of being stuck on the first one it ever saw.
 func (p *Poller) resolve(ev Event, matches []models.Match) (models.Match, bool, bool) {
 	ch, ca := p.canonical(ev.Home), p.canonical(ev.Away)
 	key := pairKey(ch, ca)
 
-	// Memoized resolution.
-	if id, ok := p.resolved[key]; ok {
-		for _, m := range matches {
-			if m.ID == id {
-				return m, p.canonical(m.TeamA) != ch, true
-			}
-		}
-	}
-
 	for _, m := range matches {
-		ma, mb := p.canonical(m.TeamA), p.canonical(m.TeamB)
-		if pairKey(ma, mb) != key {
+		if pairKey(p.canonical(m.TeamA), p.canonical(m.TeamB)) != key {
 			continue
 		}
 		// Date guard: tolerate tz/midnight skew, but reject a far-apart rematch.
@@ -146,8 +141,7 @@ func (p *Poller) resolve(ev Event, matches []models.Match) (models.Match, bool, 
 				continue
 			}
 		}
-		p.resolved[key] = m.ID
-		return m, ma != ch, true
+		return m, p.canonical(m.TeamA) != ch, true
 	}
 	return models.Match{}, false, false
 }

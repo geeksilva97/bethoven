@@ -105,6 +105,18 @@ func TestPoller_AliasAndOrientation(t *testing.T) {
 	}
 }
 
+func TestPoller_DateGuardRejectsFarApart(t *testing.T) {
+	// Same team pair as match 1, but kickoff is days away (e.g. a group pairing
+	// recurring in the knockouts). The date guard must reject it, not bind.
+	p, cache, _ := newTestPoller(t, []Event{
+		{Home: "Brazil", Away: "Serbia", HomeScore: 1, AwayScore: 0, Date: kickoff().AddDate(0, 0, 5), State: StateIn, Clock: "10'"},
+	})
+	p.poll(context.Background())
+	if len(cache.Snapshot()) != 0 {
+		t.Fatalf("far-apart same-pair event must not resolve, got %+v", cache.Snapshot())
+	}
+}
+
 // seqProvider returns a different batch of events on each Fetch.
 type seqProvider struct {
 	batches [][]Event
