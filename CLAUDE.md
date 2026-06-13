@@ -47,18 +47,37 @@ directly, with a fake clock, no terminal).
   have kicked off or finished** (`m.Finished || now >= m.StartsAt`) — upcoming
   matches are omitted entirely, mirroring the `MatchLeaderboard` reveal rule, so
   blind betting is preserved. Enforced server-side, not just in the UI.
-- **Scoring** (`scoring.Points`, max 3/match): exact score = 3; correct result
-  (W/D/L) only = 1; wrong result = 0. The tiers are **mutually exclusive** — an
-  exact score scores 3, not 3+1 (there is no over/under bonus). Knockouts store
-  the **regulation 90' score**, so ET/penalties are ignored and a 1-1 a.e.t.
-  scores as a 1-1 draw.
+- **Scoring — admin-selectable mode (`scoring_mode` setting; default Classic).**
+  Three pure functions in `internal/scoring`, dispatched by `scoring.Score(mode, …)`:
+    - **Classic** (default, `scoring.Points`): exact = 3; correct result (W/D/L)
+      only = 1; wrong = 0. Tiers are **mutually exclusive** — exact is 3, not 3+1.
+    - **Proximity** (`ProximityPoints`): 0 for a wrong result, else
+      `max(1, 5 − distance)` where `distance = |predA−scoreA| + |predB−scoreB|`.
+      Exact → 5, one goal off → 4, …, floor of 1 for calling the winner. (Kicktipp's
+      "deduction per goal" model.)
+    - **Scarcity** (`ScarcityPoints`): Proximity **plus** a contrarian bonus —
+      +2 for a correct result <25% of the match's bets picked, +2 for a correct
+      exact score <10% picked. **Pool-relative**, so it takes a `scoring.Pool`
+      (counts of same-result / same-exact bets) the **service** computes; the pure
+      function never reads the DB.
+  Knockouts store the **regulation 90' score** in every mode, so ET/penalties are
+  ignored and a 1-1 a.e.t. scores as a 1-1 draw.
+  **Plumbing:** the service builds a `scorer` (`service_scoring.go`) once per
+  read; it carries the mode and, **only for Scarcity**, the per-match pick
+  distribution (built from `AllBets`). All point-bearing reads — `Leaderboard`
+  (incl. the synthetic-match live fold), `MyResults`, `MatchLeaderboard`,
+  `buildBetsGrid` — call `sc.points(b, m)`, never `scoring.Points` directly.
+  Admin picks the mode in the TUI **Settings** screen; players see the active
+  mode and its rules in **"How scoring works"** (`scoring_rules.go`). Mode is
+  stored/read like `public_bets` (KV `settings` table; absent ⇒ Classic), so
+  existing pools are unaffected until an admin opts in.
 - **Identity = SHA256 key fingerprint.** Set once at registration, immutable after.
 - **Live scores (optional, `internal/live`).** A background `Poller` fetches ESPN's
   keyless scoreboard (`fifa.world`), resolves each event to a stored match (by
   team-pair + date, with an alias map), and writes an **in-memory** `Cache`
   (`service.LiveStore` port). Nothing live is persisted — a restart re-fetches.
   The service folds **provisional** points into `Leaderboard` for in-play matches
-  (via a synthetic finished match fed to the *unchanged* `scoring.Points`) and
+  (via a synthetic finished match fed to the active-mode `scorer.points`) and
   overlays read-time `Live*` fields onto `models.Match` (the store never reads/writes
   them). **Auto-finalize:** `FinalizeFromFeed` writes the official result on a
   `post` event **only if `!Finished`**, so it never clobbers a settled result;

@@ -20,6 +20,7 @@ func (m *Model) buildMenu() {
 		{"My bets", screenMyResults},
 		{"Leaderboard", screenLeaderboard},
 		{"Per-game ranking", screenMatchRank},
+		{"How scoring works", screenScoringRules},
 	}
 	isAdmin := m.user != nil && m.user.Role == models.RoleAdmin
 	// Players get the all-bets grid only when an admin has enabled public bets.
@@ -140,8 +141,12 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		m.allSearch = newSearchBox("filter teams…")
 	case screenSettings:
 		m.publicBets, _ = m.svc.PublicBetsEnabled()
+		m.scoringMode, _ = m.svc.ScoringMode()
 		m.settingsCursor = 0
 		m.screen = screenSettings
+	case screenScoringRules:
+		m.scoringMode, _ = m.svc.ScoringMode()
+		m.screen = screenScoringRules
 	}
 	return m, nil
 }

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"bethoven/internal/models"
-	"bethoven/internal/scoring"
 )
 
 // ErrForbidden is returned when a non-admin invokes an admin-only operation.
@@ -120,6 +119,10 @@ func (s *Service) buildBetsGrid(reveal func(models.Match) bool) (*AllBetsGrid, e
 	if err != nil {
 		return nil, err
 	}
+	sc, err := s.newScorer()
+	if err != nil {
+		return nil, err
+	}
 
 	grid := &AllBetsGrid{
 		Matches: matches,
@@ -132,7 +135,7 @@ func (s *Service) buildBetsGrid(reveal func(models.Match) bool) (*AllBetsGrid, e
 		if !ok {
 			continue // match hidden (not yet revealed) — skip its cells
 		}
-		pts := scoring.Points(b, m)
+		pts := sc.points(b, m)
 		if grid.Cells[b.MatchID] == nil {
 			grid.Cells[b.MatchID] = make(map[int64]BetCell)
 		}
