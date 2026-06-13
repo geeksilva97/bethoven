@@ -4,6 +4,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +16,12 @@ const DefaultInviteCode = "letmein"
 // BETHOVEN_TIMEZONE is unset. The reference deployment is a Brazilian pool.
 const DefaultTimezone = "America/Sao_Paulo"
 
+// DefaultLiveLeague is ESPN's slug for the competition the live feed polls.
+const DefaultLiveLeague = "fifa.world"
+
+// DefaultLivePollSeconds is the gap between live-feed polls.
+const DefaultLivePollSeconds = 60
+
 // Config holds everything the server needs to boot. Values come from
 // BETHOVEN_* environment variables; see Load for defaults.
 type Config struct {
@@ -24,6 +31,11 @@ type Config struct {
 	InviteCode  string   // shared secret required on first connect
 	Admins      []string // SHA256 fingerprints granted the admin role
 	Timezone    string   // IANA zone for displaying times (e.g. America/Sao_Paulo)
+
+	// Live feed (optional). LiveEnabled gates the background score poller.
+	LiveEnabled     bool
+	LiveLeague      string // ESPN league slug, e.g. fifa.world
+	LivePollSeconds int    // seconds between polls
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -43,7 +55,22 @@ func Load() Config {
 		InviteCode:  env("BETHOVEN_INVITE_CODE", DefaultInviteCode),
 		Admins:      splitList(env("BETHOVEN_ADMINS", "")),
 		Timezone:    env("BETHOVEN_TIMEZONE", DefaultTimezone),
+
+		LiveEnabled:     env("BETHOVEN_LIVE_ENABLED", "true") != "false",
+		LiveLeague:      env("BETHOVEN_LIVE_LEAGUE", DefaultLiveLeague),
+		LivePollSeconds: envInt("BETHOVEN_LIVE_POLL_SECONDS", DefaultLivePollSeconds),
 	}
+}
+
+// envInt reads a positive integer env var, falling back on the default when
+// unset or unparseable.
+func envInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return fallback
 }
 
 func env(key, fallback string) string {

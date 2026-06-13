@@ -94,6 +94,8 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.standings, m.screen = board, screenLeaderboard
+		m.liveMatches, _ = m.svc.LiveMatches()
+		return m, leaderTick() // begin auto-refresh while on this screen
 	case screenMatchRank:
 		// Reuse the fixtures list to pick which game to rank.
 		fx, err := m.svc.Fixtures()

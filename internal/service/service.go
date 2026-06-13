@@ -14,6 +14,7 @@ import (
 	"bethoven/internal/auth"
 	"bethoven/internal/clock"
 	"bethoven/internal/db"
+	"bethoven/internal/live"
 	"bethoven/internal/models"
 )
 
@@ -51,6 +52,14 @@ func cleanName(raw string) (string, error) {
 	return name, nil
 }
 
+// LiveStore exposes the current in-memory live snapshot, keyed by match ID. The
+// poller writes it; the service reads it to fold provisional points into the
+// leaderboard and to overlay running scores. It is a port: nil is valid and
+// means "no live feed", in which case the service behaves exactly as before.
+type LiveStore interface {
+	Snapshot() map[int64]live.Score
+}
+
 // Service bundles the dependencies the business logic needs.
 type Service struct {
 	store        *db.Store
@@ -58,6 +67,7 @@ type Service struct {
 	inviteCode   string
 	admins       []string
 	tournamentID int64
+	live         LiveStore // optional; nil when no live feed is configured
 }
 
 // New builds a Service bound to the active tournament.
@@ -69,6 +79,34 @@ func New(store *db.Store, clk clock.Clock, inviteCode string, admins []string, t
 		admins:       admins,
 		tournamentID: tournamentID,
 	}
+}
+
+// SetLiveStore attaches a live snapshot source (the poller's cache). Optional —
+// when unset, the leaderboard and fixtures behave as if nothing is in play.
+func (s *Service) SetLiveStore(ls LiveStore) { s.live = ls }
+
+// liveSnapshot returns the current live scores, or nil when no feed is attached.
+func (s *Service) liveSnapshot() map[int64]live.Score {
+	if s.live == nil {
+		return nil
+	}
+	return s.live.Snapshot()
+}
+
+// overlayLive fills a match's read-time Live* fields from the snapshot when the
+// match is in play. Finished matches and matches without a live entry are left
+// untouched (their authoritative result already stands).
+func overlayLive(m *models.Match, snap map[int64]live.Score) {
+	if snap == nil || m.Finished {
+		return
+	}
+	ls, ok := snap[m.ID]
+	if !ok || ls.State != live.StateIn {
+		return
+	}
+	m.Live = true
+	m.LiveScoreA, m.LiveScoreB = ls.A, ls.B
+	m.LiveMinute, m.LiveClock = ls.Minute, ls.Clock
 }
 
 // IsAdmin reports whether a key fingerprint is in the admin allowlist. The TUI

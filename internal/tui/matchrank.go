@@ -114,9 +114,17 @@ func (m Model) viewMatchRank() string {
 	// display mode
 	mt := *m.rankMatch
 	out := titleStyle.Render(fmt.Sprintf("%s v %s", withFlag(mt.TeamA), withFlag(mt.TeamB)))
-	out += labelStyle.Render("   result: "+fmtResult(mt)) + "\n\n"
+	if mt.Live {
+		out += "   " + liveScore(mt) + "\n\n"
+	} else {
+		out += labelStyle.Render("   result: "+fmtResult(mt)) + "\n\n"
+	}
 	if !mt.Finished {
-		out += lockStyle.Render("Picks are revealed once the match has a result.\n")
+		note := "Picks are revealed once the match has a result.\n"
+		if mt.Live {
+			note = liveLegend + "\n" + "Picks are revealed once the match has a result.\n"
+		}
+		out += lockStyle.Render(note)
 	} else if len(m.rankRows) == 0 {
 		out += helpStyle.Render("Nobody bet on this match.\n")
 	} else {

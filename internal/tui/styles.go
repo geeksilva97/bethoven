@@ -10,6 +10,7 @@ var (
 	green  = lipgloss.Color("42")
 	red    = lipgloss.Color("203")
 	subtle = lipgloss.Color("250")
+	cyan   = lipgloss.Color("45") // "live" accent — distinct from gold/green/red
 
 	titleStyle = lipgloss.NewStyle().Foreground(gold).Bold(true)
 	helpStyle  = lipgloss.NewStyle().Foreground(dim)
@@ -18,6 +19,16 @@ var (
 	cursorOn   = lipgloss.NewStyle().Foreground(gold).Bold(true)
 	labelStyle = lipgloss.NewStyle().Foreground(subtle)
 	lockStyle  = lipgloss.NewStyle().Foreground(dim).Italic(true)
+
+	// liveStyle marks anything live/provisional (in-play scores, partial
+	// leaderboard points) so it's never mistaken for a settled value.
+	liveStyle = lipgloss.NewStyle().Foreground(cyan).Bold(true)
+)
+
+// liveLegend is the shared one-liner shown on screens that display live values.
+const liveLegend = "⚡ live — provisional, from matches in play (not final)"
+
+var (
 
 	// selBar is the unmistakable "you are here" highlight: dark text on a solid
 	// gold bar. Used for the selected row in lists and the focused form field —

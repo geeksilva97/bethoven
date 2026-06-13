@@ -72,8 +72,9 @@ type Model struct {
 	myRows  []service.MatchResult
 	myTotal int
 
-	// leaderboard
-	standings []service.Standing
+	// leaderboard (+ in-play matches shown as a live header; auto-refreshed)
+	standings   []service.Standing
+	liveMatches []models.Match
 
 	// per-match ranking
 	rankMatch  *models.Match
@@ -138,6 +139,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
+	case leaderTickMsg:
+		// Live leaderboard refresh; self-stops once the user leaves the screen.
+		return m.onLeaderTick()
 	}
 
 	switch m.screen {
