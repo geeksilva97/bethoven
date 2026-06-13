@@ -113,7 +113,10 @@ func (p *ESPNProvider) fetchDay(ctx context.Context, day time.Time) ([]Event, er
 		return nil, fmt.Errorf("espn: status %d", resp.StatusCode)
 	}
 
-	return decodeEvents(resp.Body)
+	evs, err := decodeEvents(resp.Body)
+	// Drain any trailing bytes so the connection can be reused (keep-alive).
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return evs, err
 }
 
 // decodeEvents parses an ESPN scoreboard JSON body into events. Split out from
