@@ -55,6 +55,16 @@ type Match struct {
 	ScoreA       *int
 	ScoreB       *int
 	Finished     bool
+
+	// Live presentation fields, populated at read time from the in-memory live
+	// feed and NEVER persisted (the store reads/writes only the columns above).
+	// They stay zero-valued unless the service overlays a live snapshot, and are
+	// meaningful only while Live is true (the match is in play).
+	Live       bool
+	LiveScoreA int
+	LiveScoreB int
+	LiveMinute int    // feed "period" (half number), not a clock minute; display uses LiveClock
+	LiveClock  string // display clock, e.g. "67'"
 }
 
 // Bet is a user's prediction for a match: a scoreline. One editable bet per

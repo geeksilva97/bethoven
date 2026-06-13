@@ -72,8 +72,12 @@ type Model struct {
 	myRows  []service.MatchResult
 	myTotal int
 
-	// leaderboard
-	standings []service.Standing
+	// leaderboard (+ in-play matches shown as a live header; auto-refreshed).
+	// leaderEpoch is bumped on each entry so stale tick loops from a prior visit
+	// self-terminate instead of stacking.
+	standings   []service.Standing
+	liveMatches []models.Match
+	leaderEpoch int
 
 	// per-match ranking
 	rankMatch  *models.Match
@@ -138,6 +142,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
+	case leaderTickMsg:
+		// Live leaderboard refresh; self-stops on leave or on a superseded epoch.
+		return m.onLeaderTick(msg)
 	}
 
 	switch m.screen {

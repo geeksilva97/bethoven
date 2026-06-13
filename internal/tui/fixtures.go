@@ -34,6 +34,12 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 	switch {
 	case mt.Finished && mt.ScoreA != nil:
 		tag = fmt.Sprintf("  [%d-%d]", *mt.ScoreA, *mt.ScoreB)
+	case mt.Live:
+		if mt.LiveClock != "" {
+			tag = fmt.Sprintf("  ⚡%s %d-%d", mt.LiveClock, mt.LiveScoreA, mt.LiveScoreB)
+		} else {
+			tag = fmt.Sprintf("  ⚡ %d-%d", mt.LiveScoreA, mt.LiveScoreB)
+		}
 	case locked:
 		tag = "  🔒 locked"
 	case hasBet:
@@ -49,6 +55,8 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 	switch {
 	case mt.Finished && mt.ScoreA != nil:
 		styledTag = okStyle.Render(tag)
+	case mt.Live:
+		styledTag = liveStyle.Render(tag)
 	case locked:
 		styledTag = lockStyle.Render(tag)
 	case hasBet:

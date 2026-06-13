@@ -129,6 +129,27 @@ allowlist is the source of truth.
 | `BETHOVEN_INVITE_CODE` | `letmein` | shared first-connect secret |
 | `BETHOVEN_ADMINS` | — | comma-separated admin fingerprints |
 | `BETHOVEN_TIMEZONE` | `America/Sao_Paulo` | IANA zone for displaying kickoff/result times (storage stays UTC) |
+| `BETHOVEN_LIVE_ENABLED` | `true` | poll a live-score feed in the background; set `false` to disable |
+| `BETHOVEN_LIVE_LEAGUE` | `fifa.world` | ESPN league slug to poll |
+| `BETHOVEN_LIVE_POLL_SECONDS` | `60` | seconds between live-feed polls |
+
+## Live scores
+
+When enabled, a background poller fetches scores from ESPN's keyless public
+scoreboard API (no token/signup) and:
+
+- shows the running score on the fixtures list, *My bets*, and per-game ranking
+  while a match is in play (marked in a distinct **live** colour);
+- folds **provisional** points into the leaderboard, which auto-refreshes — so the
+  ranking moves live during games (live totals are flagged and explained by a legend);
+- **auto-finalizes** a match's official result when the feed reports it finished.
+  An admin entering a result always overrides the feed, and the feed never
+  clobbers an already-recorded result.
+
+Live data is held **in memory only** (never persisted): a restart re-fetches it
+within one poll cycle. The feed is unofficial and best-effort; the leaderboard
+falls back to admin-entered results whenever it's unavailable. Picks are never
+revealed for matches that haven't kicked off — only the live score is shown.
 
 ## Fixtures
 

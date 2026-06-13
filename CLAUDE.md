@@ -21,7 +21,8 @@ internal/models     pure domain types (no behaviour, no deps) — shared by stor
 internal/db         SQLite: Open, embedded schema.sql, Store (typed queries), seed.go
 internal/auth       key fingerprint, admin allowlist, invite-code check
 internal/scoring    PURE Points(bet, match) — the heavily unit-tested core
-internal/service    ALL business rules. Depends only on Store + Clock. The integration-test seam.
+internal/live       OPTIONAL live feed: ESPN adapter + in-memory Cache + Poller. Behind the service.LiveStore port.
+internal/service    ALL business rules. Depends only on Store + Clock (+ optional LiveStore). The integration-test seam.
 internal/server     thin wish SSH server -> resolves key to user -> launches TUI
 internal/tui        presentation only; every action calls a service method
 ```
@@ -52,6 +53,22 @@ directly, with a fake clock, no terminal).
   the **regulation 90' score**, so ET/penalties are ignored and a 1-1 a.e.t.
   scores as a 1-1 draw.
 - **Identity = SHA256 key fingerprint.** Set once at registration, immutable after.
+- **Live scores (optional, `internal/live`).** A background `Poller` fetches ESPN's
+  keyless scoreboard (`fifa.world`), resolves each event to a stored match (by
+  team-pair + date, with an alias map), and writes an **in-memory** `Cache`
+  (`service.LiveStore` port). Nothing live is persisted — a restart re-fetches.
+  The service folds **provisional** points into `Leaderboard` for in-play matches
+  (via a synthetic finished match fed to the *unchanged* `scoring.Points`) and
+  overlays read-time `Live*` fields onto `models.Match` (the store never reads/writes
+  them). **Auto-finalize:** `FinalizeFromFeed` writes the official result on a
+  `post` event **only if `!Finished`**, so it never clobbers a settled result;
+  admin `EnterResult` always overrides. Disable with `BETHOVEN_LIVE_ENABLED=false`
+  (a nil LiveStore ⇒ behaviour identical to no feed). Picks stay hidden pre-kickoff;
+  only the live score is shown, preserving blind betting. **The feed is untrusted**:
+  `decodeEvents` rejects impossible scores (outside 0–99) and sanitizes the display
+  clock to a digit/punctuation whitelist (`cleanClock`) — it renders into every
+  player's terminal, so it's the same ANSI-injection boundary as display names
+  (`cleanName`). Feed team names are only used for resolution, never rendered.
 
 ## Onboarding & admin
 

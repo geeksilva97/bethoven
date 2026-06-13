@@ -21,6 +21,7 @@ import (
 	"bethoven/internal/clock"
 	"bethoven/internal/config"
 	"bethoven/internal/db"
+	"bethoven/internal/live"
 	"bethoven/internal/server"
 	"bethoven/internal/service"
 	"bethoven/internal/tui"
@@ -67,6 +68,25 @@ func main() {
 
 	svc := service.New(store, clock.Real{}, cfg.InviteCode, cfg.Admins, tournamentID)
 
+	// Background context for long-running workers (the live poller); cancelled on
+	// shutdown so they stop cleanly.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Optional live-score feed: poll ESPN's keyless scoreboard and fold the
+	// results into the leaderboard. Disabled => the server runs exactly as before.
+	if cfg.LiveEnabled {
+		cache := live.NewCache()
+		svc.SetLiveStore(cache)
+		interval := time.Duration(cfg.LivePollSeconds) * time.Second
+		poller := live.NewPoller(
+			live.NewESPNProvider(cfg.LiveLeague),
+			cache, svc.Fixtures, svc.FinalizeFromFeed, clock.Real{}, interval,
+		)
+		go poller.Run(ctx)
+		log.Printf("live feed enabled (league=%s, every %s)", cfg.LiveLeague, interval)
+	}
+
 	addr := net.JoinHostPort("", cfg.Port)
 	srv, err := server.New(svc, addr, cfg.HostKeyPath)
 	if err != nil {
@@ -90,9 +110,10 @@ func main() {
 
 	<-done
 	log.Println("shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	cancel() // stop the live poller
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shutdown: %v", err)
 	}
 }
