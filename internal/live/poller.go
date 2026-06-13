@@ -106,7 +106,10 @@ func (p *Poller) poll(ctx context.Context) {
 			a, b = b, a
 		}
 		// Only in-play matches belong in the live cache; finished ones are
-		// settled to the DB below and read from the authoritative result.
+		// settled to the DB below and read from the authoritative result. (If the
+		// feed still reports StateIn after we've finalized, it's harmless: the
+		// service filters it downstream — overlayLive and the leaderboard fold both
+		// skip m.Finished — so the authoritative result always wins.)
 		if ev.State == StateIn {
 			fresh[m.ID] = Score{A: a, B: b, State: StateIn, Minute: ev.Minute, Clock: ev.Clock}
 		}
