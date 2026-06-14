@@ -57,9 +57,12 @@ directly, with a fake clock, no terminal).
       "deduction per goal" model.)
     - **Scarcity** (`ScarcityPoints`): Proximity **plus** a contrarian bonus —
       +2 for a correct result <25% of the match's bets picked, +2 for a correct
-      exact score <10% picked. **Pool-relative**, so it takes a `scoring.Pool`
-      (counts of same-result / same-exact bets) the **service** computes; the pure
-      function never reads the DB.
+      exact score <10% picked. **Quorum gate (`scarcityQuorum`, 8):** the bonus
+      only applies once a match has ≥8 bets; below that "rare" is just noise (a
+      lone picker in a 4-person field isn't a contrarian), so Scarcity scores
+      identically to plain Proximity. **Pool-relative**, so it takes a
+      `scoring.Pool` (counts of same-result / same-exact bets + total) the
+      **service** computes; the pure function never reads the DB.
   Knockouts store the **regulation 90' score** in every mode, so ET/penalties are
   ignored and a 1-1 a.e.t. scores as a 1-1 draw.
   **Plumbing:** the service builds a `scorer` (`service_scoring.go`) once per

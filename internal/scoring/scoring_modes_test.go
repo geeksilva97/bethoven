@@ -105,6 +105,20 @@ func TestScarcityPoints(t *testing.T) {
 		// Empty pool is safe: no bonus, just base.
 		{"empty pool", 4, 1, finished(4, 1),
 			Pool{}, 5},
+
+		// Below quorum (8): rare picks earn NO bonus, just Proximity base —
+		// "rare" is meaningless in a tiny field. Lone exact in a 7-bet match
+		// would have scored 5+2+2=9 without the gate; with it, just 5.
+		{"below quorum suppresses both bonuses", 4, 1, finished(4, 1),
+			Pool{Total: 7, SameResult: 1, SameExact: 1}, 5},
+		{"below quorum suppresses result bonus", 3, 1, finished(4, 1),
+			Pool{Total: 5, SameResult: 1, SameExact: 1}, 4},
+
+		// At quorum exactly (8): bonuses are back on. Lone correct result
+		// (1/8 = 12.5% < 25%) earns the result bonus -> 5 + 2 = 7. (The exact
+		// bonus needs <10%, which 1/8 misses, so it stays off here.)
+		{"at quorum, result bonus applies", 4, 1, finished(4, 1),
+			Pool{Total: 8, SameResult: 1, SameExact: 1}, 7},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

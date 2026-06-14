@@ -10,8 +10,9 @@ import (
 	"bethoven/internal/models"
 )
 
-// todayWindow is how far ahead the default fixtures view looks (the next 48h).
-const todayWindow = 48 * time.Hour
+// todayWindow is how far ahead the default fixtures view looks (the next 3
+// days), so a player betting on Friday sees the whole weekend's matches.
+const todayWindow = 72 * time.Hour
 
 // matchLine renders one fixture row for a list, marking lock state. The selected
 // row is drawn as a solid gold bar so it's unmistakable on any terminal.
@@ -73,8 +74,8 @@ func (m *Model) resetFixFilter() {
 	m.fixCursor = 0
 }
 
-// visibleFixtures applies the active filters to m.fixtures: the next-24h window
-// (unless fixShowAll), then the search query. Both updateFixtures and
+// visibleFixtures applies the active filters to m.fixtures: the next-3-days
+// window (unless fixShowAll), then the search query. Both updateFixtures and
 // viewFixtures call this, so the displayed list and the cursor target never drift.
 func (m Model) visibleFixtures() []models.Match {
 	list := m.fixtures
@@ -192,9 +193,9 @@ func (m Model) betFromList(vis []models.Match) (tea.Model, tea.Cmd) {
 func (m Model) viewFixtures() string {
 	vis := m.visibleFixtures()
 
-	scope := "next 48h · a: all"
+	scope := "next 3 days · a: all"
 	if m.fixShowAll {
-		scope = "all · a: 48h"
+		scope = "all · a: 3 days"
 	}
 	out := titleStyle.Render("Place / edit bets") + labelStyle.Render("  ("+scope+")") + "\n\n"
 
@@ -206,7 +207,7 @@ func (m Model) viewFixtures() string {
 		out += m.renderList(vis, m.fixCursor)
 	}
 
-	help := "↑/↓: move · enter: bet · /: search · a: today/all · b: back · q: quit"
+	help := "↑/↓: move · enter: bet · /: search · a: 3 days/all · b: back · q: quit"
 	if m.fixSearch.active {
 		help = "type to filter · ↑/↓: move · enter: bet · esc: clear"
 	}

@@ -45,6 +45,8 @@ func (m Model) viewScoringRules() string {
 		out += "\n" + helpStyle.Render("Contrarian bonus (on correct picks others missed):") + "\n"
 		out += rule("Result <25% of players called", "+2 points")
 		out += rule("Exact score <10% of players called", "+2 points")
+		out += "\n" + helpStyle.Render("The bonus needs a crowd: it only kicks in once at least 8") + "\n"
+		out += helpStyle.Render("players have bet a match. Thinner matches use base points only.") + "\n"
 		out += "\n" + exampleScarcity()
 	default: // Classic
 		out += rule("Exact score", "3 points")
