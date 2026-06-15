@@ -81,13 +81,25 @@ func (sc *scorer) buildPools(bets []models.Bet) {
 // points scores one bet against one match under the active mode. For Scarcity it
 // looks up the match's pick distribution; other modes ignore the pool.
 func (sc scorer) points(b models.Bet, m models.Match) int {
+	return scoring.Score(sc.mode, b, m, sc.pool(b, m))
+}
+
+// explain returns the human-readable points breakdown for one bet, using the
+// same pool the scorer would score with — so the explanation always matches the
+// points shown.
+func (sc scorer) explain(b models.Bet, m models.Match) scoring.Breakdown {
+	return scoring.Explain(sc.mode, b, m, sc.pool(b, m))
+}
+
+// pool returns the per-match pick distribution for Scarcity, or the zero Pool
+// for modes that ignore it.
+func (sc scorer) pool(b models.Bet, m models.Match) scoring.Pool {
 	if sc.mode != scoring.ModeScarcity {
-		return scoring.Score(sc.mode, b, m, scoring.Pool{})
+		return scoring.Pool{}
 	}
-	pool := scoring.Pool{
+	return scoring.Pool{
 		Total:      sc.total[m.ID],
 		SameResult: sc.result[m.ID][scoring.Result(b)],
 		SameExact:  sc.exact[m.ID][[2]int{b.PredA, b.PredB}],
 	}
-	return scoring.Score(sc.mode, b, m, pool)
 }

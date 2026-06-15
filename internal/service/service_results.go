@@ -7,6 +7,7 @@ import (
 	"bethoven/internal/db"
 	"bethoven/internal/live"
 	"bethoven/internal/models"
+	"bethoven/internal/scoring"
 )
 
 // MatchResult is one row of a player's "My results" view: a match, their bet on
@@ -27,11 +28,13 @@ type Standing struct {
 }
 
 // MatchStanding is one row of a per-match ranking: a player, their bet on that
-// match (nil if none), and the points it earned.
+// match (nil if none), the points it earned, and the breakdown of how those
+// points were computed (for the drill-down view).
 type MatchStanding struct {
-	User   models.User
-	Bet    *models.Bet
-	Points int
+	User      models.User
+	Bet       *models.Bet
+	Points    int
+	Breakdown scoring.Breakdown
 }
 
 // Fixtures lists the active tournament's matches in kickoff order (for the
@@ -178,9 +181,10 @@ func (s *Service) MatchLeaderboard(matchID int64) (*models.Match, []MatchStandin
 	for _, b := range bets {
 		bcopy := b
 		rows = append(rows, MatchStanding{
-			User:   users[b.UserID],
-			Bet:    &bcopy,
-			Points: sc.points(b, *m),
+			User:      users[b.UserID],
+			Bet:       &bcopy,
+			Points:    sc.points(b, *m),
+			Breakdown: sc.explain(b, *m),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool {

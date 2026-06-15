@@ -84,7 +84,11 @@ type Model struct {
 	// per-match ranking
 	rankMatch  *models.Match
 	rankRows   []service.MatchStanding
-	rankSearch searchBox
+	rankSearch searchBox // match-picker filter (pick mode)
+	// display mode: select a player to drill into their points breakdown.
+	rankCursor       int
+	rankPlayerSearch searchBox            // player filter within a game's ranking
+	rankBreakdown    *service.MatchStanding // set => showing one player's breakdown
 
 	// admin: add match
 	addInputs []textinput.Model

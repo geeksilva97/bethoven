@@ -106,8 +106,10 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.fixtures, m.fixCursor = fx, 0
-		m.rankRows, m.rankMatch = nil, nil
+		m.rankRows, m.rankMatch, m.rankBreakdown = nil, nil, nil
+		m.rankCursor = 0
 		m.rankSearch = newSearchBox("filter teams…")
+		m.rankPlayerSearch = newSearchBox("filter players…")
 		m.screen = screenMatchRank
 	case screenAddMatch:
 		m.initAddMatch()
