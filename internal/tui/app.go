@@ -104,6 +104,7 @@ type Model struct {
 	allCursor  int
 	allMatch   *models.Match // set => showing one match's picks
 	allSearch  searchBox
+	allShowAll bool // admin grid: false => next-3-days window, true => full schedule
 	gridPublic bool
 
 	// settings screen (admin) + cached public_bets flag (drives the player's

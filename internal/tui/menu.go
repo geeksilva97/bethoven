@@ -128,7 +128,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.grid, m.screen, m.gridPublic = grid, screenAllBets, false
-		m.allCursor, m.allMatch = 0, nil
+		m.allCursor, m.allMatch, m.allShowAll = 0, nil, false
 		m.allSearch = newSearchBox("filter teams…")
 	case screenPublicBets:
 		grid, err := m.svc.PublicBetsGrid(m.user)

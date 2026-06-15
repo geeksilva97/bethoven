@@ -302,6 +302,21 @@ func scoreField(in textinput.Model, team string, focused bool) string {
 
 // --- all bets browser ----------------------------------------------------
 
+// visibleGridMatches applies the grid's active filters: the admin grid defaults
+// to the same next-3-days window as Place Bets (toggle with "a"), then the
+// search query. The public grid is unwindowed — its value is the revealed picks
+// on past/kicked-off matches, which a forward-looking window would hide.
+func (m Model) visibleGridMatches() []models.Match {
+	if m.grid == nil {
+		return nil
+	}
+	list := m.grid.Matches
+	if !m.gridPublic && !m.allShowAll {
+		list = upcomingWindow(list, m.svc.Now())
+	}
+	return filterMatches(list, m.allSearch.query())
+}
+
 // updateAllBets drives the admin bets browser: a scrollable/searchable grid of
 // every player's picks, with an enter-to-drill-down view of one match's picks.
 func (m Model) updateAllBets(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -340,7 +355,7 @@ func (m Model) updateAllBets(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Grid mode: navigate match rows, search filters them.
-	vis := filterMatches(g.Matches, m.allSearch.query())
+	vis := m.visibleGridMatches()
 	if m.allSearch.active {
 		switch key.String() {
 		case "esc":
@@ -367,7 +382,7 @@ func (m Model) updateAllBets(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		cmd := m.allSearch.update(msg)
-		if n := len(filterMatches(g.Matches, m.allSearch.query())); m.allCursor >= n {
+		if n := len(m.visibleGridMatches()); m.allCursor >= n {
 			m.allCursor = n - 1
 		}
 		if m.allCursor < 0 {
@@ -383,6 +398,12 @@ func (m Model) updateAllBets(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.goMenu(), nil
 	case "/":
 		return m, m.allSearch.open()
+	case "a":
+		// Toggle next-3-days window vs full schedule (admin grid only).
+		if !m.gridPublic {
+			m.allShowAll = !m.allShowAll
+			m.allCursor = 0
+		}
 	case "up", "k":
 		if m.allCursor > 0 {
 			m.allCursor--
@@ -413,9 +434,17 @@ func (m Model) viewAllBets() string {
 		return m.viewBetsForMatch(*m.allMatch)
 	}
 
-	out := titleStyle.Render(m.gridTitle()) + labelStyle.Render("  (enter: see one match's picks)") + "\n\n"
+	hint := "  (enter: see one match's picks)"
+	if !m.gridPublic {
+		scope := "next 3 days · a: all"
+		if m.allShowAll {
+			scope = "all · a: 3 days"
+		}
+		hint = "  (" + scope + ")"
+	}
+	out := titleStyle.Render(m.gridTitle()) + labelStyle.Render(hint) + "\n\n"
 	out += m.allSearch.view()
-	vis := filterMatches(g.Matches, m.allSearch.query())
+	vis := m.visibleGridMatches()
 
 	// Fixed header row: match column + one column per player.
 	header := fmt.Sprintf("%-26s", "match")
@@ -452,6 +481,9 @@ func (m Model) viewAllBets() string {
 	out += okStyle.Render(totals) + "\n"
 
 	help := "↑/↓: move · enter: see picks · /: search · b: back · q: quit"
+	if !m.gridPublic {
+		help = "↑/↓: move · enter: see picks · /: search · a: 3 days/all · b: back · q: quit"
+	}
 	if m.allSearch.active {
 		help = "type to filter · ↑/↓: move · enter: see picks · esc: clear"
 	}

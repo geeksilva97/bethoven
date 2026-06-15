@@ -74,32 +74,39 @@ func (m *Model) resetFixFilter() {
 	m.fixCursor = 0
 }
 
+// upcomingWindow returns the matches kicking off within todayWindow of now,
+// falling back to the next handful of upcoming matches when that window is empty
+// so the list is never blank. Shared by the Place Bets screen and the admin bets
+// grid as their default (non-"show all") view.
+func upcomingWindow(list []models.Match, now time.Time) []models.Match {
+	var window []models.Match
+	for _, mt := range list {
+		s := mt.StartsAt.UTC()
+		if !s.Before(now) && s.Before(now.Add(todayWindow)) {
+			window = append(window, mt)
+		}
+	}
+	if len(window) == 0 {
+		// Never-empty fallback: the next handful of upcoming matches.
+		for _, mt := range list {
+			if !mt.StartsAt.UTC().Before(now) {
+				window = append(window, mt)
+				if len(window) >= 10 {
+					break
+				}
+			}
+		}
+	}
+	return window
+}
+
 // visibleFixtures applies the active filters to m.fixtures: the next-3-days
 // window (unless fixShowAll), then the search query. Both updateFixtures and
 // viewFixtures call this, so the displayed list and the cursor target never drift.
 func (m Model) visibleFixtures() []models.Match {
 	list := m.fixtures
 	if !m.fixShowAll {
-		now := m.svc.Now()
-		var window []models.Match
-		for _, mt := range list {
-			s := mt.StartsAt.UTC()
-			if !s.Before(now) && s.Before(now.Add(todayWindow)) {
-				window = append(window, mt)
-			}
-		}
-		if len(window) == 0 {
-			// Never-empty fallback: the next handful of upcoming matches.
-			for _, mt := range list {
-				if !mt.StartsAt.UTC().Before(now) {
-					window = append(window, mt)
-					if len(window) >= 10 {
-						break
-					}
-				}
-			}
-		}
-		list = window
+		list = upcomingWindow(list, m.svc.Now())
 	}
 
 	return filterMatches(list, m.fixSearch.query())
