@@ -434,5 +434,199 @@
       "group_label": "Group J",
       "starts_at": "2026-06-28T02:00:00Z"
     }
+  ],
+  "teams": [
+    {
+      "name": "Algeria",
+      "form": "WWDWW"
+    },
+    {
+      "name": "Argentina",
+      "form": "WWWWW"
+    },
+    {
+      "name": "Australia",
+      "form": "LWWLD"
+    },
+    {
+      "name": "Austria",
+      "form": "WDWWW"
+    },
+    {
+      "name": "Belgium",
+      "form": "WWDWW"
+    },
+    {
+      "name": "Bosnia & Herzegovina",
+      "form": "DDDDD"
+    },
+    {
+      "name": "Brazil",
+      "form": "DLWWW"
+    },
+    {
+      "name": "Canada",
+      "form": "WDDWD"
+    },
+    {
+      "name": "Cape Verde",
+      "form": "DDLDW"
+    },
+    {
+      "name": "Colombia",
+      "form": "WLLWW"
+    },
+    {
+      "name": "Croatia",
+      "form": "WWLLW"
+    },
+    {
+      "name": "Curaçao",
+      "form": "DLLLW"
+    },
+    {
+      "name": "Czech Republic",
+      "form": "WDDWW"
+    },
+    {
+      "name": "DR Congo",
+      "form": "WWWDL"
+    },
+    {
+      "name": "Ecuador",
+      "form": "WDDWW"
+    },
+    {
+      "name": "Egypt",
+      "form": "WWDWL"
+    },
+    {
+      "name": "England",
+      "form": "WDLWW"
+    },
+    {
+      "name": "France",
+      "form": "WWWLW"
+    },
+    {
+      "name": "Germany",
+      "form": "WWWWW"
+    },
+    {
+      "name": "Ghana",
+      "form": "LLLLD"
+    },
+    {
+      "name": "Haiti",
+      "form": "WLDWL"
+    },
+    {
+      "name": "Iran",
+      "form": "DLWDW"
+    },
+    {
+      "name": "Iraq",
+      "form": "DWWDL"
+    },
+    {
+      "name": "Ivory Coast",
+      "form": "LWWWW"
+    },
+    {
+      "name": "Japan",
+      "form": "WWWWW"
+    },
+    {
+      "name": "Jordan",
+      "form": "DDDLL"
+    },
+    {
+      "name": "Mexico",
+      "form": "DDWWW"
+    },
+    {
+      "name": "Morocco",
+      "form": "DWWWD"
+    },
+    {
+      "name": "Netherlands",
+      "form": "WWDLW"
+    },
+    {
+      "name": "New Zealand",
+      "form": "LLWLL"
+    },
+    {
+      "name": "Norway",
+      "form": "WLDWD"
+    },
+    {
+      "name": "Panama",
+      "form": "DWLWD"
+    },
+    {
+      "name": "Paraguay",
+      "form": "LWWLW"
+    },
+    {
+      "name": "Portugal",
+      "form": "WDWWW"
+    },
+    {
+      "name": "Qatar",
+      "form": "DWLLD"
+    },
+    {
+      "name": "Saudi Arabia",
+      "form": "LLLWD"
+    },
+    {
+      "name": "Scotland",
+      "form": "WLLWW"
+    },
+    {
+      "name": "Senegal",
+      "form": "WWWLD"
+    },
+    {
+      "name": "South Africa",
+      "form": "WDLDW"
+    },
+    {
+      "name": "South Korea",
+      "form": "WLLWW"
+    },
+    {
+      "name": "Spain",
+      "form": "DWDDW"
+    },
+    {
+      "name": "Sweden",
+      "form": "DWWLD"
+    },
+    {
+      "name": "Switzerland",
+      "form": "DLDWD"
+    },
+    {
+      "name": "Tunisia",
+      "form": "WWDLL"
+    },
+    {
+      "name": "Turkey",
+      "form": "DWWWW"
+    },
+    {
+      "name": "USA",
+      "form": "WLLWL"
+    },
+    {
+      "name": "Uruguay",
+      "form": "WDLDD"
+    },
+    {
+      "name": "Uzbekistan",
+      "form": "DWDLL"
+    }
   ]
 }

@@ -67,6 +67,16 @@ type Match struct {
 	LiveClock  string // display clock, e.g. "67'"
 }
 
+// FormOutcome is one past result from a team's perspective, used for the bet
+// screen's recent-form strip. Ordered oldest→newest in a form slice.
+type FormOutcome int
+
+const (
+	FormWin FormOutcome = iota
+	FormDraw
+	FormLoss
+)
+
 // Bet is a user's prediction for a match: a scoreline. One editable bet per
 // (user, match) until kickoff.
 type Bet struct {

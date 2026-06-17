@@ -68,6 +68,9 @@ type Service struct {
 	admins       []string
 	tournamentID int64
 	live         LiveStore // optional; nil when no live feed is configured
+	// forms holds each team's pre-tournament recent-form baseline (oldest→newest),
+	// seeded from fixtures.json. Optional; nil when no baseline is configured.
+	forms map[string][]models.FormOutcome
 }
 
 // New builds a Service bound to the active tournament.

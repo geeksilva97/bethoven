@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,8 @@ import (
 func (m Model) openBet(mt models.Match) Model {
 	m.betMatch = mt
 	m.betFocus = 0
+	m.betFormA = m.svc.TeamForm(mt.TeamA)
+	m.betFormB = m.svc.TeamForm(mt.TeamB)
 
 	a, b := "", ""
 	if existing, _ := m.svc.MyBet(m.user.ID, mt.ID); existing != nil {
@@ -113,7 +116,12 @@ func (m Model) viewBet() string {
 	if mt.GroupLabel != "" {
 		out += labelStyle.Render("  ·  " + mt.GroupLabel)
 	}
-	out += "\n\n"
+	out += "\n"
+
+	// Recent-form strip: TeamA marks left, TeamB right (same order as the header
+	// and the score fields below), so no flags/names need repeating.
+	out += "  " + labelStyle.Render("form  ") + renderForm(m.betFormA) +
+		labelStyle.Render("   ·   ") + renderForm(m.betFormB) + "\n\n"
 
 	out += "  " + m.betScoreField(0, mt.TeamA) + "   " + m.betScoreField(1, mt.TeamB) + "\n\n"
 
@@ -123,4 +131,24 @@ func (m Model) viewBet() string {
 
 func (m Model) betScoreField(i int, team string) string {
 	return scoreField(m.betInputs[i], withFlag(team), i == m.betFocus)
+}
+
+// renderForm draws a recent-form strip: ✓ win (green) · – draw (dim) · ✗ loss
+// (red), oldest→newest. Shows a dim "—" when no form is known.
+func renderForm(form []models.FormOutcome) string {
+	if len(form) == 0 {
+		return labelStyle.Render("—")
+	}
+	marks := make([]string, 0, len(form))
+	for _, o := range form {
+		switch o {
+		case models.FormWin:
+			marks = append(marks, okStyle.Render("✓"))
+		case models.FormDraw:
+			marks = append(marks, helpStyle.Render("–"))
+		case models.FormLoss:
+			marks = append(marks, errStyle.Render("✗"))
+		}
+	}
+	return strings.Join(marks, " ")
 }

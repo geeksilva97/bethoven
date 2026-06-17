@@ -66,6 +66,8 @@ type Model struct {
 	fixSearch  searchBox
 
 	// bet form
+	betFormA  []models.FormOutcome // recent-form strip, TeamA (loaded in openBet)
+	betFormB  []models.FormOutcome // recent-form strip, TeamB
 	betMatch  models.Match
 	betInputs []textinput.Model
 	betFocus  int
@@ -91,7 +93,7 @@ type Model struct {
 	rankSearch searchBox // match-picker filter (pick mode)
 	// display mode: select a player to drill into their points breakdown.
 	rankCursor       int
-	rankPlayerSearch searchBox            // player filter within a game's ranking
+	rankPlayerSearch searchBox              // player filter within a game's ranking
 	rankBreakdown    *service.MatchStanding // set => showing one player's breakdown
 
 	// admin: add match

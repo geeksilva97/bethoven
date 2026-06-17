@@ -8,11 +8,13 @@ import (
 	"bethoven/internal/models"
 )
 
-// FixtureFile is the JSON shape of a seed file: a tournament name plus its
-// group-stage matches. Knockout matches are added later via the admin TUI.
+// FixtureFile is the JSON shape of a seed file: a tournament name, its
+// group-stage matches, and optional per-team recent-form baselines. Knockout
+// matches are added later via the admin TUI.
 type FixtureFile struct {
 	Tournament string         `json:"tournament"`
 	Matches    []FixtureMatch `json:"matches"`
+	Teams      []TeamForm     `json:"teams"`
 }
 
 // FixtureMatch is one group-stage fixture. StartsAt is RFC3339 UTC.
@@ -21,6 +23,30 @@ type FixtureMatch struct {
 	TeamB      string `json:"team_b"`
 	GroupLabel string `json:"group_label"`
 	StartsAt   string `json:"starts_at"`
+}
+
+// TeamForm is a team's pre-tournament recent form: a string of W/D/L results,
+// left = oldest → right = newest. Read-only reference data (not stored in the
+// DB); the service merges live tournament results on top at read time.
+type TeamForm struct {
+	Name string `json:"name"`
+	Form string `json:"form"`
+}
+
+// ParseTeamForms extracts the per-team form baselines from a seed file as a
+// name→form map. Absent/empty teams section yields an empty map (not an error).
+func ParseTeamForms(raw []byte) (map[string]string, error) {
+	var ff FixtureFile
+	if err := json.Unmarshal(raw, &ff); err != nil {
+		return nil, fmt.Errorf("parse fixtures: %w", err)
+	}
+	forms := make(map[string]string, len(ff.Teams))
+	for _, t := range ff.Teams {
+		if t.Name != "" {
+			forms[t.Name] = t.Form
+		}
+	}
+	return forms, nil
 }
 
 // EnsureSeeded guarantees an active tournament exists and, if it has no matches

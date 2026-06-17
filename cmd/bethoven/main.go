@@ -64,9 +64,10 @@ func main() {
 
 	// Seed the group stage from fixtures.json on first boot (idempotent).
 	now := time.Now().UTC()
-	tournamentID := seed(store, now)
+	tournamentID, teamForms := seed(store, now)
 
 	svc := service.New(store, clock.Real{}, cfg.InviteCode, cfg.Admins, tournamentID)
+	svc.SetTeamForms(teamForms) // pre-tournament recent-form baselines for the bet screen
 
 	// Background context for long-running workers (the live poller); cancelled on
 	// shutdown so they stop cleanly.
@@ -118,10 +119,10 @@ func main() {
 	}
 }
 
-// seed loads fixtures.json (if present) into an empty tournament and returns
-// the active tournament id. A missing file is fine — the admin can add every
-// match via the TUI instead.
-func seed(store *db.Store, now time.Time) int64 {
+// seed loads fixtures.json (if present) into an empty tournament and returns the
+// active tournament id plus the per-team recent-form baselines (name→W/D/L). A
+// missing file is fine — the admin can add every match via the TUI instead.
+func seed(store *db.Store, now time.Time) (int64, map[string]string) {
 	raw, err := os.ReadFile("fixtures.json")
 	if err != nil {
 		log.Printf("no fixtures.json (%v); starting empty — add matches via the admin TUI", err)
@@ -135,5 +136,9 @@ func seed(store *db.Store, now time.Time) int64 {
 	if seeded {
 		log.Println("seeded group-stage fixtures from fixtures.json")
 	}
-	return tid
+	forms, err := db.ParseTeamForms(raw)
+	if err != nil {
+		log.Printf("WARNING: parse team forms: %v; bet screen will show form from results only", err)
+	}
+	return tid, forms
 }
