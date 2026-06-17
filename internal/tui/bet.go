@@ -119,16 +119,16 @@ func (m Model) viewBet() string {
 	out += "\n"
 
 	// Recent-form strip: TeamA marks left, TeamB right (same order as the header
-	// and the score fields below), so no flags/names need repeating.
+	// and the score fields below), so no flags/names need repeating. The legend
+	// lives at the bottom (next to the help line) to keep the form area uncluttered.
 	out += "  " + labelStyle.Render("last 5  ") + renderForm(m.betFormA) +
-		labelStyle.Render("   ·   ") + renderForm(m.betFormB) + "\n"
-	if len(m.betFormA) > 0 || len(m.betFormB) > 0 {
-		out += "  " + formLegend() + "\n"
-	}
-	out += "\n"
+		labelStyle.Render("   ·   ") + renderForm(m.betFormB) + "\n\n"
 
 	out += "  " + m.betScoreField(0, mt.TeamA) + "   " + m.betScoreField(1, mt.TeamB) + "\n\n"
 
+	if len(m.betFormA) > 0 || len(m.betFormB) > 0 {
+		out += "  " + formLegend() + "\n"
+	}
 	out += statusLine(m) + helpStyle.Render("type scores · tab: switch · enter: save · b: back")
 	return out
 }
