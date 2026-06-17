@@ -146,12 +146,24 @@ func (m Model) viewLeaderboard() string {
 		default:
 			line = labelStyle.Render(line)
 		}
+		// Points gained from live matches + rank shift they caused, rendered as
+		// independent segments so their colors don't nest inside the line style.
+		if s.LivePoints > 0 {
+			line += liveStyle.Render(fmt.Sprintf(" (+%d)", s.LivePoints))
+		}
+		switch {
+		case s.LiveRankDelta > 0:
+			line += okStyle.Render(" ▲")
+		case s.LiveRankDelta < 0:
+			line += errStyle.Render(" ▼")
+		}
 		out += "  " + marker + line + "\n"
 	}
 
 	out += "\n"
 	if anyLive || len(m.liveMatches) > 0 {
 		out += lockStyle.Render(liveLegend) + "\n"
+		out += lockStyle.Render("▲▼ rank shift from live results · (+N) points gained live") + "\n"
 	}
 	out += helpStyle.Render("any key: back · q: quit")
 	return out

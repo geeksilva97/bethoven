@@ -130,6 +130,65 @@ func TestFinalizeFromFeedRespectsAdmin(t *testing.T) {
 	}
 }
 
+// TestLeaderboardLiveRankDelta checks that in-play points produce the right rank
+// movement: the climber gets a positive delta, the player they overtook a negative
+// one, and an uninvolved player zero. With no live store, all deltas are 0.
+func TestLeaderboardLiveRankDelta(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
+	admin, _ := svc.Register(adminFP, "", "Boss") // bets nothing — uninvolved
+
+	finished := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
+	livem := addMatch(t, store, svc.tournamentID, base.Add(2*time.Hour))
+
+	// Finished 2-1: Bob exact (3), Alice result-only (1) — settled, Bob leads Alice.
+	_ = svc.PlaceBet(alice.ID, finished, 2, 0)
+	_ = svc.PlaceBet(bob.ID, finished, 2, 1)
+	// In-play, currently 1-0: Alice bet 1-0 (provisional exact 3), Bob bet 0-2 (0).
+	_ = svc.PlaceBet(alice.ID, livem, 1, 0)
+	_ = svc.PlaceBet(bob.ID, livem, 0, 2)
+
+	fc.T = base.Add(90 * time.Minute)
+	if err := svc.EnterResult(admin, finished, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	// No live store: settled order, no movement.
+	board, _ := svc.Leaderboard()
+	for _, s := range board {
+		if s.LiveRankDelta != 0 {
+			t.Errorf("pre-live delta for %s = %d, want 0", s.User.DisplayName, s.LiveRankDelta)
+		}
+	}
+
+	// Live match in play: Alice (1+3=4) overtakes Bob (3+0=3).
+	svc.SetLiveStore(liveSnap{livem: {A: 1, B: 0, State: live.StateIn, Clock: "30'"}})
+	board, _ = svc.Leaderboard()
+
+	if got := deltaFor(board, alice.ID); got <= 0 {
+		t.Errorf("Alice delta = %d, want positive (climbed)", got)
+	}
+	if got := deltaFor(board, bob.ID); got >= 0 {
+		t.Errorf("Bob delta = %d, want negative (dropped)", got)
+	}
+	if got := deltaFor(board, admin.ID); got != 0 {
+		t.Errorf("Boss (uninvolved) delta = %d, want 0", got)
+	}
+	if board[0].User.ID != alice.ID {
+		t.Errorf("leader = %+v, want Alice", board[0])
+	}
+}
+
+func deltaFor(board []Standing, userID int64) int {
+	for _, s := range board {
+		if s.User.ID == userID {
+			return s.LiveRankDelta
+		}
+	}
+	return 0
+}
+
 func totalFor(board []Standing, userID int64) int {
 	for _, s := range board {
 		if s.User.ID == userID {

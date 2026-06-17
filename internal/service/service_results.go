@@ -25,6 +25,10 @@ type Standing struct {
 	User       models.User
 	Total      int
 	LivePoints int
+	// LiveRankDelta is how many places the in-play (provisional) points moved this
+	// player vs. where they'd sit ignoring live matches: positive = climbed (▲),
+	// negative = dropped (▼), 0 = no change / nothing live. Stateless.
+	LiveRankDelta int
 }
 
 // MatchStanding is one row of a per-match ranking: a player, their bet on that
@@ -252,5 +256,26 @@ func (s *Service) Leaderboard() ([]Standing, error) {
 		}
 		return standings[i].User.DisplayName < standings[j].User.DisplayName
 	})
+
+	// Rank movement caused by the in-play (provisional) points: compare each
+	// player's current rank against where they'd sit on settled points only
+	// (Total - LivePoints), using the same tie-break so only the live delta moves
+	// anyone. With nothing live, settled == current and every delta is 0.
+	settled := make([]Standing, len(standings))
+	copy(settled, standings)
+	sort.Slice(settled, func(i, j int) bool {
+		si, sj := settled[i].Total-settled[i].LivePoints, settled[j].Total-settled[j].LivePoints
+		if si != sj {
+			return si > sj
+		}
+		return settled[i].User.DisplayName < settled[j].User.DisplayName
+	})
+	settledRank := make(map[int64]int, len(settled))
+	for i, s := range settled {
+		settledRank[s.User.ID] = i + 1
+	}
+	for i := range standings {
+		standings[i].LiveRankDelta = settledRank[standings[i].User.ID] - (i + 1)
+	}
 	return standings, nil
 }
