@@ -140,7 +140,7 @@ func (m Model) betScoreField(i int, team string) string {
 // formLegend explains the last-5 marks (most recent on the right).
 func formLegend() string {
 	return okStyle.Render("✓") + helpStyle.Render(" win · ") +
-		helpStyle.Render("– draw · ") +
+		drawStyle.Render("–") + helpStyle.Render(" draw · ") +
 		errStyle.Render("✗") + helpStyle.Render(" loss · newest right")
 }
 
@@ -156,7 +156,7 @@ func renderForm(form []models.FormOutcome) string {
 		case models.FormWin:
 			marks = append(marks, okStyle.Render("✓"))
 		case models.FormDraw:
-			marks = append(marks, helpStyle.Render("–"))
+			marks = append(marks, drawStyle.Render("–"))
 		case models.FormLoss:
 			marks = append(marks, errStyle.Render("✗"))
 		}

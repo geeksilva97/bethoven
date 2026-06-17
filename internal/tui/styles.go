@@ -20,6 +20,11 @@ var (
 	labelStyle = lipgloss.NewStyle().Foreground(subtle)
 	lockStyle  = lipgloss.NewStyle().Foreground(dim).Italic(true)
 
+	// drawStyle marks a draw in the recent-form strip. Help-grey (dim) is too
+	// faint to read on a dark terminal, so use the brighter neutral, bold — it
+	// stays clearly "neither win nor loss" without borrowing the red/green.
+	drawStyle = lipgloss.NewStyle().Foreground(subtle).Bold(true)
+
 	// liveStyle marks anything live/provisional (in-play scores, partial
 	// leaderboard points) so it's never mistaken for a settled value.
 	liveStyle = lipgloss.NewStyle().Foreground(cyan).Bold(true)
