@@ -68,6 +68,9 @@ type Service struct {
 	admins       []string
 	tournamentID int64
 	live         LiveStore // optional; nil when no live feed is configured
+	// analytics is the optional usage tracker; nil when analytics is disabled,
+	// in which case every emit site is a cheap no-op (see track / trackByID).
+	analytics AnalyticsSink
 	// forms holds each team's pre-tournament recent-form baseline (oldest→newest),
 	// seeded from fixtures.json. Optional; nil when no baseline is configured.
 	forms map[string][]models.FormOutcome
@@ -87,6 +90,10 @@ func New(store *db.Store, clk clock.Clock, inviteCode string, admins []string, t
 // SetLiveStore attaches a live snapshot source (the poller's cache). Optional —
 // when unset, the leaderboard and fixtures behave as if nothing is in play.
 func (s *Service) SetLiveStore(ls LiveStore) { s.live = ls }
+
+// SetAnalyticsSink attaches the usage tracker. Optional — when unset, every emit
+// site is a no-op and the service behaves exactly as if analytics didn't exist.
+func (s *Service) SetAnalyticsSink(a AnalyticsSink) { s.analytics = a }
 
 // liveSnapshot returns the current live scores, or nil when no feed is attached.
 func (s *Service) liveSnapshot() map[int64]live.Score {
@@ -186,5 +193,10 @@ func (s *Service) Register(fingerprint, code, name string) (*models.User, error)
 		return nil, ErrBadInvite
 	}
 
-	return s.store.CreateUser(fingerprint, name, role, s.clock.Now().UTC())
+	u, err := s.store.CreateUser(fingerprint, name, role, s.clock.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	s.track(u, fingerprint, EvRegistered, map[string]string{"role": string(role)})
+	return u, nil
 }

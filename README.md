@@ -132,6 +132,8 @@ allowlist is the source of truth.
 | `BETHOVEN_LIVE_ENABLED` | `true` | poll a live-score feed in the background; set `false` to disable |
 | `BETHOVEN_LIVE_LEAGUE` | `fifa.world` | ESPN league slug to poll |
 | `BETHOVEN_LIVE_POLL_SECONDS` | `60` | seconds between live-feed polls |
+| `BETHOVEN_ANALYTICS_ENABLED` | `false` | record usage events (accesses, bets, screen views) to a separate DB; set `true` to enable |
+| `BETHOVEN_ANALYTICS_DB_PATH` | `analytics.db` | SQLite file for analytics events (separate from the domain DB) |
 
 ## Live scores
 

@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/muesli/termenv"
 
+	"bethoven/internal/analytics"
 	"bethoven/internal/clock"
 	"bethoven/internal/config"
 	"bethoven/internal/db"
@@ -68,6 +69,26 @@ func main() {
 
 	svc := service.New(store, clock.Real{}, cfg.InviteCode, cfg.Admins, tournamentID)
 	svc.SetTeamForms(teamForms) // pre-tournament recent-form baselines for the bet screen
+
+	// Optional analytics: a SEPARATE database written asynchronously, so it can
+	// never block or fail a bet. Disabled => no DB opened, behaviour unchanged.
+	if cfg.AnalyticsEnabled {
+		aconn, err := analytics.Open(cfg.AnalyticsDBPath)
+		if err != nil {
+			log.Fatalf("open analytics db: %v", err)
+		}
+		defer aconn.Close()
+		rec := analytics.NewRecorder(analytics.NewStore(aconn))
+		svc.SetAnalyticsSink(rec)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := rec.Close(ctx); err != nil {
+				log.Printf("analytics: drain on shutdown: %v", err)
+			}
+		}()
+		log.Printf("analytics enabled (db=%s)", cfg.AnalyticsDBPath)
+	}
 
 	// Background context for long-running workers (the live poller); cancelled on
 	// shutdown so they stop cleanly.

@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -41,7 +42,7 @@ func (s *Service) AddMatch(by *models.User, teamA, teamB string, phase models.Ph
 	if err := requireAdmin(by); err != nil {
 		return 0, err
 	}
-	return s.store.CreateMatch(models.Match{
+	id, err := s.store.CreateMatch(models.Match{
 		TournamentID: s.tournamentID,
 		TeamA:        teamA,
 		TeamB:        teamB,
@@ -49,6 +50,14 @@ func (s *Service) AddMatch(by *models.User, teamA, teamB string, phase models.Ph
 		GroupLabel:   groupLabel,
 		StartsAt:     startsAt,
 	})
+	if err != nil {
+		return 0, err
+	}
+	s.track(by, by.Fingerprint, EvMatchAdded, map[string]string{
+		"match": teamA + "-" + teamB,
+		"phase": string(phase),
+	})
+	return id, nil
 }
 
 // EnterResult records a match's regulation result. Admin only.
@@ -62,6 +71,10 @@ func (s *Service) EnterResult(by *models.User, matchID int64, scoreA, scoreB int
 	if err := s.store.SetResult(matchID, scoreA, scoreB); err != nil {
 		return ErrMatchNotFound
 	}
+	s.track(by, by.Fingerprint, EvResultEntered, map[string]string{
+		"match_id": fmt.Sprintf("%d", matchID),
+		"score":    fmt.Sprintf("%d-%d", scoreA, scoreB),
+	})
 	return nil
 }
 

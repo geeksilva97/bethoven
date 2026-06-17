@@ -29,6 +29,11 @@ Environment=BETHOVEN_INVITE_CODE=change-me
 # Comma-separated SHA256 fingerprints (from `ssh-keygen -lf your_key.pub`):
 Environment=BETHOVEN_ADMINS=SHA256:REPLACE_WITH_YOUR_FINGERPRINT
 
+# Optional usage analytics (off by default). Writes to a SEPARATE DB on the same
+# persistent disk, asynchronously, so it never competes with the betting path.
+# Environment=BETHOVEN_ANALYTICS_ENABLED=true
+# Environment=BETHOVEN_ANALYTICS_DB_PATH=/opt/bethoven/data/analytics.db
+
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=strict

@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"bethoven/internal/models"
+	"bethoven/internal/service"
 )
 
 type menuItem struct {
@@ -34,6 +36,7 @@ func (m *Model) buildMenu() {
 			menuItem{"⚙  Admin: enter result", screenEnterResult},
 			menuItem{"⚙  Admin: all bets", screenAllBets},
 			menuItem{"⚙  Admin: settings", screenSettings},
+			menuItem{"⚙  Admin: analytics", screenAnalytics},
 		)
 	}
 	m.menuItems = items
@@ -67,6 +70,10 @@ func (m Model) updateMenu(msg tea.Msg) (tea.Model, tea.Cmd) {
 // enterMenuItem loads the data for the chosen screen and switches to it.
 func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 	m.status = ""
+	// Record the navigation (no-op when analytics is off). Emitted here, on the
+	// transition only — NOT on the leaderboard's auto-refresh tick, which would
+	// otherwise inflate view counts.
+	m.svc.Track(m.user, m.fingerprint, service.EvView, map[string]string{"screen": screenName(target)})
 	switch target {
 	case screenFixtures:
 		fx, err := m.svc.Fixtures()
@@ -150,8 +157,54 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 	case screenScoringRules:
 		m.scoringMode, _ = m.svc.ScoringMode()
 		m.screen = screenScoringRules
+	case screenAnalytics:
+		m.anDisabled = false
+		ov, err := m.svc.AnalyticsOverview(m.user)
+		if errors.Is(err, service.ErrAnalyticsOff) {
+			m.anDisabled, m.screen = true, screenAnalytics
+			return m, nil
+		}
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.anOverview = ov
+		m.anTimeline, _ = m.svc.AnalyticsTimeline(m.user, analyticsTimelineDays)
+		m.anPlayers, _ = m.svc.AnalyticsPerPlayer(m.user)
+		m.anRecent, _ = m.svc.AnalyticsRecent(m.user, analyticsRecentLimit)
+		m.screen = screenAnalytics
 	}
 	return m, nil
+}
+
+// screenName maps a screen to the label recorded in the analytics "view" event.
+func screenName(s screen) string {
+	switch s {
+	case screenFixtures:
+		return "fixtures"
+	case screenMyResults:
+		return "my_results"
+	case screenLeaderboard:
+		return "leaderboard"
+	case screenMatchRank:
+		return "match_rank"
+	case screenScoringRules:
+		return "scoring_rules"
+	case screenAddMatch:
+		return "admin_add_match"
+	case screenEnterResult:
+		return "admin_enter_result"
+	case screenAllBets:
+		return "admin_all_bets"
+	case screenPublicBets:
+		return "public_bets"
+	case screenSettings:
+		return "admin_settings"
+	case screenAnalytics:
+		return "admin_analytics"
+	default:
+		return "menu"
+	}
 }
 
 func (m Model) viewMenu() string {

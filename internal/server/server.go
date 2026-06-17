@@ -5,6 +5,7 @@
 package server
 
 import (
+	"strconv"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -68,6 +69,12 @@ func teaHandler(svc *service.Service) bm.Handler {
 		if err != nil {
 			user = nil
 		}
+		// Record the access (no-op when analytics is disabled). "known" marks a
+		// returning, registered key vs an unknown one heading to registration.
+		svc.Track(user, fp, service.EvSession, map[string]string{
+			"known": strconv.FormatBool(user != nil),
+			"admin": strconv.FormatBool(isAdminKey),
+		})
 		model := tui.New(svc, fp, isAdminKey, user)
 		return model, []tea.ProgramOption{tea.WithAltScreen()}
 	}

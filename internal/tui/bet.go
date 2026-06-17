@@ -120,8 +120,12 @@ func (m Model) viewBet() string {
 
 	// Recent-form strip: TeamA marks left, TeamB right (same order as the header
 	// and the score fields below), so no flags/names need repeating.
-	out += "  " + labelStyle.Render("form  ") + renderForm(m.betFormA) +
-		labelStyle.Render("   ·   ") + renderForm(m.betFormB) + "\n\n"
+	out += "  " + labelStyle.Render("last 5  ") + renderForm(m.betFormA) +
+		labelStyle.Render("   ·   ") + renderForm(m.betFormB) + "\n"
+	if len(m.betFormA) > 0 || len(m.betFormB) > 0 {
+		out += "  " + formLegend() + "\n"
+	}
+	out += "\n"
 
 	out += "  " + m.betScoreField(0, mt.TeamA) + "   " + m.betScoreField(1, mt.TeamB) + "\n\n"
 
@@ -131,6 +135,13 @@ func (m Model) viewBet() string {
 
 func (m Model) betScoreField(i int, team string) string {
 	return scoreField(m.betInputs[i], withFlag(team), i == m.betFocus)
+}
+
+// formLegend explains the last-5 marks (most recent on the right).
+func formLegend() string {
+	return okStyle.Render("✓") + helpStyle.Render(" win · ") +
+		helpStyle.Render("– draw · ") +
+		errStyle.Render("✗") + helpStyle.Render(" loss · newest right")
 }
 
 // renderForm draws a recent-form strip: ✓ win (green) · – draw (dim) · ✗ loss
