@@ -31,6 +31,83 @@ type Standing struct {
 	LiveRankDelta int
 }
 
+// LivePick is one player's revealed pick on an in-play match plus the
+// provisional points it is currently earning.
+type LivePick struct {
+	User       models.User
+	Bet        models.Bet
+	LivePoints int
+}
+
+// LiveMatchPicks groups the revealed picks for a single in-play match.
+type LiveMatchPicks struct {
+	Match models.Match // live fields overlaid
+	Picks []LivePick   // sorted by live points desc, then display name
+}
+
+// LivePicks reveals every player's pick for matches currently in play, with the
+// provisional points each is earning. Open to all players (no public_bets gate):
+// in-play matches have already kicked off, so this never exposes a blind pick —
+// it mirrors the kickoff reveal rule used by MatchLeaderboard / PublicBetsGrid.
+// Returns nil when no feed is attached or nothing is live.
+func (s *Service) LivePicks() ([]LiveMatchPicks, error) {
+	snap := s.liveSnapshot()
+	if snap == nil {
+		return nil, nil
+	}
+	matches, err := s.store.ListMatches(s.tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	users, err := s.store.AllUsers()
+	if err != nil {
+		return nil, err
+	}
+	userByID := make(map[int64]models.User, len(users))
+	for _, u := range users {
+		userByID[u.ID] = u
+	}
+	sc, err := s.newScorer()
+	if err != nil {
+		return nil, err
+	}
+	var out []LiveMatchPicks
+	for _, m := range matches {
+		ls, ok := snap[m.ID]
+		// In-play only, and re-check the kickoff guard so a stray feed entry can
+		// never reveal an unstarted match's picks.
+		if !ok || ls.State != live.StateIn || s.Now().Before(m.StartsAt) {
+			continue
+		}
+		overlayLive(&m, snap)
+		bets, err := s.store.BetsForMatch(m.ID)
+		if err != nil {
+			return nil, err
+		}
+		// Synthetic finished match at the live score, so the active scorer yields
+		// the same provisional points the leaderboard folds in.
+		prov := m
+		a, b := ls.A, ls.B
+		prov.Finished, prov.ScoreA, prov.ScoreB = true, &a, &b
+		picks := make([]LivePick, 0, len(bets))
+		for _, bet := range bets {
+			u, ok := userByID[bet.UserID]
+			if !ok {
+				continue
+			}
+			picks = append(picks, LivePick{User: u, Bet: bet, LivePoints: sc.points(bet, prov)})
+		}
+		sort.Slice(picks, func(i, j int) bool {
+			if picks[i].LivePoints != picks[j].LivePoints {
+				return picks[i].LivePoints > picks[j].LivePoints
+			}
+			return picks[i].User.DisplayName < picks[j].User.DisplayName
+		})
+		out = append(out, LiveMatchPicks{Match: m, Picks: picks})
+	}
+	return out, nil
+}
+
 // MatchStanding is one row of a per-match ranking: a player, their bet on that
 // match (nil if none), the points it earned, and the breakdown of how those
 // points were computed (for the drill-down view).

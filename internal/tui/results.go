@@ -34,7 +34,33 @@ func (m Model) onLeaderTick(msg leaderTickMsg) (tea.Model, tea.Cmd) {
 		m.standings = board
 	}
 	m.liveMatches, _ = m.svc.LiveMatches()
+	if m.revealLivePicks {
+		m.livePicks, _ = m.svc.LivePicks()
+	}
 	return m, leaderTick(msg.epoch)
+}
+
+// updateLeaderboard handles the live leaderboard: 'p' toggles the per-match pick
+// reveal (open to all, in-play matches only); any other key returns to the menu.
+func (m Model) updateLeaderboard(msg tea.Msg) (tea.Model, tea.Cmd) {
+	k, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch k.String() {
+	case "q":
+		return m, tea.Quit
+	case "p":
+		m.revealLivePicks = !m.revealLivePicks
+		if m.revealLivePicks {
+			m.livePicks, _ = m.svc.LivePicks()
+		} else {
+			m.livePicks = nil
+		}
+		return m, nil
+	default:
+		return m.goMenu(), nil
+	}
 }
 
 // liveScore renders a match's running score with the live accent, e.g.
@@ -116,11 +142,15 @@ func (m Model) viewLeaderboard() string {
 	}
 	out += "\n\n"
 
-	// In-play header: the matches currently feeding provisional points.
+	// In-play header: the matches currently feeding provisional points. With the
+	// pick reveal on ('p'), each match expands to show every player's pick.
 	if len(m.liveMatches) > 0 {
 		for _, mt := range m.liveMatches {
 			out += "  " + liveScore(mt) +
 				labelStyle.Render(fmt.Sprintf("  %s v %s", mt.TeamA, mt.TeamB)) + "\n"
+			if m.revealLivePicks {
+				out += m.liveMatchPicks(mt.ID)
+			}
 		}
 		out += "\n"
 	}
@@ -165,6 +195,41 @@ func (m Model) viewLeaderboard() string {
 		out += lockStyle.Render(liveLegend) + "\n"
 		out += lockStyle.Render("▲▼ rank shift from live results · (+N) points gained live") + "\n"
 	}
-	out += helpStyle.Render("any key: back · q: quit")
+	help := "any key: back · q: quit"
+	if len(m.liveMatches) > 0 {
+		if m.revealLivePicks {
+			help = "p: hide picks · other: back · q: quit"
+		} else {
+			help = "p: reveal live picks · other: back · q: quit"
+		}
+	}
+	out += helpStyle.Render(help)
 	return out
+}
+
+// liveMatchPicks renders every player's revealed pick for one in-play match
+// (pick + provisional points), indented under its live score line.
+func (m Model) liveMatchPicks(matchID int64) string {
+	for i := range m.livePicks {
+		if m.livePicks[i].Match.ID != matchID {
+			continue
+		}
+		picks := m.livePicks[i].Picks
+		if len(picks) == 0 {
+			break
+		}
+		out := ""
+		for _, p := range picks {
+			pick := p.Bet // address a local copy for fmtPick
+			gain := helpStyle.Render(fmt.Sprintf("+%d", p.LivePoints))
+			if p.LivePoints > 0 {
+				gain = liveStyle.Render(fmt.Sprintf("+%d", p.LivePoints))
+			}
+			out += "      " +
+				labelStyle.Render(fmt.Sprintf("%-20s %-4s ", p.User.DisplayName, fmtPick(&pick))) +
+				gain + "\n"
+		}
+		return out
+	}
+	return helpStyle.Render("      (no picks yet)") + "\n"
 }

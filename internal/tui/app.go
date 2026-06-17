@@ -80,6 +80,10 @@ type Model struct {
 	standings   []service.Standing
 	liveMatches []models.Match
 	leaderEpoch int
+	// 'p' reveals every player's pick for the in-play matches (live-only, open to
+	// all). livePicks is populated only while the reveal is on.
+	revealLivePicks bool
+	livePicks       []service.LiveMatchPicks
 
 	// per-match ranking
 	rankMatch  *models.Match
@@ -170,7 +174,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenMyResults:
 		return m.updateList(msg) // simple scroll/back screens share this
 	case screenLeaderboard:
-		return m.updateList(msg)
+		return m.updateLeaderboard(msg)
 	case screenMatchRank:
 		return m.updateMatchRank(msg)
 	case screenAdminMenu:

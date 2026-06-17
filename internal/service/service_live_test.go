@@ -180,6 +180,54 @@ func TestLeaderboardLiveRankDelta(t *testing.T) {
 	}
 }
 
+// TestLivePicksRevealsInPlayOnly checks that LivePicks returns picks for in-play
+// matches (with provisional points, sorted by points desc) and never for matches
+// that haven't kicked off — preserving blind betting.
+func TestLivePicksRevealsInPlayOnly(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
+
+	livem := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
+	pre := addMatch(t, store, svc.tournamentID, base.Add(3*time.Hour))
+
+	_ = svc.PlaceBet(alice.ID, livem, 1, 0) // exact at the 1-0 live score → 3
+	_ = svc.PlaceBet(bob.ID, livem, 0, 2)   // wrong result → 0
+	_ = svc.PlaceBet(alice.ID, pre, 2, 2)   // upcoming — must stay hidden
+
+	// Clock past the live match's kickoff but before the upcoming one's.
+	fc.T = base.Add(90 * time.Minute)
+
+	// No live store: nothing is in play.
+	if lp, _ := svc.LivePicks(); lp != nil {
+		t.Fatalf("LivePicks with no feed = %+v, want nil", lp)
+	}
+
+	svc.SetLiveStore(liveSnap{
+		livem: {A: 1, B: 0, State: live.StateIn, Clock: "30'"},
+		pre:   {A: 0, B: 0, State: live.StatePre}, // not started — never revealed
+	})
+
+	lp, err := svc.LivePicks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lp) != 1 || lp[0].Match.ID != livem {
+		t.Fatalf("LivePicks = %+v, want only the in-play match", lp)
+	}
+	picks := lp[0].Picks
+	if len(picks) != 2 {
+		t.Fatalf("got %d picks, want 2", len(picks))
+	}
+	// Sorted by live points desc: Alice (3) before Bob (0).
+	if picks[0].User.ID != alice.ID || picks[0].LivePoints != 3 {
+		t.Errorf("pick[0] = %+v, want Alice with 3", picks[0])
+	}
+	if picks[1].User.ID != bob.ID || picks[1].LivePoints != 0 {
+		t.Errorf("pick[1] = %+v, want Bob with 0", picks[1])
+	}
+}
+
 func deltaFor(board []Standing, userID int64) int {
 	for _, s := range board {
 		if s.User.ID == userID {

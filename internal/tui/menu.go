@@ -96,8 +96,9 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		}
 		m.standings, m.screen = board, screenLeaderboard
 		m.liveMatches, _ = m.svc.LiveMatches()
-		m.leaderEpoch++                     // supersede any tick loop from a prior visit
-		return m, leaderTick(m.leaderEpoch) // begin auto-refresh while on this screen
+		m.revealLivePicks, m.livePicks = false, nil // start collapsed each visit
+		m.leaderEpoch++                             // supersede any tick loop from a prior visit
+		return m, leaderTick(m.leaderEpoch)         // begin auto-refresh while on this screen
 	case screenMatchRank:
 		// Reuse the fixtures list to pick which game to rank.
 		fx, err := m.svc.Fixtures()
