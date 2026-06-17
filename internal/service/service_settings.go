@@ -33,5 +33,12 @@ func (s *Service) SetPublicBets(by *models.User, enabled bool) error {
 	if enabled {
 		v = "1"
 	}
-	return s.store.SetSetting(settingPublicBets, v)
+	if err := s.store.SetSetting(settingPublicBets, v); err != nil {
+		return err
+	}
+	s.track(by, by.Fingerprint, EvSettingChanged, map[string]string{
+		"setting": settingPublicBets,
+		"value":   v,
+	})
+	return nil
 }

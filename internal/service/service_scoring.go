@@ -30,7 +30,14 @@ func (s *Service) SetScoringMode(by *models.User, mode scoring.Mode) error {
 	if err := requireAdmin(by); err != nil {
 		return err
 	}
-	return s.store.SetSetting(settingScoringMode, mode.String())
+	if err := s.store.SetSetting(settingScoringMode, mode.String()); err != nil {
+		return err
+	}
+	s.track(by, by.Fingerprint, EvSettingChanged, map[string]string{
+		"setting": settingScoringMode,
+		"value":   mode.String(),
+	})
+	return nil
 }
 
 // scorer scores bets under the active mode. For Scarcity it precomputes each

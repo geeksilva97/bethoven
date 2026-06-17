@@ -81,5 +81,12 @@ func (s *Service) PlaceBet(userID, matchID, predA, predB int64) error {
 	}, s.clock.Now().UTC()); err != nil {
 		return fmt.Errorf("place bet: %w", err)
 	}
+	// Emit using only data already in hand (m was loaded for the lock; userID and
+	// scores are args) — NO extra domain-DB read. The actor's name is resolved
+	// later, at read time, on the admin's own session.
+	s.trackByID(userID, EvBetPlaced, map[string]string{
+		"match": fmt.Sprintf("%s-%s", m.TeamA, m.TeamB),
+		"pred":  fmt.Sprintf("%d-%d", predA, predB),
+	})
 	return nil
 }

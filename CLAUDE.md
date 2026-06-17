@@ -22,7 +22,8 @@ internal/db         SQLite: Open, embedded schema.sql, Store (typed queries), se
 internal/auth       key fingerprint, admin allowlist, invite-code check
 internal/scoring    PURE Points(bet, match) — the heavily unit-tested core
 internal/live       OPTIONAL live feed: ESPN adapter + in-memory Cache + Poller. Behind the service.LiveStore port.
-internal/service    ALL business rules. Depends only on Store + Clock (+ optional LiveStore). The integration-test seam.
+internal/analytics  OPTIONAL usage tracking: own SQLite DB + async Recorder. Behind the service.AnalyticsSink port.
+internal/service    ALL business rules. Depends only on Store + Clock (+ optional LiveStore/AnalyticsSink). The integration-test seam.
 internal/server     thin wish SSH server -> resolves key to user -> launches TUI
 internal/tui        presentation only; every action calls a service method
 ```
@@ -91,6 +92,28 @@ directly, with a fake clock, no terminal).
   clock to a digit/punctuation whitelist (`cleanClock`) — it renders into every
   player's terminal, so it's the same ANSI-injection boundary as display names
   (`cleanName`). Feed team names are only used for resolution, never rendered.
+- **Analytics (optional, `internal/analytics`).** A usage tracker behind the
+  `service.AnalyticsSink` port (nil ⇒ disabled ⇒ behaviour identical to no
+  analytics, mirroring the live feed). Enable with `BETHOVEN_ANALYTICS_ENABLED=true`
+  (default **off**, opt-in — note the inverted env test vs `LiveEnabled`).
+  **Two rules keep it a side concern that can never affect bets/scores:**
+    - **Separate DB.** Events go to their own SQLite file
+      (`BETHOVEN_ANALYTICS_DB_PATH`, default `analytics.db`) on a **separate
+      connection**, so analytics writes never contend with the domain DB's
+      single-writer lock. Losing it loses only usage history.
+    - **Async, zero-cost emit.** `analytics.Recorder.Track` drops the event on a
+      buffered channel and returns; a background goroutine does the insert. Full
+      buffer ⇒ **drop** (counted), never block. The emit *helpers* in the service
+      (`track` / `trackByID` / `Track`) do **NO domain-DB reads** — they capture
+      only data already in hand; the actor's display name is resolved **at read
+      time** (`AnalyticsRecent` / `AnalyticsPerPlayer`), on the admin's own
+      session, never on the betting hot path.
+  Events: `session_start` (server, every connect), `registered`/`bet_placed`/
+  `result_entered`/`match_added`/`setting_changed` (service, after the rule
+  succeeds), `view` (TUI, on the menu transition — **not** the leaderboard tick,
+  which would inflate counts). Admin reads via gated `Analytics*` service methods
+  (`requireAdmin`); the **⚙ Admin: analytics** TUI screen shows KPIs, an
+  accesses/day sparkline, per-player engagement, and a recent-activity feed.
 
 ## Onboarding & admin
 
@@ -167,6 +190,9 @@ Connect: `ssh -p 2222 localhost` (or set up a `~/.ssh/config` alias; see README)
 mutates data (migrations, manual data edits, schema changes, restoring fixtures)
 **must be preceded by a database backup.** No exceptions — the DB is the only
 non-reproducible state (apostas + results); the binary and `fixtures.json` aren't.
+(The optional `analytics.db` is **out of scope** for this rule — it's a separate,
+non-critical file holding only usage history; back it up if you like with the same
+recipe, but it never gates a risky op.)
 
 **How — single consistent file, WAL-safe:**
 ```sh

@@ -36,6 +36,11 @@ type Config struct {
 	LiveEnabled     bool
 	LiveLeague      string // ESPN league slug, e.g. fifa.world
 	LivePollSeconds int    // seconds between polls
+
+	// Analytics (optional, off by default). AnalyticsEnabled gates the usage
+	// tracker; when off, no analytics DB is opened and behaviour is unchanged.
+	AnalyticsEnabled bool
+	AnalyticsDBPath  string // SQLite file for analytics events (separate from DBPath)
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -59,6 +64,10 @@ func Load() Config {
 		LiveEnabled:     env("BETHOVEN_LIVE_ENABLED", "true") != "false",
 		LiveLeague:      env("BETHOVEN_LIVE_LEAGUE", DefaultLiveLeague),
 		LivePollSeconds: envInt("BETHOVEN_LIVE_POLL_SECONDS", DefaultLivePollSeconds),
+
+		// Opt-in: defaults off (note the inverted test vs LiveEnabled).
+		AnalyticsEnabled: env("BETHOVEN_ANALYTICS_ENABLED", "false") == "true",
+		AnalyticsDBPath:  env("BETHOVEN_ANALYTICS_DB_PATH", "analytics.db"),
 	}
 }
 
