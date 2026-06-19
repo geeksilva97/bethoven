@@ -324,10 +324,19 @@ func (m Model) viewLeaderboard() string {
 	// In-play header: the matches currently feeding provisional points. With the
 	// pick reveal on ('p'), each match expands to show every player's pick.
 	if len(m.liveMatches) > 0 {
-		// BETanIA's running take on the in-play slate, shown FIRST as a headline so
-		// it's never buried under expanded picks. Always shown when present: this is
-		// general live commentary, not a per-player take, so the per-viewer comment
-		// hide ('h') deliberately does NOT cover it.
+		// Live scores first, then each match's picks (only when NOT folding picks into
+		// the standings rows below, i.e. multiple live matches).
+		for _, mt := range m.liveMatches {
+			out += "  " + liveScore(mt) +
+				labelStyle.Render(fmt.Sprintf("  %s v %s", mt.TeamA, mt.TeamB)) + "\n"
+			if m.revealLivePicks && !showInlinePicks {
+				out += m.liveMatchPicks(mt.ID)
+			}
+		}
+		// BETanIA's running take on the in-play slate, BELOW the scores — it reads as a
+		// reaction to what's on the board. Always shown when present: this is general
+		// live commentary, not a per-player take, so the per-viewer comment hide ('h')
+		// deliberately does NOT cover it.
 		if m.liveCommentary != "" {
 			width := m.width - 6
 			if width > leaderCommentMaxWidth {
@@ -339,16 +348,6 @@ func (m Model) viewLeaderboard() string {
 					prefix = "     " // align continuation past the 🤖
 				}
 				out += prefix + commentStyle.Render(ln) + "\n"
-			}
-			out += "\n"
-		}
-		for _, mt := range m.liveMatches {
-			out += "  " + liveScore(mt) +
-				labelStyle.Render(fmt.Sprintf("  %s v %s", mt.TeamA, mt.TeamB)) + "\n"
-			// Separate per-match pick block only when we're NOT folding picks into the
-			// standings rows below (i.e. multiple live matches).
-			if m.revealLivePicks && !showInlinePicks {
-				out += m.liveMatchPicks(mt.ID)
 			}
 		}
 		out += "\n"
