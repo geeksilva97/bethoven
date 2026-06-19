@@ -7,9 +7,14 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"bethoven/internal/models"
 )
+
+// leaderCommentCol is the column where BETanIA's side commentary starts on the
+// leaderboard, leaving the rank/name/pts line in a fixed-width left gutter.
+const leaderCommentCol = 38
 
 // leaderTickMsg drives the live leaderboard's auto-refresh. epoch ties a tick to
 // the visit that scheduled it, so a stale loop from a prior visit is ignored.
@@ -213,18 +218,36 @@ func (m Model) viewLeaderboard() string {
 		case s.LiveRankDelta < 0:
 			line += errStyle.Render(" ▼")
 		}
-		out += "  " + marker + line + "\n"
-		// BETanIA's take, indented under the row. Scoped by the service: a player
-		// sees only their own line, an admin sees everyone's. Rendered in the
-		// terminal's default colour (italic) so it's legible on light and dark themes.
-		if c := m.rowComments[s.User.ID]; c != "" {
-			lines := wrapText(c, m.width-9)
-			for i, ln := range lines {
+		row := "  " + marker + line
+		// BETanIA's take. Scoped by the service: a player sees only their own line,
+		// an admin sees everyone's. Rendered in the terminal's default colour
+		// (italic) so it's legible on light and dark themes. Laid out in a right-hand
+		// column beside the row to keep the board uncluttered; on a narrow terminal
+		// (or before the first WindowSizeMsg) it falls back to stacking under the row.
+		c := m.rowComments[s.User.ID]
+		commentWidth := m.width - leaderCommentCol - 3
+		switch {
+		case c == "":
+			out += row + "\n"
+		case commentWidth < 24:
+			out += row + "\n"
+			for i, ln := range wrapText(c, m.width-9) {
 				prefix := "      " + botMark.Render("🤖") + " "
 				if i > 0 {
 					prefix = "         " // align continuation under the text, past the 🤖
 				}
 				out += prefix + commentStyle.Render(ln) + "\n"
+			}
+		default:
+			lines := wrapText(c, commentWidth)
+			pad := leaderCommentCol - lipgloss.Width(row)
+			if pad < 1 {
+				pad = 1
+			}
+			out += row + strings.Repeat(" ", pad) + botMark.Render("🤖") + " " + commentStyle.Render(lines[0]) + "\n"
+			indent := strings.Repeat(" ", leaderCommentCol+3) // align continuation past the 🤖
+			for _, ln := range lines[1:] {
+				out += indent + commentStyle.Render(ln) + "\n"
 			}
 		}
 	}
