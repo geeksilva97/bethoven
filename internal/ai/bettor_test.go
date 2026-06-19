@@ -27,10 +27,10 @@ var ref = time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 // match only when it's upcoming (not started, not finished) and unbet.
 func TestBettorBetsOnlyOpenUnbet(t *testing.T) {
 	matches := []models.Match{
-		{ID: 1, TeamA: "A", TeamB: "B", StartsAt: ref.Add(2 * time.Hour)},                   // upcoming, unbet -> BET
-		{ID: 2, TeamA: "C", TeamB: "D", StartsAt: ref.Add(-2 * time.Hour)},                  // already kicked off -> skip
-		{ID: 3, TeamA: "E", TeamB: "F", StartsAt: ref.Add(3 * time.Hour), Finished: true},   // finished -> skip
-		{ID: 4, TeamA: "G", TeamB: "H", StartsAt: ref.Add(4 * time.Hour)},                   // upcoming but already bet -> skip
+		{ID: 1, TeamA: "A", TeamB: "B", StartsAt: ref.Add(2 * time.Hour)},                 // upcoming, unbet -> BET
+		{ID: 2, TeamA: "C", TeamB: "D", StartsAt: ref.Add(-2 * time.Hour)},                // already kicked off -> skip
+		{ID: 3, TeamA: "E", TeamB: "F", StartsAt: ref.Add(3 * time.Hour), Finished: true}, // finished -> skip
+		{ID: 4, TeamA: "G", TeamB: "H", StartsAt: ref.Add(4 * time.Hour)},                 // upcoming but already bet -> skip
 	}
 	myBets := map[int64]models.Bet{4: {MatchID: 4}}
 

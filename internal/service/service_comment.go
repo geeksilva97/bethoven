@@ -57,28 +57,17 @@ type CommentSource interface {
 // SetCommentSource attaches the comment cache. Optional — unset ⇒ no comments.
 func (s *Service) SetCommentSource(src CommentSource) { s.comments = src }
 
-// LeaderboardComments returns the BETanIA comments to show on the leaderboard,
-// keyed by user id. Scoped server-side: a player sees ONLY their own comment; an
-// admin sees everyone's. The scoping is the visibility boundary (mirroring AllBets
-// vs own-bets), enforced here rather than just hidden in the UI.
+// LeaderboardComments returns the BETanIA comment to show on the leaderboard,
+// keyed by user id. Scoped server-side: EVERYONE — players and admins alike — sees
+// ONLY their own comment. Admins review the full set in the BETanIA admin panel
+// (and can cycle through them on the leaderboard via AllLeaderboardComments), so
+// the leaderboard itself stays uncluttered. Enforced here, not just hidden in the UI.
 func (s *Service) LeaderboardComments(by *models.User) map[int64]string {
 	if s.comments == nil || by == nil {
 		return nil
 	}
 	all := s.comments.All(s.Now())
-	out := make(map[int64]string, len(all))
-	if by.Role == models.RoleAdmin {
-		for id, c := range all {
-			// Mute is enforced at READ time too: if an admin mutes a player, their
-			// already-cached comment stops showing immediately, without waiting for
-			// the next regeneration pass.
-			if s.userToneOverride(id) == "mute" {
-				continue
-			}
-			out[id] = c.Text
-		}
-		return out
-	}
+	out := make(map[int64]string, 1)
 	if s.userToneOverride(by.ID) == "mute" {
 		return out
 	}
@@ -86,6 +75,28 @@ func (s *Service) LeaderboardComments(by *models.User) map[int64]string {
 		out[by.ID] = c.Text
 	}
 	return out
+}
+
+// AllLeaderboardComments returns every player's BETanIA comment, keyed by user id.
+// Admin only — it's the cross-player visibility boundary (mirroring AllBets), so it
+// backs the admin-only leaderboard "cycle" view and the admin panel. Mute is honored
+// at READ time, so muting a player hides their cached comment immediately.
+func (s *Service) AllLeaderboardComments(by *models.User) (map[int64]string, error) {
+	if err := requireAdmin(by); err != nil {
+		return nil, err
+	}
+	if s.comments == nil {
+		return map[int64]string{}, nil
+	}
+	all := s.comments.All(s.Now())
+	out := make(map[int64]string, len(all))
+	for id, c := range all {
+		if s.userToneOverride(id) == "mute" {
+			continue
+		}
+		out[id] = c.Text
+	}
+	return out, nil
 }
 
 // AICommentMonitor is the optional observability port for the comment worker. The

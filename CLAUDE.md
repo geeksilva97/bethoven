@@ -194,11 +194,21 @@ directly, with a fake clock, no terminal).
       UTC kickoff date — the same pure computation `Leaderboard` already does live,
       just per round. Comments live only in the in-memory `ai.CommentCache` (TTL +
       grace); a restart starts empty and the first pass refills it, like the live feed.
-    - **Visibility is scoped server-side** in `service.LeaderboardComments`: a
-      **player sees only their own** comment (under their own leaderboard row), an
-      **admin sees everyone's** — mirroring `AllBets` vs own-bets. Enforced here, not
-      just hidden in the UI. The TUI renders it indented under the row, `helpStyle`,
-      prefixed 🤖 (`internal/tui/results.go`).
+    - **Visibility is scoped server-side** in `service.LeaderboardComments`:
+      **EVERYONE — players and admins alike — sees only their own** comment (under
+      their own leaderboard row). The full set is admin-gated behind
+      **`service.AllLeaderboardComments`** (the cross-player boundary, mirroring
+      `AllBets`), which backs both the admin BETanIA panel and the leaderboard cycle.
+      Enforced here, not just hidden in the UI. The TUI renders the comment beside the
+      row in a right-hand column (`leaderCommentCol`), falling back to stacking under
+      the row on a narrow terminal, `helpStyle`, prefixed 🤖 (`internal/tui/results.go`).
+    - **Admin comment cycle (leaderboard, admin only).** On the leaderboard an admin
+      can press **`c`** to toggle a cycle that rotates which single player's comment is
+      shown — own first, then **another at random** — auto-advancing in place every
+      `cycleRefresh` (5s) via a `cycleTickMsg` loop (own `cycleEpoch`, self-stops on
+      leave/toggle-off/superseded epoch, mirroring `leaderTick`). It pulls the full set
+      from `AllLeaderboardComments` (so non-admins can't cycle others' comments). Off by
+      default each visit, so the board shows the viewer's own comment.
     - **Tone** is the DB-backed `comment_tone` setting (default `playful`, or
       `savage`; absent ⇒ playful), like `scoring_mode`. Toggled with **`t`** on the
       admin panel (`SetCommentTone`). **Per-player override:** each player can be
@@ -219,10 +229,12 @@ directly, with a fake clock, no terminal).
       into every terminal — `ai.sanitizeText` is applied in the worker before the
       cache + log, so both get clean text.
     - **Observability:** `service.AICommentMonitor` port
-      (`AICommentStatus`/`AICommentActivity`/`TriggerAIComments`, all `requireAdmin`);
-      the **⚙ Admin: BETanIA** screen gained a *Comments* status block + recent-comments
-      feed, and **`c` regenerates ALL comments at once** (one worker pass → full cache
-      rewrite, coalesced). **Logging:** each comment is a JSON line in
+      (`AICommentStatus`/`AICommentActivity`/`TriggerAIComments`, all `requireAdmin`).
+      The **⚙ Admin: BETanIA** panel is **tabbed** (`tab` switches Betting ↔ Comments;
+      see the BETanIA bullet above). On the **Comments** tab the recent-comments feed
+      is a **selectable list** (`↑↓`/`jk` move, `enter` opens `screenAICommentDetail`
+      with the full untruncated text), and **`c` regenerates ALL comments at once** (one
+      worker pass → full cache rewrite, coalesced). **Logging:** each comment is a JSON line in
       `BETHOVEN_AI_COMMENT_LOG_PATH` (default `ai_comments.log`; **must** be under the
       systemd `ReadWritePaths` dir in prod, like `ai_bets.log`).
 

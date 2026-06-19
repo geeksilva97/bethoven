@@ -31,11 +31,12 @@ const (
 	screenAllBets
 	screenPublicBets // player-facing, kickoff-filtered; reuses the all-bets view
 	screenSettings
-	screenScoringRules // read-only: explains the active scoring mode
-	screenAnalytics    // admin-only: usage stats panel
-	screenBETanIA      // admin-only: AI player status + activity
-	screenAITones      // admin-only: per-player comment tone
-	screenAIContext    // admin-only: rivalry + house-note context
+	screenScoringRules    // read-only: explains the active scoring mode
+	screenAnalytics       // admin-only: usage stats panel
+	screenBETanIA         // admin-only: AI player status + activity
+	screenAITones         // admin-only: per-player comment tone
+	screenAIContext       // admin-only: rivalry + house-note context
+	screenAICommentDetail // admin-only: full text of a single BETanIA comment
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -92,9 +93,18 @@ type Model struct {
 	// all). livePicks is populated only while the reveal is on.
 	revealLivePicks bool
 	livePicks       []service.LiveMatchPicks
-	// rowComments holds BETanIA's leaderboard comments keyed by user id, scoped by
-	// the service (a player gets only their own; an admin gets everyone's).
+	// rowComments holds BETanIA's leaderboard comments keyed by user id. Scoped by
+	// the service to the viewer's OWN comment (players and admins alike); shown when
+	// the cycle below is off.
 	rowComments map[int64]string
+	// comment cycle (admin only): when on, the leaderboard auto-rotates which
+	// player's comment is shown — own first, then random others — on an interval,
+	// in place, without leaving the screen. cycleEpoch ties a tick loop to the
+	// current toggle session so a stale loop self-stops.
+	cycleComments  bool
+	cycleAll       map[int64]string
+	cycleCurrentID int64
+	cycleEpoch     int
 
 	// per-match ranking
 	rankMatch  *models.Match
@@ -158,6 +168,9 @@ type Model struct {
 	aiCommentStatus    ai.CommentStatus
 	aiCommentActivity  []ai.CommentAction
 	commentTone        string
+	// aiCommentCursor selects a row in the Comments tab list (preview); enter opens
+	// screenAICommentDetail for the full text.
+	aiCommentCursor int
 
 	// admin: BETanIA per-player tone editor (reached with 'u' on the panel).
 	tonePlayers []service.PlayerTone
@@ -210,6 +223,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case leaderTickMsg:
 		// Live leaderboard refresh; self-stops on leave or on a superseded epoch.
 		return m.onLeaderTick(msg)
+	case cycleTickMsg:
+		// Comment-cycle advance; self-stops on leave, toggle-off, or superseded epoch.
+		return m.onCycleTick(msg)
 	}
 
 	switch m.screen {
@@ -247,6 +263,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAITones(msg)
 	case screenAIContext:
 		return m.updateAIContext(msg)
+	case screenAICommentDetail:
+		return m.updateAICommentDetail(msg)
 	}
 	return m, nil
 }
@@ -286,6 +304,8 @@ func (m Model) View() string {
 		return m.viewAITones()
 	case screenAIContext:
 		return m.viewAIContext()
+	case screenAICommentDetail:
+		return m.viewAICommentDetail()
 	}
 	return ""
 }

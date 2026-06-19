@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +28,111 @@ const leaderRefresh = 20 * time.Second
 // leaderTick schedules the next leaderboard refresh for the given epoch.
 func leaderTick(epoch int) tea.Cmd {
 	return tea.Tick(leaderRefresh, func(time.Time) tea.Msg { return leaderTickMsg{epoch} })
+}
+
+// cycleTickMsg drives the admin comment-cycle: each tick advances which player's
+// comment is shown. epoch ties the tick to the toggle session that scheduled it.
+type cycleTickMsg struct{ epoch int }
+
+// cycleRefresh is how often the leaderboard rotates to the next player's comment
+// while cycling is on.
+const cycleRefresh = 5 * time.Second
+
+// cycleTick schedules the next comment-cycle advance for the given epoch.
+func cycleTick(epoch int) tea.Cmd {
+	return tea.Tick(cycleRefresh, func(time.Time) tea.Msg { return cycleTickMsg{epoch} })
+}
+
+// isAdmin reports whether the current user is an admin.
+func (m Model) isAdmin() bool {
+	return m.user != nil && m.user.Role == models.RoleAdmin
+}
+
+// cycleCandidates returns the user ids that have a (non-empty) comment to cycle
+// through, in standings order, so cycling follows the visible board.
+func (m Model) cycleCandidates() []int64 {
+	out := make([]int64, 0, len(m.cycleAll))
+	for _, s := range m.standings {
+		if m.cycleAll[s.User.ID] != "" {
+			out = append(out, s.User.ID)
+		}
+	}
+	// Any commented player not in standings (shouldn't happen) still gets a turn.
+	if len(out) != len(m.cycleAll) {
+		seen := make(map[int64]bool, len(out))
+		for _, id := range out {
+			seen[id] = true
+		}
+		extra := make([]int64, 0)
+		for id, txt := range m.cycleAll {
+			if txt != "" && !seen[id] {
+				extra = append(extra, id)
+			}
+		}
+		sort.Slice(extra, func(i, j int) bool { return extra[i] < extra[j] })
+		out = append(out, extra...)
+	}
+	return out
+}
+
+// startCycle turns the comment cycle on: loads everyone's comments, shows the
+// viewer's own first, and begins the auto-advance loop. No-op for non-admins.
+func (m Model) startCycle() (Model, tea.Cmd) {
+	if !m.isAdmin() {
+		return m, nil
+	}
+	all, err := m.svc.AllLeaderboardComments(m.user)
+	if err != nil {
+		m.setStatus(err.Error(), true)
+		return m, nil
+	}
+	m.cycleAll = all
+	m.cycleComments = true
+	// Start on the viewer's own comment if they have one, else the first candidate.
+	m.cycleCurrentID = 0
+	if all[m.user.ID] != "" {
+		m.cycleCurrentID = m.user.ID
+	} else if cands := m.cycleCandidates(); len(cands) > 0 {
+		m.cycleCurrentID = cands[0]
+	}
+	m.cycleEpoch++
+	return m, cycleTick(m.cycleEpoch)
+}
+
+// stopCycle turns the cycle off and supersedes its tick loop.
+func (m Model) stopCycle() Model {
+	m.cycleComments = false
+	m.cycleAll = nil
+	m.cycleCurrentID = 0
+	m.cycleEpoch++ // any in-flight tick is now stale and self-stops
+	return m
+}
+
+// onCycleTick advances to the next player's comment and reschedules — but only
+// while the leaderboard is active, the cycle is on, and the tick is current.
+func (m Model) onCycleTick(msg cycleTickMsg) (tea.Model, tea.Cmd) {
+	if m.screen != screenLeaderboard || !m.cycleComments || msg.epoch != m.cycleEpoch {
+		return m, nil
+	}
+	// Refresh the set so newly (re)generated comments are picked up live.
+	if all, err := m.svc.AllLeaderboardComments(m.user); err == nil {
+		m.cycleAll = all
+	}
+	cands := m.cycleCandidates()
+	switch len(cands) {
+	case 0:
+		m.cycleCurrentID = 0
+	case 1:
+		m.cycleCurrentID = cands[0]
+	default:
+		// Random next, never repeating the current one — "another player at random".
+		next := m.cycleCurrentID
+		for next == m.cycleCurrentID {
+			next = cands[rand.Intn(len(cands))]
+		}
+		m.cycleCurrentID = next
+	}
+	return m, cycleTick(msg.epoch)
 }
 
 // onLeaderTick re-fetches the standings + in-play matches and reschedules — but
@@ -65,7 +172,18 @@ func (m Model) updateLeaderboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.livePicks = nil
 		}
 		return m, nil
+	case "c":
+		// Admin-only comment cycle. For a non-admin 'c' isn't a control, so fall
+		// through to the default (back to menu).
+		if m.isAdmin() {
+			if m.cycleComments {
+				return m.stopCycle(), nil
+			}
+			return m.startCycle()
+		}
+		return m.goMenu(), nil
 	default:
+		m = m.stopCycle() // leaving the screen tears down the cycle loop
 		return m.goMenu(), nil
 	}
 }
@@ -219,12 +337,18 @@ func (m Model) viewLeaderboard() string {
 			line += errStyle.Render(" ▼")
 		}
 		row := "  " + marker + line
-		// BETanIA's take. Scoped by the service: a player sees only their own line,
-		// an admin sees everyone's. Rendered in the terminal's default colour
-		// (italic) so it's legible on light and dark themes. Laid out in a right-hand
-		// column beside the row to keep the board uncluttered; on a narrow terminal
-		// (or before the first WindowSizeMsg) it falls back to stacking under the row.
+		// BETanIA's take. Scoped by the service to the viewer's OWN comment, shown in
+		// the terminal's default colour (italic) so it's legible on any theme, laid
+		// out in a right-hand column to keep the board uncluttered (falling back to
+		// stacking under the row on a narrow terminal). When an admin turns on the
+		// cycle, that is replaced by ONE rotating player's comment at a time.
 		c := m.rowComments[s.User.ID]
+		if m.cycleComments {
+			c = ""
+			if s.User.ID == m.cycleCurrentID {
+				c = m.cycleAll[s.User.ID]
+			}
+		}
 		commentWidth := m.width - leaderCommentCol - 3
 		switch {
 		case c == "":
@@ -257,19 +381,46 @@ func (m Model) viewLeaderboard() string {
 		out += lockStyle.Render(liveLegend) + "\n"
 		out += lockStyle.Render("▲▼ rank shift from live results · (+N) points gained live") + "\n"
 	}
-	if len(m.rowComments) > 0 {
+	switch {
+	case m.cycleComments:
+		who := "…"
+		if name := m.cycleName(m.cycleCurrentID); name != "" {
+			who = name
+		}
+		out += botMark.Render("🤖") + commentStyle.Render(" cycling takes — showing "+who) + "\n"
+	case len(m.rowComments) > 0:
 		out += botMark.Render("🤖") + commentStyle.Render(" BETanIA's take") + "\n"
 	}
-	help := "any key: back · q: quit"
+
+	// Help line: live-pick toggle + (admins) the comment-cycle toggle.
+	var hints []string
 	if len(m.liveMatches) > 0 {
 		if m.revealLivePicks {
-			help = "p: hide picks · other: back · q: quit"
+			hints = append(hints, "p: hide picks")
 		} else {
-			help = "p: reveal live picks · other: back · q: quit"
+			hints = append(hints, "p: reveal live picks")
 		}
 	}
-	out += helpStyle.Render(help)
+	if m.isAdmin() {
+		if m.cycleComments {
+			hints = append(hints, "c: stop cycling comments")
+		} else {
+			hints = append(hints, "c: cycle comments")
+		}
+	}
+	hints = append(hints, "other: back", "q: quit")
+	out += helpStyle.Render(strings.Join(hints, " · "))
 	return out
+}
+
+// cycleName resolves a user id to a display name from the current standings.
+func (m Model) cycleName(id int64) string {
+	for _, s := range m.standings {
+		if s.User.ID == id {
+			return s.User.DisplayName
+		}
+	}
+	return ""
 }
 
 // liveMatchPicks renders every player's revealed pick for one in-play match

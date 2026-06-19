@@ -18,6 +18,10 @@ const betaniaActivityLimit = 15
 // Betting tab.
 const betaniaBetsLimit = 20
 
+// betaniaCommentLimit caps the Comments-tab feed. Larger than the picks feed so
+// the whole field's current comments (one per player) are browsable + selectable.
+const betaniaCommentLimit = 40
+
 // BETanIA admin tabs.
 const (
 	tabBetting  = 0
@@ -87,9 +91,36 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openAITones(), nil
 	case k.String() == "x":
 		return m.openAIContext(), nil
+	case m.betaniaTab == tabComments && (k.String() == "up" || k.String() == "k"):
+		if m.aiCommentCursor > 0 {
+			m.aiCommentCursor--
+		}
+		return m, nil
+	case m.betaniaTab == tabComments && (k.String() == "down" || k.String() == "j"):
+		if m.aiCommentCursor < len(m.aiCommentActivity)-1 {
+			m.aiCommentCursor++
+		}
+		return m, nil
+	case m.betaniaTab == tabComments && (k.String() == "enter") && m.aiCommentCursor < len(m.aiCommentActivity):
+		m.status = ""
+		m.screen = screenAICommentDetail
+		return m, nil
 	default:
 		return m.goMenu(), nil
 	}
+}
+
+// updateAICommentDetail handles the full-text comment view: any key returns to
+// the BETanIA admin panel (Comments tab).
+func (m Model) updateAICommentDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if k, ok := msg.(tea.KeyMsg); ok {
+		if k.String() == "q" {
+			return m, tea.Quit
+		}
+		m.betaniaTab = tabComments
+		m.screen = screenBETanIA
+	}
+	return m, nil
 }
 
 // loadBETanIAComments loads the comment worker's status, recent feed and active
@@ -99,9 +130,16 @@ func (m *Model) loadBETanIAComments() {
 	m.aiCommentsDisabled = errors.Is(cerr, service.ErrAIOff)
 	if !m.aiCommentsDisabled {
 		m.aiCommentStatus, _ = m.svc.AICommentStatus(m.user)
-		m.aiCommentActivity, _ = m.svc.AICommentActivity(m.user, betaniaActivityLimit)
+		m.aiCommentActivity, _ = m.svc.AICommentActivity(m.user, betaniaCommentLimit)
 	}
 	m.commentTone, _ = m.svc.CommentTone()
+	// Keep the Comments-tab selection in range as the feed grows/shrinks.
+	if m.aiCommentCursor >= len(m.aiCommentActivity) {
+		m.aiCommentCursor = len(m.aiCommentActivity) - 1
+	}
+	if m.aiCommentCursor < 0 {
+		m.aiCommentCursor = 0
+	}
 }
 
 // refreshBETanIA reloads both the betting and comment panels after a key action.
@@ -130,8 +168,8 @@ func (m Model) viewBETanIA() string {
 		out += m.betaniaCommentsTab()
 		out += "\n" + helpStyle.Render("comments → ai_comments.log — `tail -f` to watch") + "\n"
 		out += statusLine(m) +
-			helpStyle.Render("c: regen all · t: default tone · u: per-player tone · x: context") + "\n" +
-			helpStyle.Render("tab: betting · any other key: back · q: quit")
+			helpStyle.Render("↑↓: select · enter: full text · c: regen all · t: tone · u: per-player · x: context") + "\n" +
+			helpStyle.Render("tab: betting · q: quit · other: back")
 		return out
 	}
 
@@ -220,14 +258,21 @@ func (m Model) betaniaCommentsTab() string {
 	out += kpi("Next run", untilText(now, cst.NextRun))
 	out += kpi("Comments written", fmt.Sprintf("%d", cst.Written))
 	out += kpi("Errors", fmt.Sprintf("%d", cst.Errored))
-	out += "\n" + labelStyle.Render("Recent comments") + "\n"
+	out += "\n" + labelStyle.Render("Recent comments") + helpStyle.Render("  (↑↓ select · enter: full text)") + "\n"
 	if len(m.aiCommentActivity) == 0 {
 		out += helpStyle.Render("  nothing yet — press c to generate now") + "\n"
 		return out
 	}
-	for _, a := range m.aiCommentActivity {
-		out += fmt.Sprintf("  %-8s %s %-16s\n",
-			relativeAgo(now, a.At), outcomeMark(a.Outcome), truncate(a.Player, 16))
+	for i, a := range m.aiCommentActivity {
+		cursor := "  "
+		if i == m.aiCommentCursor {
+			cursor = cursorOn.Render("▸ ")
+		}
+		head := fmt.Sprintf("%-8s %s %-16s", relativeAgo(now, a.At), outcomeMark(a.Outcome), truncate(a.Player, 16))
+		if i == m.aiCommentCursor {
+			head = cursorOn.Render(head)
+		}
+		out += cursor + head + "\n"
 		detail := a.Text
 		if a.Outcome == "error" && a.Err != "" {
 			detail = a.Err
@@ -236,6 +281,36 @@ func (m Model) betaniaCommentsTab() string {
 			out += helpStyle.Render("      "+truncate(detail, 78)) + "\n"
 		}
 	}
+	return out
+}
+
+// viewAICommentDetail shows the full text of the comment selected in the Comments
+// tab — the player it's about, when it was written, its outcome, and the wrapped
+// untruncated line.
+func (m Model) viewAICommentDetail() string {
+	out := titleStyle.Render("⚙  BETanIA comment") + "\n\n"
+	if m.aiCommentCursor < 0 || m.aiCommentCursor >= len(m.aiCommentActivity) {
+		out += helpStyle.Render("  (no comment selected)") + "\n\n"
+		out += helpStyle.Render("any key: back · q: quit")
+		return out
+	}
+	a := m.aiCommentActivity[m.aiCommentCursor]
+	out += kpi("Player", a.Player)
+	out += kpi("Written", relativeAgo(m.svc.Now(), a.At))
+	out += kpi("Outcome", a.Outcome)
+	out += "\n"
+	text := a.Text
+	if a.Outcome == "error" && a.Err != "" {
+		text = "error: " + a.Err
+	}
+	width := m.width - 4
+	if width < 20 {
+		width = 76
+	}
+	for _, ln := range wrapText(text, width) {
+		out += "  " + commentStyle.Render(ln) + "\n"
+	}
+	out += "\n" + helpStyle.Render("any key: back to Comments · q: quit")
 	return out
 }
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -157,8 +158,9 @@ type fakeCommentSource struct{ m map[int64]ai.Comment }
 
 func (f fakeCommentSource) All(now time.Time) map[int64]ai.Comment { return f.m }
 
-// TestLeaderboardCommentsScoping asserts the visibility boundary: a player sees
-// only their own comment, an admin sees everyone's, and no source ⇒ none.
+// TestLeaderboardCommentsScoping asserts the visibility boundary: on the main
+// leaderboard EVERYONE — players and admins — sees only their own comment; the
+// full set is admin-gated behind AllLeaderboardComments. No source ⇒ none.
 func TestLeaderboardCommentsScoping(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	admin, _ := svc.Register(adminFP, testInvite, "Admin")
@@ -170,6 +172,7 @@ func TestLeaderboardCommentsScoping(t *testing.T) {
 	}
 
 	svc.SetCommentSource(fakeCommentSource{m: map[int64]ai.Comment{
+		admin.ID: {UserID: admin.ID, Text: "admin line"},
 		alice.ID: {UserID: alice.ID, Text: "alice line"},
 		bob.ID:   {UserID: bob.ID, Text: "bob line"},
 	}})
@@ -177,17 +180,25 @@ func TestLeaderboardCommentsScoping(t *testing.T) {
 	if got := svc.LeaderboardComments(alice); len(got) != 1 || got[alice.ID] != "alice line" {
 		t.Fatalf("player should see only own comment, got %v", got)
 	}
-	if got := svc.LeaderboardComments(admin); len(got) != 2 || got[alice.ID] == "" || got[bob.ID] == "" {
-		t.Fatalf("admin should see all comments, got %v", got)
+	// The admin's main-leaderboard view is now own-only too.
+	if got := svc.LeaderboardComments(admin); len(got) != 1 || got[admin.ID] != "admin line" {
+		t.Fatalf("admin should see only own comment on the leaderboard, got %v", got)
+	}
+	// The full set lives behind the admin-gated AllLeaderboardComments.
+	if got, err := svc.AllLeaderboardComments(admin); err != nil || len(got) != 3 {
+		t.Fatalf("admin AllLeaderboardComments should return all 3, got %v err=%v", got, err)
+	}
+	if _, err := svc.AllLeaderboardComments(alice); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("player AllLeaderboardComments should be forbidden, got %v", err)
 	}
 
 	// Muting a player hides their ALREADY-CACHED comment immediately (read-time
-	// enforcement), without waiting for the next regeneration pass.
+	// enforcement) from both their own view and the admin's full set.
 	if err := svc.SetUserCommentTone(admin, bob.ID, "mute"); err != nil {
 		t.Fatal(err)
 	}
-	if got := svc.LeaderboardComments(admin); len(got) != 1 || got[bob.ID] != "" {
-		t.Fatalf("muted Bob must vanish from the admin view immediately, got %v", got)
+	if got, _ := svc.AllLeaderboardComments(admin); len(got) != 2 || got[bob.ID] != "" {
+		t.Fatalf("muted Bob must vanish from the admin full set immediately, got %v", got)
 	}
 	if got := svc.LeaderboardComments(bob); len(got) != 0 {
 		t.Fatalf("muted Bob must not see his own cached comment, got %v", got)

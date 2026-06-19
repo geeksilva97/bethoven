@@ -104,8 +104,9 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		}
 		m.standings, m.screen = board, screenLeaderboard
 		m.liveMatches, _ = m.svc.LiveMatches()
-		m.rowComments = m.svc.LeaderboardComments(m.user) // own (player) / all (admin)
+		m.rowComments = m.svc.LeaderboardComments(m.user) // own comment only (everyone)
 		m.revealLivePicks, m.livePicks = false, nil       // start collapsed each visit
+		m = m.stopCycle()                                 // start with the cycle off each visit
 		m.leaderEpoch++                                   // supersede any tick loop from a prior visit
 		return m, leaderTick(m.leaderEpoch)               // begin auto-refresh while on this screen
 	case screenMatchRank:
