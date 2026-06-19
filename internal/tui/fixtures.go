@@ -100,6 +100,36 @@ func upcomingWindow(list []models.Match, now time.Time) []models.Match {
 	return window
 }
 
+// currentMatchIndex returns the index a fixtures list should focus on: the match
+// happening "now" — the first in-play (live) match, else the first match not yet
+// finished (the next kickoff, or a recent game still awaiting its result), else
+// the last match when the whole schedule is over. Lists are in kickoff order, so
+// finished games cluster at the front and this lands on the past/future frontier.
+// Live/Finished already encode time relative to the server clock, so no "now" is
+// needed (Live is overlaid with the injected clock; Finished is DB state).
+func currentMatchIndex(list []models.Match) int {
+	if len(list) == 0 {
+		return 0
+	}
+	// One pass. A live game wins outright; otherwise fall back to the first
+	// not-yet-finished game (the next kickoff, or a recent one still awaiting its
+	// result). We can't just return that fallback eagerly: a live game can sit
+	// after an earlier un-finished-but-not-live game, and the live one should win.
+	fallback := -1
+	for i, mt := range list {
+		if mt.Live { // a game in progress is unambiguously "current"
+			return i
+		}
+		if fallback == -1 && !mt.Finished {
+			fallback = i
+		}
+	}
+	if fallback != -1 {
+		return fallback
+	}
+	return len(list) - 1 // everything is over → most recent
+}
+
 // visibleFixtures applies the active filters to m.fixtures: the next-3-days
 // window (unless fixShowAll), then the search query. Both updateFixtures and
 // viewFixtures call this, so the displayed list and the cursor target never drift.
@@ -167,7 +197,12 @@ func (m Model) updateFixtures(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fixSearch.open()
 	case "a":
 		m.fixShowAll = !m.fixShowAll
-		m.fixCursor = 0
+		if m.fixShowAll {
+			// Full schedule: focus the current game, not the 11 Jun opener.
+			m.fixCursor = currentMatchIndex(m.visibleFixtures())
+		} else {
+			m.fixCursor = 0 // the 3-day window already starts at "now"
+		}
 		return m, nil
 	case "up", "k":
 		if m.fixCursor > 0 {

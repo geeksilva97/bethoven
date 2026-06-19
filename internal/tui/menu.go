@@ -113,7 +113,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			m.setStatus(err.Error(), true)
 			return m, nil
 		}
-		m.fixtures, m.fixCursor = fx, 0
+		m.fixtures, m.fixCursor = fx, currentMatchIndex(fx)
 		m.rankRows, m.rankMatch, m.rankBreakdown = nil, nil, nil
 		m.rankCursor = 0
 		m.rankSearch = newSearchBox("filter teams…")
@@ -128,7 +128,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			m.setStatus(err.Error(), true)
 			return m, nil
 		}
-		m.fixtures, m.resCursor, m.resMatch = fx, 0, nil
+		m.fixtures, m.resCursor, m.resMatch = fx, currentMatchIndex(fx), nil
 		m.resSearch = newSearchBox("filter teams…")
 		m.screen = screenEnterResult
 	case screenAllBets:

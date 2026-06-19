@@ -402,7 +402,12 @@ func (m Model) updateAllBets(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Toggle next-3-days window vs full schedule (admin grid only).
 		if !m.gridPublic {
 			m.allShowAll = !m.allShowAll
-			m.allCursor = 0
+			if m.allShowAll {
+				// Full schedule: focus the current game, not the opener.
+				m.allCursor = currentMatchIndex(m.visibleGridMatches())
+			} else {
+				m.allCursor = 0 // the 3-day window already starts at "now"
+			}
 		}
 	case "up", "k":
 		if m.allCursor > 0 {
