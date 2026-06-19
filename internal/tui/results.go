@@ -35,8 +35,8 @@ func leaderTick(epoch int) tea.Cmd {
 type cycleTickMsg struct{ epoch int }
 
 // cycleRefresh is how often the leaderboard rotates to the next player's comment
-// while cycling is on.
-const cycleRefresh = 5 * time.Second
+// while cycling is on — paced so there's time to actually read each line.
+const cycleRefresh = 12 * time.Second
 
 // cycleTick schedules the next comment-cycle advance for the given epoch.
 func cycleTick(epoch int) tea.Cmd {
