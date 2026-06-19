@@ -141,6 +141,7 @@ func (m Model) onLeaderTick(msg leaderTickMsg) (tea.Model, tea.Cmd) {
 	}
 	m.rowComments = m.svc.LeaderboardComments(m.user)
 	m.liveMatches, _ = m.svc.LiveMatches()
+	m.liveCommentary = m.svc.LiveCommentary()
 	if m.revealLivePicks {
 		m.livePicks, _ = m.svc.LivePicks()
 	}
@@ -303,6 +304,22 @@ func (m Model) viewLeaderboard() string {
 				labelStyle.Render(fmt.Sprintf("  %s v %s", mt.TeamA, mt.TeamB)) + "\n"
 			if m.revealLivePicks {
 				out += m.liveMatchPicks(mt.ID)
+			}
+		}
+		// BETanIA's running take on the in-play slate, just under the live scores.
+		// Suppressed for viewers who turned BETanIA comments off ('h') — it's still
+		// her commentary, so the opt-out covers it too.
+		if m.liveCommentary != "" && !m.hideComments {
+			width := m.width - 6
+			if width > leaderCommentMaxWidth {
+				width = leaderCommentMaxWidth
+			}
+			for i, ln := range wrapText(m.liveCommentary, width) {
+				prefix := "  " + botMark.Render("🤖") + " "
+				if i > 0 {
+					prefix = "     " // align continuation past the 🤖
+				}
+				out += prefix + commentStyle.Render(ln) + "\n"
 			}
 		}
 		out += "\n"

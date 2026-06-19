@@ -60,6 +60,36 @@ func cleanClock(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
+// cleanOdds builds a sanitized, display-ready odds string from a provider's
+// details ("USA -160") and over/under line. Like cleanClock, the feed is
+// UNTRUSTED and this string renders into terminals (and later an AI comment), so
+// the details are whitelisted to letters/digits/space plus a small punctuation
+// set (team abbreviations like "USA" mean letters are allowed here, unlike the
+// clock) and length-capped — strip, don't reject, to neutralize ANSI/control
+// injection. Format is "<details> · O/U <overUnder>"; the O/U tail is omitted
+// when the line is 0/absent, and the whole thing is empty when there are no
+// details.
+func cleanOdds(details string, overUnder float64) string {
+	const maxLen = 32
+	var b strings.Builder
+	for _, r := range details {
+		if b.Len() >= maxLen {
+			break
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("-+.·/' :", r) {
+			b.WriteRune(r)
+		}
+	}
+	clean := strings.TrimSpace(b.String())
+	if clean == "" {
+		return ""
+	}
+	if overUnder > 0 {
+		return fmt.Sprintf("%s · O/U %s", clean, strconv.FormatFloat(overUnder, 'f', -1, 64))
+	}
+	return clean
+}
+
 // ESPNProvider fetches live scores from ESPN's keyless scoreboard endpoint.
 type ESPNProvider struct {
 	league string
@@ -96,6 +126,14 @@ type espnResp struct {
 					State string `json:"state"`
 				} `json:"type"`
 			} `json:"status"`
+			Odds []struct {
+				Details   string  `json:"details"`
+				OverUnder float64 `json:"overUnder"`
+				Provider  struct {
+					Priority int    `json:"priority"`
+					Name     string `json:"name"`
+				} `json:"provider"`
+			} `json:"odds"`
 		} `json:"competitions"`
 	} `json:"events"`
 }
@@ -181,6 +219,19 @@ func decodeEvents(r io.Reader) ([]Event, error) {
 		if !validScore(home.score) || !validScore(away.score) {
 			continue
 		}
+		// Pick the primary (priority 1) provider's odds, falling back to the first
+		// entry when none is flagged primary. Absent odds degrade to an empty string.
+		var odds string
+		if len(comp.Odds) > 0 {
+			pick := comp.Odds[0]
+			for _, o := range comp.Odds {
+				if o.Provider.Priority == 1 {
+					pick = o
+					break
+				}
+			}
+			odds = cleanOdds(pick.Details, pick.OverUnder)
+		}
 		out = append(out, Event{
 			Home:      home.name,
 			Away:      away.name,
@@ -190,6 +241,7 @@ func decodeEvents(r io.Reader) ([]Event, error) {
 			State:     ParseState(comp.Status.Type.State),
 			Minute:    comp.Status.Period,
 			Clock:     cleanClock(comp.Status.DisplayClock),
+			Odds:      odds,
 		})
 	}
 	return out, nil

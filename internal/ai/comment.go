@@ -70,6 +70,11 @@ type CommentConfig struct {
 	ToneByName  map[string]string // display name -> "playful" | "savage" | "mute"; absent ⇒ default
 	Rivalries   []Rivalry
 	Notes       []string
+	// PromptOverride, when non-empty, REPLACES the built-in persona/tone/rules
+	// instruction body of the stage-2 comment prompt. The harness still appends
+	// the untrusted-data trailer + standings JSON + the submit_comments line, and
+	// the submit_comments tool stays attached. Empty ⇒ the built-in prompt verbatim.
+	PromptOverride string
 }
 
 // toneFor returns the effective tone for a player: their override, or the default.
@@ -134,6 +139,30 @@ func appendCommentLog(path, tone string, at time.Time, c Comment) error {
 		Player: c.Player,
 		Tone:   tone,
 		Text:   c.Text,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// appendLiveCommentLog appends one JSON line per live-commentary line to path,
+// tagged source:"live_comment" so it's distinguishable from the per-player roasts
+// sharing the same log file. A logging failure is non-fatal (the line is cached).
+func appendLiveCommentLog(path string, at time.Time, text string) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	line, err := json.Marshal(commentLogEntry{
+		At:     at.UTC().Format(time.RFC3339),
+		Source: "live_comment",
+		Text:   text,
 	})
 	if err != nil {
 		return err

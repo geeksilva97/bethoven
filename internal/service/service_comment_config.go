@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"bethoven/internal/ai"
+	"bethoven/internal/db"
 	"bethoven/internal/models"
 )
 
@@ -67,6 +68,40 @@ func (s *Service) PlayerTones(by *models.User) ([]PlayerTone, error) {
 		out = append(out, PlayerTone{User: u, Tone: t})
 	}
 	return out, nil
+}
+
+// settingCommentPromptOverride is the KV key for an admin-supplied replacement of
+// BETanIA's comment-prompt instruction body. Empty/absent ⇒ the built-in prompt
+// verbatim (zero behaviour change). Stored/read like comment_tone.
+const settingCommentPromptOverride = "comment_prompt_override"
+
+// CommentPromptOverride reports the admin's custom comment-prompt body, or "" when
+// none is set (the built-in default is used). Not gated — it's a worker seam read.
+func (s *Service) CommentPromptOverride() (string, error) {
+	v, err := s.store.GetSetting(settingCommentPromptOverride)
+	if errors.Is(err, db.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return v, nil
+}
+
+// SetCommentPromptOverride replaces BETanIA's comment-prompt instruction body.
+// An empty text (after trimming) restores the built-in default. Admin only.
+func (s *Service) SetCommentPromptOverride(by *models.User, text string) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	text = strings.TrimSpace(text)
+	if err := s.store.SetSetting(settingCommentPromptOverride, text); err != nil {
+		return err
+	}
+	s.track(by, by.Fingerprint, EvSettingChanged, map[string]string{
+		"setting": settingCommentPromptOverride,
+	})
+	return nil
 }
 
 // settingCommentContext is the KV key for admin-entered comment context (a JSON
@@ -224,10 +259,12 @@ func (s *Service) CommentConfig() ai.CommentConfig {
 		}
 		rivalries = append(rivalries, ai.Rivalry{A: a, B: b, Note: r.Note})
 	}
+	override, _ := s.CommentPromptOverride()
 	return ai.CommentConfig{
-		DefaultTone: def,
-		ToneByName:  tones,
-		Rivalries:   rivalries,
-		Notes:       c.Notes,
+		DefaultTone:    def,
+		ToneByName:     tones,
+		Rivalries:      rivalries,
+		Notes:          c.Notes,
+		PromptOverride: override,
 	}
 }

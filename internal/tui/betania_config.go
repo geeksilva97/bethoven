@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -350,6 +351,70 @@ func (m Model) viewCtxPick() string {
 		out += cursorRow(i == m.ctxPickCursor, pt.User.DisplayName) + "\n"
 	}
 	out += "\n" + statusLine(m) + helpStyle.Render("↑/↓: move · enter: pick · esc: cancel")
+	return out
+}
+
+// ---- comment-prompt override editor -----------------------------------------
+
+// openAIPrompt loads the current comment-prompt override into the editor. An empty
+// value means BETanIA uses her built-in prompt.
+func (m Model) openAIPrompt() Model {
+	m.status = ""
+	cur, err := m.svc.CommentPromptOverride()
+	if err != nil {
+		m.setStatus(err.Error(), true)
+		return m
+	}
+	ta := textarea.New()
+	ta.Placeholder = "(empty — using built-in default)"
+	ta.CharLimit = 4000
+	ta.SetWidth(72)
+	ta.SetHeight(12)
+	ta.SetValue(cur)
+	ta.CursorEnd()
+	ta.Focus()
+	m.promptInput = ta
+	m.screen = screenAIPrompt
+	return m
+}
+
+// updateAIPrompt edits the override: ctrl+s saves, esc cancels (enter inserts a
+// newline — the override is a multi-line prompt body). A blank value restores the
+// built-in default. Returns to the Comments tab on save/cancel.
+func (m Model) updateAIPrompt(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if k, ok := msg.(tea.KeyMsg); ok {
+		switch k.Type {
+		case tea.KeyEsc:
+			m.betaniaTab = tabComments
+			return m.openBETanIA(), nil
+		case tea.KeyCtrlS:
+			if err := m.svc.SetCommentPromptOverride(m.user, m.promptInput.Value()); err != nil {
+				m.setStatus(err.Error(), true)
+				return m, nil
+			}
+			m.betaniaTab = tabComments
+			out := m.openBETanIA()
+			if strings.TrimSpace(m.promptInput.Value()) == "" {
+				out.setStatus("comment prompt reset to the built-in default — press c to regenerate", false)
+			} else {
+				out.setStatus("comment prompt saved — press c to regenerate comments", false)
+			}
+			return out, nil
+		}
+	}
+	var cmd tea.Cmd
+	m.promptInput, cmd = m.promptInput.Update(msg)
+	return m, cmd
+}
+
+// viewAIPrompt renders the override editor.
+func (m Model) viewAIPrompt() string {
+	out := titleStyle.Render("⚙  BETanIA: comment prompt") + "\n\n"
+	out += helpStyle.Render("Replaces BETanIA's comment persona/tone/rules. The standings data and the") + "\n"
+	out += helpStyle.Render("submit-comments instruction are always appended automatically.") + "\n"
+	out += helpStyle.Render("Leave blank to restore the built-in default.") + "\n\n"
+	out += m.promptInput.View() + "\n\n"
+	out += statusLine(m) + helpStyle.Render("ctrl+s: save · esc: cancel")
 	return out
 }
 

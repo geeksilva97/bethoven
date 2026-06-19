@@ -91,6 +91,8 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openAITones(), nil
 	case k.String() == "x":
 		return m.openAIContext(), nil
+	case m.betaniaTab == tabComments && k.String() == "s":
+		return m.openAIPrompt(), nil
 	case m.betaniaTab == tabComments && (k.String() == "up" || k.String() == "k"):
 		if m.aiCommentCursor > 0 {
 			m.aiCommentCursor--
@@ -168,7 +170,7 @@ func (m Model) viewBETanIA() string {
 		out += m.betaniaCommentsTab()
 		out += "\n" + helpStyle.Render("comments → ai_comments.log — `tail -f` to watch") + "\n"
 		out += statusLine(m) +
-			helpStyle.Render("↑↓: select · enter: full text · c: regen all · t: tone · u: per-player · x: context") + "\n" +
+			helpStyle.Render("↑↓: select · enter: full text · c: regen all · t: tone · u: per-player · x: context · s: prompt") + "\n" +
 			helpStyle.Render("tab: betting · q: quit · other: back")
 		return out
 	}

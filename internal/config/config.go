@@ -59,6 +59,12 @@ type Config struct {
 	AICommentsEnabled    bool
 	AICommentIntervalSec int    // seconds between comment regenerations (also the TTL)
 	AICommentLogPath     string // JSON-lines log of every comment
+
+	// Live top-of-leaderboard commentary (gated by AICommentsEnabled). A second,
+	// fast-cadence worker writes one general line about the in-play slate; it
+	// regenerates on change or after this heartbeat, and discards everything once
+	// nothing is live. The line is logged to AICommentLogPath (source:"live_comment").
+	AILiveCommentIntervalSec int // heartbeat seconds: longest a quiet game waits for a fresh line
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -100,6 +106,8 @@ func Load() Config {
 		AICommentsEnabled:    env("BETHOVEN_AI_COMMENTS_ENABLED", "true") != "false",
 		AICommentIntervalSec: envInt("BETHOVEN_AI_COMMENT_INTERVAL_SECONDS", 21600),
 		AICommentLogPath:     env("BETHOVEN_AI_COMMENT_LOG_PATH", "ai_comments.log"),
+
+		AILiveCommentIntervalSec: envInt("BETHOVEN_AI_LIVE_COMMENT_INTERVAL_SECONDS", 300),
 	}
 }
 

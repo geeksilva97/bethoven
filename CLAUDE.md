@@ -104,6 +104,11 @@ directly, with a fake clock, no terminal).
   clock to a digit/punctuation whitelist (`cleanClock`) — it renders into every
   player's terminal, so it's the same ANSI-injection boundary as display names
   (`cleanName`). Feed team names are only used for resolution, never rendered.
+  **Odds:** `decodeEvents` also parses the per-match `odds` array (the priority-1
+  provider's `details` + `overUnder`) into a short string (`cleanOdds`, sanitized
+  like `cleanClock`), carried as `Score.Odds`/`Match.LiveOdds`. It's never rendered
+  directly — it's grounding fed to BETanIA's live commentary (see below). Present
+  pre-match and may drop in-play; absent ⇒ empty string, no behaviour change.
 - **Analytics (optional, `internal/analytics`).** A usage tracker behind the
   `service.AnalyticsSink` port (nil ⇒ disabled ⇒ behaviour identical to no
   analytics, mirroring the live feed). Enable with `BETHOVEN_ANALYTICS_ENABLED=true`
@@ -242,8 +247,19 @@ directly, with a fake clock, no terminal).
       resolved to names) and free-text house notes. Fed into the stage-2 prompt as
       *context, not instructions* (output still sanitized; admin-trusted but the
       prompt is explicit it never overrides "don't invent results"). Built into
-      `ai.CommentConfig` (`{DefaultTone, Self, ToneByName, Rivalries, Notes}`) by
-      `service.CommentConfig` — the worker seam (replaces the old `Tone` seam).
+      `ai.CommentConfig` (`{DefaultTone, Self, ToneByName, Rivalries, Notes, PromptOverride}`)
+      by `service.CommentConfig` — the worker seam (replaces the old `Tone` seam).
+    - **Full prompt override** (`s` → `screenAIPrompt`): the DB-backed
+      `comment_prompt_override` setting (`CommentPromptOverride`/`SetCommentPromptOverride`,
+      admin only) lets an admin **replace BETanIA's entire instruction body**. Empty ⇒
+      the built-in `commentPrompt` verbatim (zero change for existing pools). When set,
+      `commentPrompt` swaps the persona/tone/rules body for the override but **always
+      still appends the fixed plumbing** — the untrusted-data note, standings JSON, and
+      the `submit_comments` tool-call trailer (without which the tool pipeline returns
+      nothing). **Mute survives a careless override** because it's enforced at READ
+      time; per-player tone overrides and the first-person self line are only honoured
+      if the admin's text includes them. The override also feeds the live commentary
+      below (as a steering preamble — its prompt is structurally different).
     - **Same sanitization boundary:** comment text is untrusted model output rendered
       into every terminal — `ai.sanitizeText` is applied in the worker before the
       cache + log, so both get clean text.
@@ -256,6 +272,25 @@ directly, with a fake clock, no terminal).
       worker pass → full cache rewrite, coalesced). **Logging:** each comment is a JSON line in
       `BETHOVEN_AI_COMMENT_LOG_PATH` (default `ai_comments.log`; **must** be under the
       systemd `ReadWritePaths` dir in prod, like `ai_bets.log`).
+    - **Live top-of-board commentary (`ai.LiveCommentWorker`).** A THIRD worker
+      (gated by `AICommentsEnabled`, alongside the per-player one) writes a single
+      general line about the **in-play slate** — who's nailing the scoreline, who's
+      climbing/falling, and what the **odds** implied — shown at the top of the
+      leaderboard next to the live scores (`results.go`, 🤖-prefixed, ungated like
+      `AllLeaderboardComments`). Like the rest of `ai` it takes function seams
+      (`LiveCommentDeps{Situation, Config, Now}`) and never imports `service`;
+      `service.LiveSituation` builds the snapshot (live matches + closest picks +
+      movers, from `LivePicks`/`Leaderboard`), `service.LiveCommentary` reads the
+      cache via the `LiveCommentSource` port. **Throwaway by design:** one Claude
+      call (no web search, tone-aware, honours the prompt override), sanitized via
+      `sanitizeText`, cached in `ai.LiveCommentCache` (current line + expiry + a short
+      history ring fed back so it doesn't repeat itself). **Cadence — on-change +
+      heartbeat:** ticks every `liveTick` (30s), regenerates when the situation
+      **signature** (scores + movers, *not* the clock) changes OR the heartbeat
+      (`BETHOVEN_AI_LIVE_COMMENT_INTERVAL_SECONDS`, default 300s) elapses, never two
+      lines closer than `liveFloor` (120s). **Cleared entirely when nothing is live**,
+      so a game's lines are discarded the moment it ends. Logged to the same file as
+      the per-player comments, tagged `source:"live_comment"`.
 
 ## Onboarding & admin
 

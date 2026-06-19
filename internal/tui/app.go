@@ -5,6 +5,7 @@
 package tui
 
 import (
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -37,6 +38,7 @@ const (
 	screenAITones         // admin-only: per-player comment tone
 	screenAIContext       // admin-only: rivalry + house-note context
 	screenAICommentDetail // admin-only: full text of a single BETanIA comment
+	screenAIPrompt        // admin-only: edit BETanIA's comment-prompt override
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -89,6 +91,9 @@ type Model struct {
 	standings   []service.Standing
 	liveMatches []models.Match
 	leaderEpoch int
+	// liveCommentary is BETanIA's single general top-of-board line about the in-play
+	// slate (empty when nothing is live or the worker isn't running).
+	liveCommentary string
 	// 'p' reveals every player's pick for the in-play matches (live-only, open to
 	// all). livePicks is populated only while the reveal is on.
 	revealLivePicks bool
@@ -192,6 +197,11 @@ type Model struct {
 	ctxRivalA     int64
 	ctxRivalAName string
 	ctxRivalB     int64
+
+	// admin: BETanIA comment-prompt override editor (reached with 's' on the
+	// Comments tab). promptInput edits the full instruction body (multi-line, since
+	// the override is a whole prompt); empty ⇒ default.
+	promptInput textarea.Model
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -271,6 +281,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAIContext(msg)
 	case screenAICommentDetail:
 		return m.updateAICommentDetail(msg)
+	case screenAIPrompt:
+		return m.updateAIPrompt(msg)
 	}
 	return m, nil
 }
@@ -312,6 +324,8 @@ func (m Model) View() string {
 		return m.viewAIContext()
 	case screenAICommentDetail:
 		return m.viewAICommentDetail()
+	case screenAIPrompt:
+		return m.viewAIPrompt()
 	}
 	return ""
 }
