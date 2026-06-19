@@ -32,6 +32,30 @@ func (s *Service) LiveCommentary() string {
 	return s.liveComments.Current(s.Now())
 }
 
+// settingLiveCommentState is the KV key holding the live-comment cache snapshot
+// (BETanIA's current line + anti-repeat history) so a version swap mid-game doesn't
+// blank it. It's throwaway state, but the DB keeps it consistent with the rest
+// (WAL-safe, atomic, one store) instead of a loose file — the ai package marshals
+// the JSON, the service just persists the string.
+const settingLiveCommentState = "live_comment_state"
+
+// SaveLiveCommentState persists the live-comment snapshot (an opaque JSON string
+// produced by ai.LiveCommentCache.SnapshotJSON). Called from main on shutdown.
+// An empty snapshot clears the row. Worker/lifecycle seam — not admin-gated.
+func (s *Service) SaveLiveCommentState(snapshot string) error {
+	return s.store.SetSetting(settingLiveCommentState, snapshot)
+}
+
+// LoadLiveCommentState returns the last persisted live-comment snapshot (or "" when
+// none), for main to hand to ai.LiveCommentCache.LoadJSON at boot.
+func (s *Service) LoadLiveCommentState() string {
+	v, err := s.store.GetSetting(settingLiveCommentState)
+	if err != nil {
+		return ""
+	}
+	return v
+}
+
 // LiveSituation builds the snapshot the live-comment worker reasons over: the
 // in-play matches (score, clock, odds, and the closest picks) plus the players
 // whose standing is shifting on the provisional points. The bool reports whether
@@ -99,5 +123,17 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 		})
 	}
 
-	return ai.LiveSituation{Matches: matches, Movers: movers}, true, nil
+	// Overall standings (rank-sorted) so the line can talk about the title race and
+	// shrinking gaps, not just whoever nailed the live scoreline.
+	standings := make([]ai.LiveStanding, 0, len(board))
+	for i, st := range board {
+		standings = append(standings, ai.LiveStanding{
+			Player:     st.User.DisplayName,
+			Position:   i + 1,
+			Total:      st.Total,
+			LivePoints: st.LivePoints,
+		})
+	}
+
+	return ai.LiveSituation{Matches: matches, Movers: movers, Standings: standings}, true, nil
 }

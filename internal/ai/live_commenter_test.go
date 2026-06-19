@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,5 +103,67 @@ func TestLiveCommentWorkerPass(t *testing.T) {
 	}
 	if sig, hist := cache.snapshot(); sig != "" || len(hist) != 0 {
 		t.Errorf("game-over pass: cache not cleared (sig=%q hist=%v)", sig, hist)
+	}
+}
+
+func TestLiveCacheSnapshotRoundTrip(t *testing.T) {
+	now := time.Date(2026, 6, 19, 23, 0, 0, 0, time.UTC)
+	c := NewLiveCommentCache()
+	c.set("first line", "sig-1", now.Add(10*time.Minute))
+	c.set("second line", "sig-2", now.Add(10*time.Minute))
+
+	snap := c.SnapshotJSON()
+	if snap == "" {
+		t.Fatal("snapshot should not be empty")
+	}
+
+	// A fresh cache restores the current line + signature + history.
+	c2 := NewLiveCommentCache()
+	c2.LoadJSON(snap)
+	if got := c2.Current(now); got != "second line" {
+		t.Errorf("restored current = %q, want %q", got, "second line")
+	}
+	sig, hist := c2.snapshot()
+	if sig != "sig-2" {
+		t.Errorf("restored sig = %q, want sig-2", sig)
+	}
+	if len(hist) != 2 || hist[0] != "first line" {
+		t.Errorf("restored history = %v", hist)
+	}
+
+	// Empty / malformed input is a no-op (no panic, stays empty).
+	c3 := NewLiveCommentCache()
+	c3.LoadJSON("")
+	c3.LoadJSON("{not json")
+	if c3.Current(now) != "" {
+		t.Error("bad input should leave cache empty")
+	}
+	if NewLiveCommentCache().SnapshotJSON() != "" {
+		t.Error("empty cache should snapshot to empty string")
+	}
+}
+
+func TestLiveCommentPromptVarietyAndRivalries(t *testing.T) {
+	cfg := CommentConfig{
+		DefaultTone: "savage",
+		Rivalries:   []Rivalry{{A: "miguel", B: "Edy", Note: "Caldense derby"}},
+	}
+	sit := LiveSituation{
+		Matches:   []LiveMatchInfo{{TeamA: "Scotland", TeamB: "Morocco", ScoreB: 1, Picks: []LivePickInfo{{Player: "Marcello", Pred: "0-1", LivePoints: 7}}}},
+		Standings: []LiveStanding{{Player: "miguel", Position: 1, Total: 66}, {Player: "Edy", Position: 2, Total: 64}},
+	}
+	p := liveCommentPrompt(sit, []string{"Marcello nailed it again"}, cfg)
+
+	if !strings.Contains(p, "RIVALRIES") || !strings.Contains(p, "Caldense derby") {
+		t.Error("prompt should carry the admin rivalries")
+	}
+	if !strings.Contains(p, "TITLE RACE") {
+		t.Error("prompt should offer the title-race angle")
+	}
+	if !strings.Contains(p, "SPREAD THE LOVE") {
+		t.Error("prompt should push anti-fixation / variety")
+	}
+	if !strings.Contains(p, "Marcello nailed it again") {
+		t.Error("recent lines should be fed back for anti-repeat")
 	}
 }

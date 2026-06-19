@@ -41,8 +41,13 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("Now, in that voice, write ONE short LIVE play-by-play line about the current match situation below.\n")
 	} else {
 		b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool, doing LIVE commentary at the top of the leaderboard. Being FUNNY is the whole point.\n\n")
-		b.WriteString("Write ONE short, punchy line about the match RIGHT NOW. Do NOT file a status report or list every fact. Pick the single juiciest angle — a scorer, a near miss, the leader sweating, a doomed pick, the odds, the halftime lull — and make it LAND. Entertaining first, informative second. Address the pool in general, not one person.\n")
-		b.WriteString("Vary your style line to line — a zinger, a dramatic call, a dry aside, a wild metaphor — and every so often really swing for the joke.\n")
+		b.WriteString("Write ONE short, punchy line RIGHT NOW. The match matters, but the real show is the POOL. Do NOT keep spotlighting the same player line after line — ROTATE the angle every time. Pick the single juiciest one and make it LAND:\n")
+		b.WriteString("  - the TITLE RACE: who leads, who's closing the gap, a near-tie at the top (use \"standings\" — positions + totals);\n")
+		b.WriteString("  - a RIVALRY heating up (see the rivalries list, if any);\n")
+		b.WriteString("  - a CLIMBER or FALLER on the live points (\"movers\");\n")
+		b.WriteString("  - who NAILED this match's scoreline, or who backed the wrong result and is stuck on zero (\"picks\");\n")
+		b.WriteString("  - a scorer, near miss, or the odds.\n")
+		b.WriteString("Entertaining first, informative second. Address the pool in general, not one person. Vary your style — a zinger, a dramatic call, a dry aside, a wild metaphor.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {
 			b.WriteString("TONE: savage — cutting comedy-roast energy; punch up at whoever's winning, never mean-spirited.\n")
 		} else {
@@ -51,15 +56,26 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 	}
 
 	b.WriteString("\nRULES:\n")
-	b.WriteString("1. Ground every claim ONLY in the live data below. Never invent scores, names, odds, or events.\n")
+	b.WriteString("1. Ground every claim ONLY in the live data below. Never invent scores, names, odds, points, or events.\n")
 	b.WriteString("2. One punchy sentence, ~160 characters max. Mention AT MOST one or two things — cramming every name, score, and stat kills the joke. No emojis, no line breaks.\n")
-	b.WriteString("3. The score will change as the game moves — react to the CURRENT state.\n")
-	b.WriteString("4. The \"odds\" field is American moneyline (negative = favourite, e.g. -180; positive = underdog). TRANSLATE it into plain favourite/underdog language (\"heavy favourites\", \"slight edge\", \"long shot\") — NEVER quote the raw number.\n")
-	b.WriteString("5. Each match may include \"key_events\" (goals, cards) with the minute and a text description. You MAY name the scorer or call out a card using ONLY that text — never invent a scorer, minute, or event not listed there.\n")
-	b.WriteString("6. A match may carry a \"phase\": \"halftime\" means it's the INTERVAL/break (not live play) — react to the break, not as if the ball is rolling; \"extra_time\"/\"penalties\" likewise. No phase ⇒ ordinary live play.\n")
+	b.WriteString("3. SPREAD THE LOVE: across your recent lines (below) you've already spotlighted some players — pick a DIFFERENT player or angle this time. The pool is full of people; don't fixate on the one who nailed the score.\n")
+	b.WriteString("4. \"standings\" carries positions + totals: you may riff on the title race and gaps, but ground a gap in the totals (e.g. \"only 2 behind\") — never invent the number.\n")
+	b.WriteString("5. The score will change as the game moves — react to the CURRENT state.\n")
+	b.WriteString("6. The \"odds\" field is American moneyline (negative = favourite, e.g. -180; positive = underdog). TRANSLATE it into plain favourite/underdog language (\"heavy favourites\", \"slight edge\", \"long shot\") — NEVER quote the raw number.\n")
+	b.WriteString("7. Each match may include \"key_events\" (goals, cards) with the minute and a text description. You MAY name the scorer or call out a card using ONLY that text — never invent a scorer, minute, or event not listed there.\n")
+	b.WriteString("8. A match may carry a \"phase\": \"halftime\" means it's the INTERVAL/break (not live play) — react to the break, not as if the ball is rolling; \"extra_time\"/\"penalties\" likewise. No phase ⇒ ordinary live play.\n")
+
+	// Admin-provided rivalries are real context the line may play up (never overrides
+	// "don't invent"). They feed the rivalry angle above.
+	if len(cfg.Rivalries) > 0 {
+		b.WriteString("\nRIVALRIES (real admin context you may play up):\n")
+		for _, r := range cfg.Rivalries {
+			fmt.Fprintf(&b, "- %s vs %s: %s\n", r.A, r.B, r.Note)
+		}
+	}
 
 	if len(recent) > 0 {
-		b.WriteString("\nYOUR RECENT LINES (most recent last) — say something NEW, do not repeat these:\n")
+		b.WriteString("\nYOUR RECENT LINES (most recent last) — say something NEW, a DIFFERENT angle/player, do not repeat these:\n")
 		for _, r := range recent {
 			fmt.Fprintf(&b, "- %s\n", r)
 		}

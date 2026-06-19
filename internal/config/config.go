@@ -80,6 +80,7 @@ func (c Config) UsingDefaultInvite() bool {
 // dev run; production sets the BETHOVEN_* vars explicitly (see deploy docs).
 func Load() Config {
 	aiLogPath := env("BETHOVEN_AI_LOG_PATH", "ai_bets.log")
+	aiCommentLogPath := env("BETHOVEN_AI_COMMENT_LOG_PATH", "ai_comments.log")
 	return Config{
 		Port:        env("BETHOVEN_PORT", "2222"),
 		DBPath:      env("BETHOVEN_DB_PATH", "bethoven.db"),
@@ -111,7 +112,7 @@ func Load() Config {
 		// On by default once AI is enabled; opt out with BETHOVEN_AI_COMMENTS_ENABLED=false.
 		AICommentsEnabled:    env("BETHOVEN_AI_COMMENTS_ENABLED", "true") != "false",
 		AICommentIntervalSec: envInt("BETHOVEN_AI_COMMENT_INTERVAL_SECONDS", 21600),
-		AICommentLogPath:     env("BETHOVEN_AI_COMMENT_LOG_PATH", "ai_comments.log"),
+		AICommentLogPath:     aiCommentLogPath,
 
 		AILiveCommentIntervalSec: envInt("BETHOVEN_AI_LIVE_COMMENT_INTERVAL_SECONDS", 300),
 	}

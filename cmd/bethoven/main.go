@@ -103,6 +103,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Set when BETanIA's live-comment worker is wired; snapshotted to the DB on
+	// shutdown so a version swap mid-game keeps her current line + anti-repeat memory.
+	var liveCache *ai.LiveCommentCache
+
 	// Optional live-score feed: poll ESPN's keyless scoreboard and fold the
 	// results into the leaderboard. Disabled => the server runs exactly as before.
 	if cfg.LiveEnabled {
@@ -186,6 +190,10 @@ func main() {
 				// live. Reuses the comment log file (tagged source:"live_comment").
 				lhb := time.Duration(cfg.AILiveCommentIntervalSec) * time.Second
 				lcache := ai.NewLiveCommentCache()
+				// Restore the live line + anti-repeat memory persisted on the last
+				// shutdown, so a version swap mid-game resumes instead of blanking.
+				lcache.LoadJSON(svc.LoadLiveCommentState())
+				liveCache = lcache
 				svc.SetLiveCommentSource(lcache)
 				lw := ai.NewLiveCommentWorker(ai.LiveCommentDeps{
 					Situation: svc.LiveSituation,
@@ -222,6 +230,13 @@ func main() {
 	<-done
 	log.Println("shutting down...")
 	cancel() // stop the live poller
+	// Snapshot BETanIA's live commentary so the next version resumes it (SIGTERM is
+	// what `systemctl restart` sends, so this runs automatically on every deploy).
+	if liveCache != nil {
+		if err := svc.SaveLiveCommentState(liveCache.SnapshotJSON()); err != nil {
+			log.Printf("save live comment state: %v", err)
+		}
+	}
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

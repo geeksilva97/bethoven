@@ -355,6 +355,20 @@ directly, with a fake clock, no terminal).
       lines closer than `liveFloor` (120s). **Cleared entirely when nothing is live**,
       so a game's lines are discarded the moment it ends. Logged to the same file as
       the per-player comments, tagged `source:"live_comment"`.
+      **Variety / context:** the snapshot also carries `standings` (rank-sorted
+      positions + totals) so the line can riff on the **title race / shrinking gaps**,
+      and the prompt is fed the admin **rivalries** (`cfg.Rivalries`); the prompt
+      explicitly tells her to ROTATE players/angles (title race, a rivalry, a
+      climber/faller, who nailed it or whiffed) and not fixate on the one standout
+      pick, with the recent lines fed back for anti-repeat.
+      **Survives a version swap (no loose file — it's in the DB):** the in-memory
+      cache is throwaway, but on shutdown `main` snapshots it to the `settings` KV
+      `live_comment_state` via `service.SaveLiveCommentState` and reloads it at boot
+      (`LoadLiveCommentState` → `LiveCommentCache.LoadJSON`), so the SIGTERM that
+      `systemctl restart` sends preserves the current line + anti-repeat history
+      across deploys. The `ai` package only marshals the JSON (`SnapshotJSON`/`LoadJSON`)
+      — it never touches the DB; `main` bridges to the service (no import cycle). A
+      stale snapshot is self-correcting: the next pass sees nothing live and clears it.
 
 ## Onboarding & admin
 

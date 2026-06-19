@@ -77,3 +77,28 @@ func TestLiveSituation(t *testing.T) {
 		t.Error("Alice not among live movers")
 	}
 }
+
+func TestLiveCommentStateRoundTrip(t *testing.T) {
+	svc, _, _ := newTestService(t)
+
+	// Absent -> empty.
+	if got := svc.LoadLiveCommentState(); got != "" {
+		t.Errorf("expected empty before save, got %q", got)
+	}
+
+	snap := `{"text":"Morocco cruising","sig":"s1","history":["a","b"]}`
+	if err := svc.SaveLiveCommentState(snap); err != nil {
+		t.Fatalf("SaveLiveCommentState: %v", err)
+	}
+	if got := svc.LoadLiveCommentState(); got != snap {
+		t.Errorf("round-trip = %q, want %q", got, snap)
+	}
+
+	// Saving empty clears it.
+	if err := svc.SaveLiveCommentState(""); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.LoadLiveCommentState(); got != "" {
+		t.Errorf("expected empty after clear, got %q", got)
+	}
+}

@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -66,11 +67,24 @@ type LiveMover struct {
 	LivePoints int    `json:"live_points"`
 }
 
+// LiveStanding is one player's overall position for the live commentary's
+// leadership-race angle: position + total (so gaps are groundable) plus any
+// provisional gain from the in-play match.
+type LiveStanding struct {
+	Player     string `json:"player"`
+	Position   int    `json:"position"`
+	Total      int    `json:"total"`
+	LivePoints int    `json:"live_points,omitempty"`
+}
+
 // LiveSituation is the snapshot the live commenter reasons over: the matches in
-// play (score, clock, odds, who picked what) and the notable leaderboard movers.
+// play (score, clock, odds, who picked what), the notable leaderboard movers, and
+// the overall standings so the line can riff on the title race / shrinking gaps
+// instead of fixating on the one standout pick.
 type LiveSituation struct {
-	Matches []LiveMatchInfo `json:"matches"`
-	Movers  []LiveMover     `json:"movers,omitempty"`
+	Matches   []LiveMatchInfo `json:"matches"`
+	Movers    []LiveMover     `json:"movers,omitempty"`
+	Standings []LiveStanding  `json:"standings,omitempty"`
 }
 
 // LiveCommentDeps are the service seams the live-comment worker needs. Functions,
@@ -144,6 +158,53 @@ func (c *LiveCommentCache) snapshot() (sig string, history []string) {
 	h := make([]string, len(c.history))
 	copy(h, c.history)
 	return c.sig, h
+}
+
+// livePersistState is the serialized form of the cache. The service stores the
+// JSON in the settings table (KV "live_comment_state") so a version swap mid-game
+// keeps BETanIA's current line + anti-repeat memory. The ai package only marshals
+// to/from this string — it never touches the DB itself (main bridges to service),
+// keeping the no-import-cycle rule intact, like CommentConfig's seams.
+type livePersistState struct {
+	Text      string    `json:"text"`
+	Sig       string    `json:"sig"`
+	ExpiresAt time.Time `json:"expires_at"`
+	History   []string  `json:"history"`
+}
+
+// SnapshotJSON returns the cache state as a JSON string for the service to persist
+// (settings KV). Empty string when there's nothing worth saving.
+func (c *LiveCommentCache) SnapshotJSON() string {
+	c.mu.RLock()
+	st := livePersistState{Text: c.text, Sig: c.sig, ExpiresAt: c.expiresAt, History: append([]string(nil), c.history...)}
+	c.mu.RUnlock()
+	if st.Text == "" && len(st.History) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(st)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// LoadJSON restores cache state from a JSON string previously produced by
+// SnapshotJSON (the service hands it back at boot), so a freshly started process
+// resumes the live line + history instead of a blank board. An empty or malformed
+// string is ignored. If the snapshot is stale — the game is over — the worker's
+// next pass sees nothing live and clears it (self-correcting), and Current() hides
+// the line once ExpiresAt passes.
+func (c *LiveCommentCache) LoadJSON(s string) {
+	if s == "" {
+		return
+	}
+	var st livePersistState
+	if err := json.Unmarshal([]byte(s), &st); err != nil {
+		return
+	}
+	c.mu.Lock()
+	c.text, c.sig, c.expiresAt, c.history = st.Text, st.Sig, st.ExpiresAt, st.History
+	c.mu.Unlock()
 }
 
 // LiveCommentWorker generates BETanIA's top-of-leaderboard live commentary. While
