@@ -175,6 +175,28 @@ func TestCommentConfigTonesAndContext(t *testing.T) {
 		t.Error(`"default" should clear Alice's override`)
 	}
 
+	// Edits replace the text in place (participants unchanged for a rivalry).
+	if err := svc.EditRivalry(admin, 0, "fierce office rivals"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.EditCommentNote(admin, 0, "loser buys dinner"); err != nil {
+		t.Fatal(err)
+	}
+	cfg = svc.CommentConfig()
+	if cfg.Rivalries[0].Note != "fierce office rivals" || cfg.Rivalries[0].A != "Alice" {
+		t.Errorf("edited rivalry = %+v", cfg.Rivalries[0])
+	}
+	if cfg.Notes[0] != "loser buys dinner" {
+		t.Errorf("edited note = %q", cfg.Notes[0])
+	}
+	// Edit rejects an empty text and an out-of-range index.
+	if err := svc.EditCommentNote(admin, 0, "   "); err == nil {
+		t.Error("empty note edit should fail")
+	}
+	if err := svc.EditRivalry(admin, 9, "x"); err == nil {
+		t.Error("out-of-range rivalry edit should fail")
+	}
+
 	// Deletes remove the entries.
 	if err := svc.DeleteRivalry(admin, 0); err != nil {
 		t.Fatal(err)

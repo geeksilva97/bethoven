@@ -201,6 +201,11 @@ type Model struct {
 	ctxRivalA     int64
 	ctxRivalAName string
 	ctxRivalB     int64
+	// detail/edit of an existing context entry (enter on a row → read full; e → edit).
+	ctxDetailKind  int    // ctxKindRivalry | ctxKindNote | ctxKindDerived
+	ctxDetailIdx   int    // index within that kind's list
+	ctxDetailTitle string // header line (e.g. "Alice vs Bob")
+	ctxDetailFull  string // full untruncated content for reading
 
 	// admin: BETanIA comment-prompt override editor (reached with 's' on the
 	// Comments tab). promptInput edits the full instruction body (multi-line, since

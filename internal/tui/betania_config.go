@@ -19,6 +19,15 @@ const (
 	ctxModePickA            // picking the first player of a rivalry
 	ctxModePickB            // picking the second player
 	ctxModeRivalNote        // typing the rivalry note
+	ctxModeDetail           // reading one entry's full content
+	ctxModeEdit             // editing an existing entry's text
+)
+
+// ctx entry kinds, for the detail/edit flow.
+const (
+	ctxKindRivalry = iota
+	ctxKindNote
+	ctxKindDerived
 )
 
 // openBETanIA (re)loads the admin panel — used when returning from a sub-editor.
@@ -177,13 +186,88 @@ func (m Model) ctxTotal() int {
 
 func (m Model) updateAIContext(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.ctxMode {
-	case ctxModeNote, ctxModeRivalNote:
+	case ctxModeNote, ctxModeRivalNote, ctxModeEdit:
 		return m.updateCtxInput(msg)
 	case ctxModePickA, ctxModePickB:
 		return m.updateCtxPick(msg)
+	case ctxModeDetail:
+		return m.updateCtxDetail(msg)
 	default:
 		return m.updateCtxList(msg)
 	}
+}
+
+// openCtxDetail loads the selected row (rivalry, house note, or derived note) into
+// the read-full view.
+func (m Model) openCtxDetail() Model {
+	nRiv, nNote := len(m.ctxView.Rivalries), len(m.ctxView.Notes)
+	switch {
+	case m.ctxCursor < nRiv:
+		r := m.ctxView.Rivalries[m.ctxCursor]
+		m.ctxDetailKind, m.ctxDetailIdx = ctxKindRivalry, m.ctxCursor
+		m.ctxDetailTitle = fmt.Sprintf("%s vs %s", r.A, r.B)
+		m.ctxDetailFull = r.Note
+	case m.ctxCursor < nRiv+nNote:
+		i := m.ctxCursor - nRiv
+		m.ctxDetailKind, m.ctxDetailIdx = ctxKindNote, i
+		m.ctxDetailTitle = "House note"
+		m.ctxDetailFull = m.ctxView.Notes[i]
+	default:
+		i := m.ctxCursor - nRiv - nNote
+		if i < 0 || i >= len(m.ctxDerived) {
+			return m
+		}
+		m.ctxDetailKind, m.ctxDetailIdx = ctxKindDerived, i
+		m.ctxDetailTitle = "Derived note (auto)"
+		m.ctxDetailFull = m.ctxDerived[i].Text
+	}
+	m.ctxMode = ctxModeDetail
+	return m
+}
+
+// updateCtxDetail handles the read-full view: e edits (rivalries/house notes
+// only), d deletes, esc returns to the list.
+func (m Model) updateCtxDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
+	k, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch k.String() {
+	case "q":
+		return m, tea.Quit
+	case "esc", "b":
+		m.ctxMode = ctxModeList
+		return m, nil
+	case "e":
+		if m.ctxDetailKind == ctxKindDerived {
+			m.setStatus("derived notes are auto-generated — delete or compact instead", true)
+			return m, nil
+		}
+		m.ctxMode = ctxModeEdit
+		m.ctxInput = newCtxInput("edit the text…")
+		m.ctxInput.SetValue(m.ctxDetailFull)
+		m.ctxInput.CursorEnd()
+		return m, textinput.Blink
+	case "d":
+		var err error
+		switch m.ctxDetailKind {
+		case ctxKindRivalry:
+			err = m.svc.DeleteRivalry(m.user, m.ctxDetailIdx)
+		case ctxKindNote:
+			err = m.svc.DeleteCommentNote(m.user, m.ctxDetailIdx)
+		default:
+			err = m.svc.DeleteDerivedNote(m.user, m.ctxDetailIdx)
+		}
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.reloadCtx()
+		m.clampCtxCursor()
+		m.ctxMode = ctxModeList
+		return m, nil
+	}
+	return m, nil
 }
 
 func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -206,6 +290,11 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.ctxCursor < total-1 {
 			m.ctxCursor++
 		}
+	case "enter":
+		if total == 0 {
+			return m, nil
+		}
+		return m.openCtxDetail(), nil
 	case "n":
 		m.ctxMode = ctxModeNote
 		m.ctxInput = newCtxInput("a house note about the pool…")
@@ -278,9 +367,14 @@ func (m Model) updateCtxInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			var err error
-			if m.ctxMode == ctxModeRivalNote {
+			switch {
+			case m.ctxMode == ctxModeEdit && m.ctxDetailKind == ctxKindRivalry:
+				err = m.svc.EditRivalry(m.user, m.ctxDetailIdx, text)
+			case m.ctxMode == ctxModeEdit:
+				err = m.svc.EditCommentNote(m.user, m.ctxDetailIdx, text)
+			case m.ctxMode == ctxModeRivalNote:
 				err = m.svc.AddRivalry(m.user, m.ctxRivalA, m.ctxRivalB, text)
-			} else {
+			default:
 				err = m.svc.AddCommentNote(m.user, text)
 			}
 			if err != nil {
@@ -347,9 +441,33 @@ func (m Model) viewAIContext() string {
 			helpStyle.Render("enter: save · esc: cancel")
 	case ctxModePickA, ctxModePickB:
 		return m.viewCtxPick()
+	case ctxModeDetail:
+		return m.viewCtxDetail()
+	case ctxModeEdit:
+		return titleStyle.Render("⚙  BETanIA: edit "+m.ctxDetailTitle) + "\n\n" +
+			m.ctxInput.View() + "\n\n" + helpStyle.Render("enter: save · esc: cancel")
 	default:
 		return m.viewCtxList()
 	}
+}
+
+// viewCtxDetail shows one entry's full, wrapped content for reading.
+func (m Model) viewCtxDetail() string {
+	out := titleStyle.Render("⚙  BETanIA: "+m.ctxDetailTitle) + "\n\n"
+	w := m.width - 6
+	if w < 20 {
+		w = 60
+	}
+	for _, line := range wrapText(m.ctxDetailFull, w) {
+		out += line + "\n"
+	}
+	out += "\n" + statusLine(m)
+	if m.ctxDetailKind == ctxKindDerived {
+		out += helpStyle.Render("d: delete · esc: back · q: quit")
+	} else {
+		out += helpStyle.Render("e: edit · d: delete · esc: back · q: quit")
+	}
+	return out
 }
 
 func (m Model) viewCtxList() string {
@@ -387,7 +505,7 @@ func (m Model) viewCtxList() string {
 	}
 
 	out += "\n" + statusLine(m) +
-		helpStyle.Render("a: add rivalry · n: add note · d: delete · c: compact derived · C: clear derived · ↑/↓: move · esc: back")
+		helpStyle.Render("enter: read/edit · a: add rivalry · n: add note · d: delete · c: compact derived · C: clear derived · ↑/↓: move · esc: back")
 	return out
 }
 

@@ -285,6 +285,10 @@ directly, with a fake clock, no terminal).
       prompt is explicit it never overrides "don't invent results"). Built into
       `ai.CommentConfig` (`{DefaultTone, Self, ToneByName, Rivalries, Notes, DerivedNotes, PromptOverride}`)
       by `service.CommentConfig` — the worker seam (replaces the old `Tone` seam).
+      In the list, **`enter`** opens a row's **full untruncated content** (`ctxModeDetail`,
+      wrapped) where **`e`** edits it in place (`EditRivalry`/`EditCommentNote` — a
+      rivalry's two players stay; only the note text changes) and `d` deletes.
+      Derived notes are read-only there (auto-generated — delete/compact instead).
     - **Derived notes — BETanIA's auto "story of the game" tier (`comment_derived_notes`).**
       A SEPARATE tier from the admin's house `Notes`, never mixed. When a match
       **settles** — `EnterResult` (admin) or `FinalizeFromFeed` (feed, only on the

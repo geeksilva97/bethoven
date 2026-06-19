@@ -152,6 +152,24 @@ func (s *Service) AddRivalry(by *models.User, aID, bID int64, note string) error
 	return s.saveStoredContext(c)
 }
 
+// EditRivalry replaces the note text of the rivalry at idx (the two players are
+// unchanged). Admin only.
+func (s *Service) EditRivalry(by *models.User, idx int, note string) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return errors.New("a rivalry note is required")
+	}
+	c := s.loadStoredContext()
+	if idx < 0 || idx >= len(c.Rivalries) {
+		return errors.New("no such rivalry")
+	}
+	c.Rivalries[idx].Note = note
+	return s.saveStoredContext(c)
+}
+
 // DeleteRivalry removes the rivalry at idx (as ordered by CommentContextView). Admin only.
 func (s *Service) DeleteRivalry(by *models.User, idx int) error {
 	if err := requireAdmin(by); err != nil {
@@ -176,6 +194,23 @@ func (s *Service) AddCommentNote(by *models.User, note string) error {
 	}
 	c := s.loadStoredContext()
 	c.Notes = append(c.Notes, note)
+	return s.saveStoredContext(c)
+}
+
+// EditCommentNote replaces the text of the house note at idx. Admin only.
+func (s *Service) EditCommentNote(by *models.User, idx int, note string) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return errors.New("a note is required")
+	}
+	c := s.loadStoredContext()
+	if idx < 0 || idx >= len(c.Notes) {
+		return errors.New("no such note")
+	}
+	c.Notes[idx] = note
 	return s.saveStoredContext(c)
 }
 
