@@ -164,9 +164,15 @@ directly, with a fake clock, no terminal).
   JSON line in `BETHOVEN_AI_LOG_PATH` (default `ai_bets.log`; **must** be under the
   systemd `ReadWritePaths` dir in prod, i.e. `/opt/bethoven/data/ai_bets.log`) — not
   the DB schema. **Admin observability:** gated `Analytics`-style methods behind the
-  `service.AIMonitor` port (`AIStatus`/`AIActivity`/`TriggerAI`, all `requireAdmin`);
-  the **⚙ Admin: BETanIA** TUI screen shows model/schedule/last+next run/totals + a
-  recent-picks feed with rationale, and **`r` triggers an immediate pass**
+  `service.AIMonitor` port (`AIStatus`/`AIActivity`/`TriggerAI`, all `requireAdmin`).
+  The **⚙ Admin: BETanIA** TUI screen is **tabbed** (`tab` switches Betting ↔
+  Comments). The **Betting** tab shows model/schedule/last+next run/totals plus
+  **"Picks on record"** — BETanIA's bets sourced from the DB via
+  `service.AIBets` (admin only), so they **survive a restart**, unlike the volatile
+  in-memory `AIActivity` ring (which only fills as the worker *places* a bet this
+  process lifetime and is wiped on restart — that was the "Recent picks: nothing yet"
+  bug). When this session's `AIActivity` has the rationale for a pick, it's overlaid
+  under the row. **`r` triggers an immediate pass**
   (`service.TriggerAI` → `Bettor.Trigger`, a non-blocking coalesced channel send).
   Live bets emit the `bet_placed` analytics event; the seed (writing straight to the
   store) does not.

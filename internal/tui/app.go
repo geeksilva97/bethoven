@@ -148,6 +148,10 @@ type Model struct {
 	aiDisabled bool
 	aiStatus   ai.Status
 	aiActivity []ai.Action
+	// aiBets is BETanIA's picks on record, sourced from the DB (survives a restart,
+	// unlike aiActivity's in-memory ring). betaniaTab selects which panel tab shows.
+	aiBets     []service.AIBet
+	betaniaTab int
 	// admin: BETanIA comment worker. aiCommentsDisabled is set when the comment
 	// worker isn't running; commentTone is the active tone (toggled with 't').
 	aiCommentsDisabled bool

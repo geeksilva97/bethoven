@@ -2,8 +2,10 @@ package service
 
 import (
 	"errors"
+	"sort"
 
 	"bethoven/internal/ai"
+	"bethoven/internal/db"
 	"bethoven/internal/models"
 )
 
@@ -68,4 +70,73 @@ func (s *Service) AIActivity(by *models.User, limit int) ([]ai.Action, error) {
 		return nil, ErrAIOff
 	}
 	return s.ai.Activity(limit), nil
+}
+
+// AIBet is one of BETanIA's persisted predictions with match context and (for
+// finished matches) the points it earned. Unlike ai.Action — the volatile
+// in-memory feed the live worker fills, which a restart wipes — this is sourced
+// from the DB, so it always reflects every pick BETanIA has on record.
+type AIBet struct {
+	Match  models.Match
+	Bet    models.Bet
+	Points int // only meaningful when Match.Finished
+}
+
+// AIBets returns BETanIA's picks on record, most-recently-placed first, with
+// live scores overlaid and points scored for finished matches. Admin only.
+// Returns ErrAIOff when BETanIA has never been onboarded (no user / no bets).
+func (s *Service) AIBets(by *models.User, limit int) ([]AIBet, error) {
+	if err := requireAdmin(by); err != nil {
+		return nil, err
+	}
+	bot, err := s.store.UserByFingerprint(ai.Fingerprint)
+	if errors.Is(err, db.ErrNotFound) {
+		return nil, ErrAIOff
+	}
+	if err != nil {
+		return nil, err
+	}
+	bets, err := s.store.BetsForUser(bot.ID, s.tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	matches, err := s.store.ListMatches(s.tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	snap := s.liveSnapshot()
+	byID := make(map[int64]models.Match, len(matches))
+	for i := range matches {
+		overlayLive(&matches[i], snap)
+		byID[matches[i].ID] = matches[i]
+	}
+	sc, err := s.newScorer()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AIBet, 0, len(bets))
+	for _, b := range bets {
+		m, ok := byID[b.MatchID]
+		if !ok {
+			continue
+		}
+		ab := AIBet{Match: m, Bet: b}
+		if m.Finished {
+			ab.Points = sc.points(b, m)
+		}
+		out = append(out, ab)
+	}
+	// Most-recently-decided first; ties (e.g. the bulk seed) break by kickoff,
+	// soonest-kicking-off first so upcoming picks lead within a batch.
+	sort.Slice(out, func(i, j int) bool {
+		ti, tj := out[i].Bet.UpdatedAt, out[j].Bet.UpdatedAt
+		if !ti.Equal(tj) {
+			return ti.After(tj)
+		}
+		return out[i].Match.StartsAt.Before(out[j].Match.StartsAt)
+	})
+	if limit > 0 && limit < len(out) {
+		out = out[:limit]
+	}
+	return out, nil
 }
