@@ -268,3 +268,11 @@ func (s *Service) CommentConfig() ai.CommentConfig {
 		PromptOverride: override,
 	}
 }
+
+// DefaultCommentPrompt renders BETanIA's built-in comment-prompt body for the
+// current config (tones, per-player overrides, rivalries, notes). The admin TUI
+// pre-fills the override editor with this so there's real text to edit instead of
+// a blank box. Not gated: it's the same non-secret prompt the worker already uses.
+func (s *Service) DefaultCommentPrompt() string {
+	return ai.DefaultCommentPrompt(s.CommentConfig())
+}

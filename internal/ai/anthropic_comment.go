@@ -265,6 +265,12 @@ func commentPrompt(history []RoundStanding, narratives []Narrative, cfg CommentC
 	return b.String()
 }
 
+// DefaultCommentPrompt returns the built-in persona/tone/rules body for the given
+// config — exactly what the worker uses when no admin PromptOverride is set. The
+// admin TUI pre-fills the override editor with this so customizing means editing
+// the real default rather than starting from a blank box.
+func DefaultCommentPrompt(cfg CommentConfig) string { return builtinCommentBody(cfg) }
+
 // builtinCommentBody is the default persona/tone/per-player/rules instruction
 // body, used when no admin PromptOverride is set.
 func builtinCommentBody(cfg CommentConfig) string {

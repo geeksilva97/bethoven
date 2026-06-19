@@ -356,14 +356,19 @@ func (m Model) viewCtxPick() string {
 
 // ---- comment-prompt override editor -----------------------------------------
 
-// openAIPrompt loads the current comment-prompt override into the editor. An empty
-// value means BETanIA uses her built-in prompt.
+// openAIPrompt loads the current comment-prompt override into the editor. When no
+// override is set, the box is pre-filled with the built-in default so the admin can
+// edit the real prompt instead of starting blank; saving it unchanged resets back
+// to the (dynamic) built-in. An empty value means BETanIA uses her built-in prompt.
 func (m Model) openAIPrompt() Model {
 	m.status = ""
 	cur, err := m.svc.CommentPromptOverride()
 	if err != nil {
 		m.setStatus(err.Error(), true)
 		return m
+	}
+	if strings.TrimSpace(cur) == "" {
+		cur = m.svc.DefaultCommentPrompt()
 	}
 	ta := textarea.New()
 	ta.Placeholder = "(empty — using built-in default)"
@@ -388,13 +393,19 @@ func (m Model) updateAIPrompt(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.betaniaTab = tabComments
 			return m.openBETanIA(), nil
 		case tea.KeyCtrlS:
-			if err := m.svc.SetCommentPromptOverride(m.user, m.promptInput.Value()); err != nil {
+			val := m.promptInput.Value()
+			// If the admin saved the pre-filled default untouched, store empty so the
+			// prompt stays the dynamic built-in rather than freezing a stale copy.
+			if strings.TrimSpace(val) == strings.TrimSpace(m.svc.DefaultCommentPrompt()) {
+				val = ""
+			}
+			if err := m.svc.SetCommentPromptOverride(m.user, val); err != nil {
 				m.setStatus(err.Error(), true)
 				return m, nil
 			}
 			m.betaniaTab = tabComments
 			out := m.openBETanIA()
-			if strings.TrimSpace(m.promptInput.Value()) == "" {
+			if strings.TrimSpace(val) == "" {
 				out.setStatus("comment prompt reset to the built-in default — press c to regenerate", false)
 			} else {
 				out.setStatus("comment prompt saved — press c to regenerate comments", false)
@@ -412,7 +423,7 @@ func (m Model) viewAIPrompt() string {
 	out := titleStyle.Render("⚙  BETanIA: comment prompt") + "\n\n"
 	out += helpStyle.Render("Replaces BETanIA's comment persona/tone/rules. The standings data and the") + "\n"
 	out += helpStyle.Render("submit-comments instruction are always appended automatically.") + "\n"
-	out += helpStyle.Render("Leave blank to restore the built-in default.") + "\n\n"
+	out += helpStyle.Render("Pre-filled with the current default — edit it, or clear it to keep the default.") + "\n\n"
 	out += m.promptInput.View() + "\n\n"
 	out += statusLine(m) + helpStyle.Render("ctrl+s: save · esc: cancel")
 	return out
