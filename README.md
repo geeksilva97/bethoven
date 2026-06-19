@@ -138,6 +138,7 @@ allowlist is the source of truth.
 | `BETHOVEN_AI_MODEL` | `claude-sonnet-4-6` | Claude model BETanIA uses |
 | `BETHOVEN_AI_INTERVAL_SECONDS` | `21600` | seconds between BETanIA's betting passes (default 6h) |
 | `BETHOVEN_AI_MAX_PER_RUN` | `0` | max matches BETanIA bets per pass (`0` = no cap); e.g. `4` bets the next 4 upcoming games each pass |
+| `BETHOVEN_AI_LOOKAHEAD_HOURS` | `72` | only bet matches kicking off within this many hours, so BETanIA stays on the near-term slate (keep it ≥ the interval) |
 | `BETHOVEN_AI_LOG_PATH` | `ai_bets.log` | JSON-lines log of every BETanIA pick (seed + live) with its rationale |
 | `ANTHROPIC_API_KEY` | — | required when `BETHOVEN_AI_ENABLED=true`; read by the Anthropic SDK |
 
@@ -178,7 +179,9 @@ It competes on **two tracks**:
   **web search** to check form, injuries, and odds for the next few fixtures, and
   places real bets through the normal path — so the **kickoff lock applies to
   BETanIA exactly like a human**. It bets the soonest upcoming games first, a few
-  per pass, and never an already-started match.
+  per pass, and only those within a near-term window (`BETHOVEN_AI_LOOKAHEAD_HOURS`,
+  default 3 days) — so it doesn't reach weeks ahead — and never an already-started
+  match.
 
 Every pick (with the reasoning behind it) is written to `ai_bets.log`. Picks stay
 hidden before kickoff just like everyone else's, so blind betting is preserved.

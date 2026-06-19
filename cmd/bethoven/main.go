@@ -140,10 +140,11 @@ func main() {
 				MyBets:   svc.MyBets,
 				PlaceBet: svc.PlaceBet,
 				Now:      svc.Now,
-			}, ai.NewAnthropicPredictor(cfg.AIModel, true), mon, u.ID, interval, cfg.AILogPath, cfg.AIMaxPerRun)
+			}, ai.NewAnthropicPredictor(cfg.AIModel, true), mon, u.ID, interval, cfg.AILogPath, cfg.AIMaxPerRun,
+				time.Duration(cfg.AILookaheadHrs)*time.Hour)
 			svc.SetAITrigger(bettor.Trigger)
 			go bettor.Run(ctx)
-			log.Printf("BETanIA live betting enabled (model=%s, every %ds)", cfg.AIModel, cfg.AIIntervalSecs)
+			log.Printf("BETanIA live betting enabled (model=%s, every %ds, lookahead %dh)", cfg.AIModel, cfg.AIIntervalSecs, cfg.AILookaheadHrs)
 		}
 	}
 
