@@ -52,10 +52,12 @@ type predictionInput struct {
 
 func (in predictionInput) prediction() Prediction {
 	return Prediction{
-		ScoreA:     clampScore(in.ScoreA),
-		ScoreB:     clampScore(in.ScoreB),
-		Rationale:  in.Rationale,
-		Confidence: in.Confidence,
+		ScoreA: clampScore(in.ScoreA),
+		ScoreB: clampScore(in.ScoreB),
+		// Strip control/ANSI runes from the model's free text — it's rendered into
+		// the admin terminal and logged, the same injection boundary as display names.
+		Rationale:  sanitizeText(in.Rationale),
+		Confidence: sanitizeText(in.Confidence),
 	}
 }
 

@@ -16,7 +16,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
+	"unicode"
 
 	"bethoven/internal/models"
 )
@@ -47,6 +49,54 @@ func matchLabel(m models.Match) string { return m.TeamA + " vs " + m.TeamB }
 
 // scoreText formats a prediction as "2-1".
 func scoreText(p Prediction) string { return fmt.Sprintf("%d-%d", p.ScoreA, p.ScoreB) }
+
+// sanitizeText strips control characters and ANSI escapes from untrusted model
+// output (rationale, confidence) before it is logged or rendered. The model's
+// free text is influenced by web-search results, so it's the same ANSI-injection
+// boundary as display names — it lands in ai_bets.log (which an admin tails into
+// a terminal) and in the admin BETanIA panel. Unlike service.cleanName we strip
+// rather than reject (the text isn't user-correctable), mirroring live.cleanClock;
+// whitespace runs collapse to a single space so a paragraph renders on one line.
+func sanitizeText(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	prevSpace := false
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		// Consume whole escape sequences, not just the introducer: ESC (0x1b),
+		// optionally '[', then parameter/intermediate bytes up to a final byte
+		// (0x40-0x7e); also the 8-bit CSI introducer (0x9b). This removes
+		// "\x1b[31m" entirely rather than leaving inert "[31m" residue.
+		if r == 0x1b || r == 0x9b {
+			if r == 0x1b && i+1 < len(rs) && rs[i+1] == '[' {
+				i++
+			}
+			for i+1 < len(rs) {
+				n := rs[i+1]
+				i++
+				if n >= 0x40 && n <= 0x7e {
+					break
+				}
+			}
+			continue
+		}
+		switch {
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\f' || r == '\v':
+			// collapse any run of ASCII whitespace to a single space
+			if !prevSpace {
+				b.WriteByte(' ')
+				prevSpace = true
+			}
+		case r < 0x20 || (r >= 0x7f && r <= 0x9f) || !unicode.IsPrint(r):
+			// drop remaining C0/C1 control codes and non-printable runes
+		default:
+			b.WriteRune(r)
+			prevSpace = false
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
 
 // logEntry is one line of ai_bets.log — the durable, on-disk record of every pick
 // BETanIA makes, across both the seed and the live worker.
