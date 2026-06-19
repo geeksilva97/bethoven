@@ -41,7 +41,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("Now, in that voice, write ONE short LIVE play-by-play line about the current match situation below.\n")
 	} else {
 		b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool, doing LIVE commentary at the top of the leaderboard.\n\n")
-		b.WriteString("Write ONE short line about what is happening RIGHT NOW: who is nailing the scoreline, who is climbing or sliding on the board, and what the betting odds implied. Address the pool in general — not one single person.\n")
+		b.WriteString("Write ONE short line about what is happening RIGHT NOW: who is nailing the scoreline, who is climbing or sliding on the board, and which side the betting odds favour. Address the pool in general — not one single person.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {
 			b.WriteString("TONE: savage — genuinely cutting and funny, comedy-roast energy.\n")
 		} else {
@@ -53,6 +53,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 	b.WriteString("1. Ground every claim ONLY in the live data below. Never invent scores, names, odds, or events.\n")
 	b.WriteString("2. One sentence, at most ~140 characters. No emojis and no line breaks.\n")
 	b.WriteString("3. The score will change as the game moves — react to the CURRENT state.\n")
+	b.WriteString("4. The \"odds\" field is American moneyline (negative = favourite, e.g. -180; positive = underdog). TRANSLATE it into plain favourite/underdog language (\"heavy favourites\", \"slight edge\", \"long shot\") — NEVER quote the raw number.\n")
 
 	if len(recent) > 0 {
 		b.WriteString("\nYOUR RECENT LINES (most recent last) — say something NEW, do not repeat these:\n")
