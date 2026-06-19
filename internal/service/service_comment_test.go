@@ -180,4 +180,20 @@ func TestLeaderboardCommentsScoping(t *testing.T) {
 	if got := svc.LeaderboardComments(admin); len(got) != 2 || got[alice.ID] == "" || got[bob.ID] == "" {
 		t.Fatalf("admin should see all comments, got %v", got)
 	}
+
+	// Muting a player hides their ALREADY-CACHED comment immediately (read-time
+	// enforcement), without waiting for the next regeneration pass.
+	if err := svc.SetUserCommentTone(admin, bob.ID, "mute"); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.LeaderboardComments(admin); len(got) != 1 || got[bob.ID] != "" {
+		t.Fatalf("muted Bob must vanish from the admin view immediately, got %v", got)
+	}
+	if got := svc.LeaderboardComments(bob); len(got) != 0 {
+		t.Fatalf("muted Bob must not see his own cached comment, got %v", got)
+	}
+	// A non-muted player is unaffected.
+	if got := svc.LeaderboardComments(alice); got[alice.ID] != "alice line" {
+		t.Fatalf("Alice should still see her comment, got %v", got)
+	}
 }

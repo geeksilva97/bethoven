@@ -69,8 +69,17 @@ func (s *Service) LeaderboardComments(by *models.User) map[int64]string {
 	out := make(map[int64]string, len(all))
 	if by.Role == models.RoleAdmin {
 		for id, c := range all {
+			// Mute is enforced at READ time too: if an admin mutes a player, their
+			// already-cached comment stops showing immediately, without waiting for
+			// the next regeneration pass.
+			if s.userToneOverride(id) == "mute" {
+				continue
+			}
 			out[id] = c.Text
 		}
+		return out
+	}
+	if s.userToneOverride(by.ID) == "mute" {
 		return out
 	}
 	if c, ok := all[by.ID]; ok {
