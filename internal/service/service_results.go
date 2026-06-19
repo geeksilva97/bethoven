@@ -25,10 +25,34 @@ type Standing struct {
 	User       models.User
 	Total      int
 	LivePoints int
+	// ExactHits and CorrectResults are the leaderboard tiebreakers: how many of the
+	// player's bets matched the exact scoreline / called the W/D/L result. Full
+	// basis — they include in-play matches' provisional outcomes, mirroring how
+	// Total folds live points. Applied via betterRank, in order after Total.
+	ExactHits      int
+	CorrectResults int
 	// LiveRankDelta is how many places the in-play (provisional) points moved this
 	// player vs. where they'd sit ignoring live matches: positive = climbed (▲),
 	// negative = dropped (▼), 0 = no change / nothing live. Stateless.
 	LiveRankDelta int
+}
+
+// betterRank reports whether rank A sorts above rank B: more points, then more
+// exact scores, then more correct results (W/D/L), then earlier display name. The
+// single source of truth for overall leaderboard ordering — used by Leaderboard
+// and mirrored by StandingsHistory so the comment narratives' movement matches the
+// board.
+func betterRank(ptsA, exA, resA int, nameA string, ptsB, exB, resB int, nameB string) bool {
+	if ptsA != ptsB {
+		return ptsA > ptsB
+	}
+	if exA != exB {
+		return exA > exB
+	}
+	if resA != resB {
+		return resA > resB
+	}
+	return nameA < nameB
 }
 
 // LivePick is one player's revealed pick on an in-play match plus the
@@ -302,6 +326,10 @@ func (s *Service) Leaderboard() ([]Standing, error) {
 	snap := s.liveSnapshot()
 	totals := make(map[int64]int)
 	livePts := make(map[int64]int) // provisional points from in-play matches
+	// Tiebreaker tallies, parallel to totals/livePts: full = finished + in-play,
+	// *Live = the in-play portion only (so the settled sort can subtract it).
+	exact, exactLive := make(map[int64]int), make(map[int64]int)
+	result, resultLive := make(map[int64]int), make(map[int64]int)
 	for _, b := range bets {
 		m, ok := matchByID[b.MatchID]
 		if !ok {
@@ -309,6 +337,12 @@ func (s *Service) Leaderboard() ([]Standing, error) {
 		}
 		if m.Finished {
 			totals[b.UserID] += sc.points(b, m)
+			if scoring.IsExact(b, m) {
+				exact[b.UserID]++
+			}
+			if scoring.IsCorrectResult(b, m) {
+				result[b.UserID]++
+			}
 			continue
 		}
 		// In-play match: score the bet against the current live score by treating
@@ -320,32 +354,49 @@ func (s *Service) Leaderboard() ([]Standing, error) {
 			p := sc.points(b, prov)
 			totals[b.UserID] += p
 			livePts[b.UserID] += p
+			if scoring.IsExact(b, prov) {
+				exact[b.UserID]++
+				exactLive[b.UserID]++
+			}
+			if scoring.IsCorrectResult(b, prov) {
+				result[b.UserID]++
+				resultLive[b.UserID]++
+			}
 		}
 	}
 
 	standings := make([]Standing, 0, len(users))
 	for _, u := range users {
-		standings = append(standings, Standing{User: u, Total: totals[u.ID], LivePoints: livePts[u.ID]})
+		standings = append(standings, Standing{
+			User:           u,
+			Total:          totals[u.ID],
+			LivePoints:     livePts[u.ID],
+			ExactHits:      exact[u.ID],
+			CorrectResults: result[u.ID],
+		})
 	}
 	sort.Slice(standings, func(i, j int) bool {
-		if standings[i].Total != standings[j].Total {
-			return standings[i].Total > standings[j].Total
-		}
-		return standings[i].User.DisplayName < standings[j].User.DisplayName
+		a, b := standings[i], standings[j]
+		return betterRank(
+			a.Total, a.ExactHits, a.CorrectResults, a.User.DisplayName,
+			b.Total, b.ExactHits, b.CorrectResults, b.User.DisplayName,
+		)
 	})
 
 	// Rank movement caused by the in-play (provisional) points: compare each
 	// player's current rank against where they'd sit on settled points only
-	// (Total - LivePoints), using the same tie-break so only the live delta moves
-	// anyone. With nothing live, settled == current and every delta is 0.
+	// (everything minus the live portion), using the same tie-break so only the
+	// live delta moves anyone. With nothing live, settled == current for every key
+	// and every delta is 0.
 	settled := make([]Standing, len(standings))
 	copy(settled, standings)
 	sort.Slice(settled, func(i, j int) bool {
-		si, sj := settled[i].Total-settled[i].LivePoints, settled[j].Total-settled[j].LivePoints
-		if si != sj {
-			return si > sj
-		}
-		return settled[i].User.DisplayName < settled[j].User.DisplayName
+		a, b := settled[i], settled[j]
+		ai, bi := a.User.ID, b.User.ID
+		return betterRank(
+			a.Total-a.LivePoints, exact[ai]-exactLive[ai], result[ai]-resultLive[ai], a.User.DisplayName,
+			b.Total-b.LivePoints, exact[bi]-exactLive[bi], result[bi]-resultLive[bi], b.User.DisplayName,
+		)
 	})
 	settledRank := make(map[int64]int, len(settled))
 	for i, s := range settled {

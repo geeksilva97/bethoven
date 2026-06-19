@@ -76,6 +76,17 @@ directly, with a fake clock, no terminal).
   mode and its rules in **"How scoring works"** (`scoring_rules.go`). Mode is
   stored/read like `public_bets` (KV `settings` table; absent ⇒ Classic), so
   existing pools are unaffected until an admin opts in.
+- **Leaderboard tiebreak.** Players tied on total points are ordered by
+  **exact-score hits, then correct-result (W/D/L) hits, then display name** — the
+  single comparator `betterRank` (`service_results.go`). The exact/result tallies
+  are mode-agnostic (`scoring.IsExact`/`IsCorrectResult`) and computed in the same
+  loop that totals points, so no new storage. The live board folds in-play
+  provisional outcomes into the tiebreak (mirroring `Total`), while the
+  settled-rank sort behind `LiveRankDelta` subtracts the live portion so the
+  "nothing live ⇒ every delta 0" invariant holds. `StandingsHistory` (`rankUsers`)
+  mirrors the same comparator on finished matches so BETanIA's comment movement
+  matches the board. Per-match ranking, public-bets, and the admin grid keep
+  name-only ordering — they aren't the overall leaderboard.
 - **Identity = SHA256 key fingerprint.** Set once at registration, immutable after.
 - **Live scores (optional, `internal/live`).** A background `Poller` fetches ESPN's
   keyless scoreboard (`fifa.world`), resolves each event to a stored match (by

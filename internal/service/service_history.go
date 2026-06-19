@@ -5,6 +5,7 @@ import (
 
 	"bethoven/internal/ai"
 	"bethoven/internal/models"
+	"bethoven/internal/scoring"
 )
 
 // StandingsHistory reconstructs the leaderboard after each matchday from FINISHED
@@ -63,6 +64,11 @@ func (s *Service) StandingsHistory() ([]ai.RoundStanding, error) {
 	}
 
 	totals := make(map[int64]int)
+	// Tiebreaker tallies, accumulated alongside totals so each round's ranking uses
+	// the same exact→result→name order as the live board (history is settled, so
+	// there is no live nuance here).
+	exact := make(map[int64]int)
+	result := make(map[int64]int)
 	prevPos := make(map[int64]int)
 	prevTotal := make(map[int64]int)
 	mi := 0 // running index into finished
@@ -73,10 +79,16 @@ func (s *Service) StandingsHistory() ([]ai.RoundStanding, error) {
 			m := finished[mi]
 			for _, b := range betsByMatch[m.ID] {
 				totals[b.UserID] += sc.points(b, m)
+				if scoring.IsExact(b, m) {
+					exact[b.UserID]++
+				}
+				if scoring.IsCorrectResult(b, m) {
+					result[b.UserID]++
+				}
 			}
 			mi++
 		}
-		ranked := rankUsers(users, totals)
+		ranked := rankUsers(users, totals, exact, result)
 		players := make([]ai.PlayerStanding, 0, len(ranked))
 		for pos, u := range ranked {
 			pos1 := pos + 1
@@ -102,17 +114,18 @@ func (s *Service) StandingsHistory() ([]ai.RoundStanding, error) {
 	return rounds, nil
 }
 
-// rankUsers sorts users by total points desc, then display name asc — the same
-// tie-break Leaderboard uses — returning them in ranked order.
-func rankUsers(users []models.User, totals map[int64]int) []models.User {
+// rankUsers sorts users by the same rule Leaderboard uses (via betterRank): total
+// points, then exact scores, then correct results, then display name — returning
+// them in ranked order.
+func rankUsers(users []models.User, totals, exact, result map[int64]int) []models.User {
 	ranked := make([]models.User, len(users))
 	copy(ranked, users)
 	sort.Slice(ranked, func(i, j int) bool {
-		ti, tj := totals[ranked[i].ID], totals[ranked[j].ID]
-		if ti != tj {
-			return ti > tj
-		}
-		return ranked[i].DisplayName < ranked[j].DisplayName
+		a, b := ranked[i], ranked[j]
+		return betterRank(
+			totals[a.ID], exact[a.ID], result[a.ID], a.DisplayName,
+			totals[b.ID], exact[b.ID], result[b.ID], b.DisplayName,
+		)
 	})
 	return ranked
 }

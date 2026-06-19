@@ -102,6 +102,21 @@ func (m Mode) Label() string {
 // functions classify outcomes. The service uses it to bucket the pick pool.
 func Result(b models.Bet) int { return sign(b.PredA - b.PredB) }
 
+// IsExact reports whether the bet's scoreline exactly matches the match result.
+// Mode-agnostic: an exact score is exact under Classic, Proximity, and Scarcity
+// alike. Used by the service as the leaderboard's first tiebreaker. False until
+// the match has a recorded result.
+func IsExact(b models.Bet, m models.Match) bool {
+	return scored(m) && b.PredA == *m.ScoreA && b.PredB == *m.ScoreB
+}
+
+// IsCorrectResult reports whether the bet called the W/D/L outcome (an exact score
+// counts — it is a superset of IsExact). The leaderboard's second tiebreaker.
+// False until the match has a recorded result.
+func IsCorrectResult(b models.Bet, m models.Match) bool {
+	return scored(m) && sign(b.PredA-b.PredB) == sign(*m.ScoreA-*m.ScoreB)
+}
+
 // Score dispatches to the active mode. Classic and Proximity ignore pool, so the
 // caller may pass the zero Pool for them.
 func Score(mode Mode, b models.Bet, m models.Match, pool Pool) int {

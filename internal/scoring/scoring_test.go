@@ -88,3 +88,33 @@ func TestKnockoutDrawScoresAsDraw(t *testing.T) {
 		t.Errorf("exact 1-1 should score 3, got %d", got)
 	}
 }
+
+// TestIsExactAndIsCorrectResult covers the mode-agnostic tiebreaker helpers the
+// leaderboard uses: exact scoreline, correct result (a superset of exact), wrong
+// result, and unscored/unfinished matches (both false).
+func TestIsExactAndIsCorrectResult(t *testing.T) {
+	tests := []struct {
+		name              string
+		predA, predB      int
+		match             models.Match
+		wantExact, wantOK bool
+	}{
+		{"exact home win", 2, 1, finished(2, 1), true, true},
+		{"exact draw", 0, 0, finished(0, 0), true, true},
+		{"result only, wrong score", 3, 0, finished(2, 1), false, true},
+		{"draw result, wrong score", 2, 2, finished(1, 1), false, true},
+		{"wrong result", 0, 1, finished(2, 1), false, false},
+		{"unfinished match", 2, 1, models.Match{Finished: false}, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := models.Bet{PredA: tc.predA, PredB: tc.predB}
+			if got := IsExact(b, tc.match); got != tc.wantExact {
+				t.Errorf("IsExact = %v, want %v", got, tc.wantExact)
+			}
+			if got := IsCorrectResult(b, tc.match); got != tc.wantOK {
+				t.Errorf("IsCorrectResult = %v, want %v", got, tc.wantOK)
+			}
+		})
+	}
+}
