@@ -77,6 +77,13 @@ type Service struct {
 	// aiTrigger is the optional "run now" hook into the live worker; nil when
 	// BETanIA isn't running, in which case TriggerAI returns ErrAIOff.
 	aiTrigger func() bool
+	// comments is the optional BETanIA leaderboard-comment cache; nil when the
+	// comment worker isn't running, in which case the leaderboard shows no comments.
+	comments CommentSource
+	// aiComments / aiCommentTrigger are the comment worker's admin observability
+	// and "run now" hooks; nil when it isn't running (admin reads return ErrAIOff).
+	aiComments       AICommentMonitor
+	aiCommentTrigger func() bool
 	// forms holds each team's pre-tournament recent-form baseline (oldest→newest),
 	// seeded from fixtures.json. Optional; nil when no baseline is configured.
 	forms map[string][]models.FormOutcome

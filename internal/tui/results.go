@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,6 +34,7 @@ func (m Model) onLeaderTick(msg leaderTickMsg) (tea.Model, tea.Cmd) {
 	if board, err := m.svc.Leaderboard(); err == nil {
 		m.standings = board
 	}
+	m.rowComments = m.svc.LeaderboardComments(m.user)
 	m.liveMatches, _ = m.svc.LiveMatches()
 	if m.revealLivePicks {
 		m.livePicks, _ = m.svc.LivePicks()
@@ -61,6 +63,30 @@ func (m Model) updateLeaderboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		return m.goMenu(), nil
 	}
+}
+
+// wrapText word-wraps s to at most width columns, returning one string per line.
+// width is approximate (it counts bytes, not display cells) — fine for the short
+// comment lines it wraps. A non-positive/small width falls back to 60.
+func wrapText(s string, width int) []string {
+	if width < 10 {
+		width = 60
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, 2)
+	cur := words[0]
+	for _, w := range words[1:] {
+		if len(cur)+1+len(w) > width {
+			lines = append(lines, cur)
+			cur = w
+		} else {
+			cur += " " + w
+		}
+	}
+	return append(lines, cur)
 }
 
 // liveScore renders a match's running score with the live accent, e.g.
@@ -188,12 +214,22 @@ func (m Model) viewLeaderboard() string {
 			line += errStyle.Render(" ▼")
 		}
 		out += "  " + marker + line + "\n"
+		// BETanIA's take, indented under the row. Scoped by the service: a player
+		// sees only their own line, an admin sees everyone's.
+		if c := m.rowComments[s.User.ID]; c != "" {
+			for _, ln := range wrapText("🤖 "+c, m.width-8) {
+				out += "      " + helpStyle.Render(ln) + "\n"
+			}
+		}
 	}
 
 	out += "\n"
 	if anyLive || len(m.liveMatches) > 0 {
 		out += lockStyle.Render(liveLegend) + "\n"
 		out += lockStyle.Render("▲▼ rank shift from live results · (+N) points gained live") + "\n"
+	}
+	if len(m.rowComments) > 0 {
+		out += lockStyle.Render("🤖 BETanIA's take") + "\n"
 	}
 	help := "any key: back · q: quit"
 	if len(m.liveMatches) > 0 {

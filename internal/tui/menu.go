@@ -104,9 +104,10 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		}
 		m.standings, m.screen = board, screenLeaderboard
 		m.liveMatches, _ = m.svc.LiveMatches()
-		m.revealLivePicks, m.livePicks = false, nil // start collapsed each visit
-		m.leaderEpoch++                             // supersede any tick loop from a prior visit
-		return m, leaderTick(m.leaderEpoch)         // begin auto-refresh while on this screen
+		m.rowComments = m.svc.LeaderboardComments(m.user) // own (player) / all (admin)
+		m.revealLivePicks, m.livePicks = false, nil       // start collapsed each visit
+		m.leaderEpoch++                                   // supersede any tick loop from a prior visit
+		return m, leaderTick(m.leaderEpoch)               // begin auto-refresh while on this screen
 	case screenMatchRank:
 		// Reuse the fixtures list to pick which game to rank.
 		fx, err := m.svc.Fixtures()
@@ -187,6 +188,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		}
 		m.aiStatus = st
 		m.aiActivity, _ = m.svc.AIActivity(m.user, betaniaActivityLimit)
+		m.loadBETanIAComments()
 		m.screen = screenBETanIA
 	}
 	return m, nil

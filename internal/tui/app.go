@@ -90,6 +90,9 @@ type Model struct {
 	// all). livePicks is populated only while the reveal is on.
 	revealLivePicks bool
 	livePicks       []service.LiveMatchPicks
+	// rowComments holds BETanIA's leaderboard comments keyed by user id, scoped by
+	// the service (a player gets only their own; an admin gets everyone's).
+	rowComments map[int64]string
 
 	// per-match ranking
 	rankMatch  *models.Match
@@ -143,6 +146,12 @@ type Model struct {
 	aiDisabled bool
 	aiStatus   ai.Status
 	aiActivity []ai.Action
+	// admin: BETanIA comment worker. aiCommentsDisabled is set when the comment
+	// worker isn't running; commentTone is the active tone (toggled with 't').
+	aiCommentsDisabled bool
+	aiCommentStatus    ai.CommentStatus
+	aiCommentActivity  []ai.CommentAction
+	commentTone        string
 }
 
 // New builds the session model. user may be nil (unknown key → registration).

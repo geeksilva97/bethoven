@@ -140,6 +140,9 @@ allowlist is the source of truth.
 | `BETHOVEN_AI_MAX_PER_RUN` | `0` | max matches BETanIA bets per pass (`0` = no cap); e.g. `4` bets the next 4 upcoming games each pass |
 | `BETHOVEN_AI_LOOKAHEAD_HOURS` | `72` | only bet matches kicking off within this many hours, so BETanIA stays on the near-term slate (keep it ≥ the interval) |
 | `BETHOVEN_AI_LOG_PATH` | `ai_bets.log` | JSON-lines log of every BETanIA pick (seed + live) with its rationale |
+| `BETHOVEN_AI_COMMENTS_ENABLED` | `true` | when BETanIA is on, also run the leaderboard-commentary worker; set `false` to bet without commenting |
+| `BETHOVEN_AI_COMMENT_INTERVAL_SECONDS` | `21600` | seconds between comment regenerations (default 6h); also the comment freshness window |
+| `BETHOVEN_AI_COMMENT_LOG_PATH` | `ai_comments.log` | JSON-lines log of every BETanIA leaderboard comment |
 | `ANTHROPIC_API_KEY` | — | required when `BETHOVEN_AI_ENABLED=true`; read by the Anthropic SDK |
 
 ## Live scores
@@ -186,6 +189,19 @@ It competes on **two tracks**:
 Every pick (with the reasoning behind it) is written to `ai_bets.log`. Picks stay
 hidden before kickoff just like everyone else's, so blind betting is preserved.
 
+BETanIA also **comments on the leaderboard**. A second background worker reads the
+standings and their history, spots the stories in them (who's climbing, who's in
+free-fall, who's hunting the leader), and writes **one short comment per player**.
+When you open the leaderboard you see **your own** comment under your row; admins
+see one under **every** row (including BETanIA's own — which she writes in the
+first person, since she's talking about herself). The tone is an admin setting —
+**playful** banter by default, or **savage** roast — toggled with **`t`** on the
+admin panel. Comments
+never invent anything: they're grounded only in real positions and point movements
+(no scores or rankings are stored — the history is recomputed from results each
+time), and they're regenerated on a timer (and on demand). Each one is logged to
+`ai_comments.log`.
+
 **Enabling it** (admin, one-time):
 
 ```sh
@@ -205,7 +221,8 @@ sudo systemctl restart bethoven
 The seed is **idempotent** — re-running it skips games BETanIA already bet (no API
 cost). Admins get a **⚙ Admin: BETanIA** screen showing BETanIA's status, schedule,
 last/next run, and recent picks with rationale; press **`r`** there to trigger a
-betting pass immediately. To pause BETanIA without losing its bets, set
+betting pass immediately, **`c`** to regenerate every leaderboard comment, and
+**`t`** to switch the comment tone. To pause BETanIA without losing its bets, set
 `BETHOVEN_AI_ENABLED=false` and restart.
 
 ## Fixtures
