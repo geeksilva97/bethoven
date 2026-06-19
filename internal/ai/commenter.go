@@ -14,7 +14,7 @@ const commentPassTimeout = 4 * time.Minute
 // (not the service) keeps this package free of an import cycle, mirroring Deps.
 type CommentDeps struct {
 	History func() ([]RoundStanding, error)
-	Tone    func() string
+	Config  func() CommentConfig // default tone + per-player tones + rivalry/house context
 	Now     func() time.Time
 }
 
@@ -103,7 +103,8 @@ func (w *CommentWorker) pass(ctx context.Context) {
 		return
 	}
 
-	tone := normalizeTone(w.deps.Tone())
+	cfg := w.deps.Config()
+	cfg.Self = w.self // BETanIA's own line is first person
 
 	pctx, cancel := context.WithTimeout(ctx, commentPassTimeout)
 	defer cancel()
@@ -114,7 +115,7 @@ func (w *CommentWorker) pass(ctx context.Context) {
 		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: sanitizeText(err.Error())})
 		return
 	}
-	comments, err := w.cmt.WriteComments(pctx, history, narratives, tone, w.self)
+	comments, err := w.cmt.WriteComments(pctx, history, narratives, cfg)
 	if err != nil {
 		w.logger.Printf("ai: write comments: %v", err)
 		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: sanitizeText(err.Error())})
@@ -132,14 +133,17 @@ func (w *CommentWorker) pass(ctx context.Context) {
 		if c.Text == "" {
 			continue
 		}
+		if cfg.toneFor(c.Player) == "mute" {
+			continue // never cache a muted player's comment, even if one slipped through
+		}
 		c.At = now
 		c.ExpiresAt = now.Add(w.ttl)
 		stamped = append(stamped, c)
-		if err := appendCommentLog(w.logPath, tone, now, c); err != nil {
+		if err := appendCommentLog(w.logPath, cfg.toneFor(c.Player), now, c); err != nil {
 			w.logger.Printf("ai: log comment for %s: %v", c.Player, err)
 		}
 		w.mon.record(CommentAction{At: now, Player: c.Player, Text: c.Text, Outcome: "written"})
 	}
 	w.cache.Replace(stamped)
-	w.logger.Printf("ai: wrote %d comments (tone=%s, %d narratives)", len(stamped), tone, len(narratives))
+	w.logger.Printf("ai: wrote %d comments (default tone=%s, %d narratives)", len(stamped), normalizeTone(cfg.DefaultTone), len(narratives))
 }

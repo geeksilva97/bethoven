@@ -54,12 +54,37 @@ type Narrative struct {
 // stages: detect narratives (facts only), then write the lines in a given tone.
 // The concrete implementation is *AnthropicCommenter; tests use a fake. Keeping
 // it an interface lets the worker stay testable without the network.
-// self is BETanIA's own display name: her line is written in the first person
-// ("I'm…") since she's talking about herself, while everyone else stays second
-// person. An empty self ⇒ everyone second person.
+// Rivalry is an admin-entered note about two players, fed to the comment writer
+// so it can weave a real-world rivalry into the lines. A/B are display names.
+type Rivalry struct {
+	A, B string
+	Note string
+}
+
+// CommentConfig carries everything the comment writer needs beyond the standings:
+// the default tone, per-player tone overrides (by display name), BETanIA's own
+// name (her line is first person), and admin context (rivalries + house notes).
+type CommentConfig struct {
+	DefaultTone string            // "playful" | "savage"
+	Self        string            // BETanIA's display name; her line is first person
+	ToneByName  map[string]string // display name -> "playful" | "savage" | "mute"; absent ⇒ default
+	Rivalries   []Rivalry
+	Notes       []string
+}
+
+// toneFor returns the effective tone for a player: their override, or the default.
+func (c CommentConfig) toneFor(name string) string {
+	if t, ok := c.ToneByName[name]; ok && t != "" {
+		return t
+	}
+	return normalizeTone(c.DefaultTone)
+}
+
+// Commenter turns standings + config into per-player comments, in two grounded
+// stages. The concrete implementation is *AnthropicCommenter; tests use a fake.
 type Commenter interface {
 	DetectNarratives(ctx context.Context, history []RoundStanding) ([]Narrative, error)
-	WriteComments(ctx context.Context, history []RoundStanding, narratives []Narrative, tone, self string) ([]Comment, error)
+	WriteComments(ctx context.Context, history []RoundStanding, narratives []Narrative, cfg CommentConfig) ([]Comment, error)
 }
 
 // narrativeTypes is the closed vocabulary the detector may use (from the brief).

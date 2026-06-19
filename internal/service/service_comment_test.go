@@ -80,6 +80,79 @@ func TestStandingsHistoryMovements(t *testing.T) {
 	}
 }
 
+// TestCommentConfigTonesAndContext checks the worker config the service builds:
+// default tone, per-player overrides (incl. mute), and resolved rivalries/notes —
+// plus that "default" clears an override and deletes drop entries.
+func TestCommentConfigTonesAndContext(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	admin, _ := svc.Register(adminFP, testInvite, "Admin")
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
+
+	if err := svc.SetCommentTone(admin, "savage"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetUserCommentTone(admin, alice.ID, "playful"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetUserCommentTone(admin, bob.ID, "mute"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AddRivalry(admin, alice.ID, bob.ID, "office rivals"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AddCommentNote(admin, "loser buys lunch"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := svc.CommentConfig()
+	if cfg.DefaultTone != "savage" {
+		t.Errorf("default tone = %q", cfg.DefaultTone)
+	}
+	if cfg.ToneByName["Alice"] != "playful" || cfg.ToneByName["Bob"] != "mute" {
+		t.Errorf("tone overrides = %v", cfg.ToneByName)
+	}
+	if len(cfg.Rivalries) != 1 || cfg.Rivalries[0].A != "Alice" || cfg.Rivalries[0].B != "Bob" || cfg.Rivalries[0].Note != "office rivals" {
+		t.Errorf("rivalries = %+v", cfg.Rivalries)
+	}
+	if len(cfg.Notes) != 1 || cfg.Notes[0] != "loser buys lunch" {
+		t.Errorf("notes = %+v", cfg.Notes)
+	}
+
+	// "default" clears the override.
+	if err := svc.SetUserCommentTone(admin, alice.ID, "default"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.CommentConfig().ToneByName["Alice"]; ok {
+		t.Error(`"default" should clear Alice's override`)
+	}
+
+	// Deletes remove the entries.
+	if err := svc.DeleteRivalry(admin, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteCommentNote(admin, 0); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := svc.CommentConfig(); len(cfg.Rivalries) != 0 || len(cfg.Notes) != 0 {
+		t.Errorf("expected empty after delete: %+v / %+v", cfg.Rivalries, cfg.Notes)
+	}
+}
+
+func TestCommentConfigAdminGated(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	player, _ := svc.Register("SHA256:p", testInvite, "Player")
+	if err := svc.SetUserCommentTone(player, player.ID, "savage"); err == nil {
+		t.Error("non-admin SetUserCommentTone should be rejected")
+	}
+	if err := svc.AddCommentNote(player, "x"); err == nil {
+		t.Error("non-admin AddCommentNote should be rejected")
+	}
+	if err := svc.AddRivalry(player, 1, 2, "x"); err == nil {
+		t.Error("non-admin AddRivalry should be rejected")
+	}
+}
+
 type fakeCommentSource struct{ m map[int64]ai.Comment }
 
 func (f fakeCommentSource) All(now time.Time) map[int64]ai.Comment { return f.m }
@@ -106,5 +179,21 @@ func TestLeaderboardCommentsScoping(t *testing.T) {
 	}
 	if got := svc.LeaderboardComments(admin); len(got) != 2 || got[alice.ID] == "" || got[bob.ID] == "" {
 		t.Fatalf("admin should see all comments, got %v", got)
+	}
+
+	// Muting a player hides their ALREADY-CACHED comment immediately (read-time
+	// enforcement), without waiting for the next regeneration pass.
+	if err := svc.SetUserCommentTone(admin, bob.ID, "mute"); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.LeaderboardComments(admin); len(got) != 1 || got[bob.ID] != "" {
+		t.Fatalf("muted Bob must vanish from the admin view immediately, got %v", got)
+	}
+	if got := svc.LeaderboardComments(bob); len(got) != 0 {
+		t.Fatalf("muted Bob must not see his own cached comment, got %v", got)
+	}
+	// A non-muted player is unaffected.
+	if got := svc.LeaderboardComments(alice); got[alice.ID] != "alice line" {
+		t.Fatalf("Alice should still see her comment, got %v", got)
 	}
 }

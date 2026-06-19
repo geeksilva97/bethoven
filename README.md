@@ -196,7 +196,10 @@ When you open the leaderboard you see **your own** comment under your row; admin
 see one under **every** row (including BETanIA's own — which she writes in the
 first person, since she's talking about herself). The tone is an admin setting —
 **playful** banter by default, or **savage** roast — toggled with **`t`** on the
-admin panel. Comments
+admin panel. You can also go **granular** from the same panel: **`u`** sets a tone
+**per player** (default / playful / savage / **mute** — muted players get no
+comment at all), and **`x`** lets you add **rivalries** (two players + a note) and
+**house notes** that BETanIA weaves into the commentary. Comments
 never invent anything: they're grounded only in real positions and point movements
 (no scores or rankings are stored — the history is recomputed from results each
 time), and they're regenerated on a timer (and on demand). Each one is logged to
@@ -221,8 +224,9 @@ sudo systemctl restart bethoven
 The seed is **idempotent** — re-running it skips games BETanIA already bet (no API
 cost). Admins get a **⚙ Admin: BETanIA** screen showing BETanIA's status, schedule,
 last/next run, and recent picks with rationale; press **`r`** there to trigger a
-betting pass immediately, **`c`** to regenerate every leaderboard comment, and
-**`t`** to switch the comment tone. To pause BETanIA without losing its bets, set
+betting pass immediately, **`c`** to regenerate every leaderboard comment, **`t`**
+to switch the default comment tone, **`u`** for per-player tone, and **`x`** for
+rivalry/house context. To pause BETanIA without losing its bets, set
 `BETHOVEN_AI_ENABLED=false` and restart.
 
 ## Fixtures
