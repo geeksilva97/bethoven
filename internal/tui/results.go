@@ -218,6 +218,17 @@ func wrapText(s string, width int) []string {
 	return append(lines, cur)
 }
 
+// padName pads s to a fixed display WIDTH (terminal cells), so the columns after a
+// name line up even when it contains a wide glyph such as an emoji (e.g. the 🤖 in
+// "BETanIA 🤖"). fmt's %-Ns pads by rune count, which mis-measures wide runes and
+// shifts everything after the name on that row.
+func padName(s string, w int) string {
+	if d := w - lipgloss.Width(s); d > 0 {
+		return s + strings.Repeat(" ", d)
+	}
+	return s
+}
+
 // liveScore renders a match's running score with the live accent, e.g.
 // "⚡67' 1–0" (or "⚡ 1–0" when the feed gives no clock). At halftime the clock
 // reads a stale stoppage time like "45'+8'", so show "HT" instead — clearer that
@@ -359,13 +370,17 @@ func (m Model) viewLeaderboard() string {
 	anyLive := false
 	for i, s := range m.standings {
 		rank := fmt.Sprintf("%2d.", i+1)
-		// Mark a total that currently includes provisional (in-play) points.
-		marker := " "
+		// Mark a total that currently includes provisional (in-play) points. The
+		// non-live marker is TWO spaces to match the ⚡ glyph's display width (2 cells),
+		// so live and settled rows line up.
+		marker := "  "
 		if s.LivePoints > 0 {
 			marker = liveStyle.Render("⚡")
 			anyLive = true
 		}
-		line := fmt.Sprintf("%s %-20s %3d pts", rank, s.User.DisplayName, s.Total)
+		// padName (display-width) not %-20s: the name can hold a wide glyph (the 🤖 in
+		// "BETanIA 🤖") that %-Ns mis-measures, throwing every later column off on that row.
+		line := fmt.Sprintf("%s %s %3d pts", rank, padName(s.User.DisplayName, 20), s.Total)
 		switch {
 		case s.LivePoints > 0:
 			line = liveStyle.Render(line)
@@ -384,9 +399,13 @@ func (m Model) viewLeaderboard() string {
 			}
 		}
 		// Points gained from live matches + rank shift they caused, rendered as
-		// independent segments so their colors don't nest inside the line style.
+		// independent segments so their colors don't nest inside the line style. When
+		// picks are inline, reserve the "(+N)" width even at 0 so the trailing rank-shift
+		// arrow lines up across rows that did and didn't gain points.
 		if s.LivePoints > 0 {
 			line += liveStyle.Render(fmt.Sprintf(" (+%d)", s.LivePoints))
+		} else if showInlinePicks {
+			line += strings.Repeat(" ", 5) // " (+N)" is 5 cells for single-digit gains
 		}
 		switch {
 		case s.LiveRankDelta > 0:
