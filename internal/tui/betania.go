@@ -13,35 +13,81 @@ import (
 // betaniaActivityLimit caps the recent-activity feed on the BETanIA panel.
 const betaniaActivityLimit = 15
 
-// updateBETanIA handles the admin panel keys: "r" asks the live worker to run a
-// pass now (and refreshes the view); "q" quits; any other key returns to the
-// menu. When BETanIA isn't running there's nothing to trigger, so any key backs out.
+// updateBETanIA handles the admin panel keys: "r" runs a betting pass; "c"
+// regenerates ALL leaderboard comments; "t" toggles the comment tone; "q" quits;
+// any other key returns to the menu. When BETanIA isn't running there's nothing to
+// trigger, so any key backs out.
 func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 	k, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
 	}
-	if k.String() == "q" {
+	switch {
+	case k.String() == "q":
 		return m, tea.Quit
-	}
-	if m.aiDisabled || k.String() != "r" {
+	case m.aiDisabled:
+		return m.goMenu(), nil
+	case k.String() == "r":
+		switch err := m.svc.TriggerAI(m.user); {
+		case err == nil:
+			m.setStatus("BETanIA: running a betting pass now — picks appear here as they land", false)
+		case errors.Is(err, service.ErrAIBusy):
+			m.setStatus("BETanIA: a betting run is already in progress", false)
+		default:
+			m.setStatus(err.Error(), true)
+		}
+		m.refreshBETanIA()
+		return m, nil
+	case k.String() == "c":
+		switch err := m.svc.TriggerAIComments(m.user); {
+		case err == nil:
+			m.setStatus("BETanIA: regenerating all leaderboard comments now", false)
+		case errors.Is(err, service.ErrAIBusy):
+			m.setStatus("BETanIA: a comment run is already in progress", false)
+		case errors.Is(err, service.ErrAIOff):
+			m.setStatus("BETanIA comments are not enabled", true)
+		default:
+			m.setStatus(err.Error(), true)
+		}
+		m.refreshBETanIA()
+		return m, nil
+	case k.String() == "t":
+		next := "savage"
+		if m.commentTone == "savage" {
+			next = "playful"
+		}
+		if err := m.svc.SetCommentTone(m.user, next); err != nil {
+			m.setStatus(err.Error(), true)
+		} else {
+			m.commentTone = next
+			m.setStatus("BETanIA tone set to "+next+" — press c to regenerate comments", false)
+		}
+		m.refreshBETanIA()
+		return m, nil
+	default:
 		return m.goMenu(), nil
 	}
+}
 
-	switch err := m.svc.TriggerAI(m.user); {
-	case err == nil:
-		m.setStatus("BETanIA: running a pass now — picks appear here as they land", false)
-	case errors.Is(err, service.ErrAIBusy):
-		m.setStatus("BETanIA: a run is already in progress", false)
-	default:
-		m.setStatus(err.Error(), true)
+// loadBETanIAComments loads the comment worker's status, recent feed and active
+// tone. Used on screen-enter; tolerant of the worker being off (sets the flag).
+func (m *Model) loadBETanIAComments() {
+	_, cerr := m.svc.AICommentStatus(m.user)
+	m.aiCommentsDisabled = errors.Is(cerr, service.ErrAIOff)
+	if !m.aiCommentsDisabled {
+		m.aiCommentStatus, _ = m.svc.AICommentStatus(m.user)
+		m.aiCommentActivity, _ = m.svc.AICommentActivity(m.user, betaniaActivityLimit)
 	}
-	// Refresh the panel so Last run / totals reflect the kick.
+	m.commentTone, _ = m.svc.CommentTone()
+}
+
+// refreshBETanIA reloads both the betting and comment panels after a key action.
+func (m *Model) refreshBETanIA() {
 	if st, err := m.svc.AIStatus(m.user); err == nil {
 		m.aiStatus = st
 		m.aiActivity, _ = m.svc.AIActivity(m.user, betaniaActivityLimit)
 	}
-	return m, nil
+	m.loadBETanIAComments()
 }
 
 // viewBETanIA renders the admin panel for the AI player: a status block (model,
@@ -88,15 +134,45 @@ func (m Model) viewBETanIA() string {
 		}
 	}
 
-	out += "\n" + helpStyle.Render("every pick (seed + live) is logged to "+aiLogHint()+" — `tail -f` it to watch") + "\n"
-	out += statusLine(m) + helpStyle.Render("r: run a pass now · any key: back · q: quit")
+	// Comment worker: status block + recent feed (the leaderboard "roasts").
+	out += "\n" + labelStyle.Render("Comments") + "\n"
+	if m.aiCommentsDisabled {
+		out += helpStyle.Render("  comment worker not running (set BETHOVEN_AI_COMMENTS_ENABLED=true)") + "\n"
+	} else {
+		cst := m.aiCommentStatus
+		out += kpi("Tone", m.commentTone)
+		out += kpi("Regenerating every", cst.Interval.String())
+		out += kpi("Last run", relativeAgo(now, cst.LastRun))
+		out += kpi("Next run", untilText(now, cst.NextRun))
+		out += kpi("Comments written", fmt.Sprintf("%d", cst.Written))
+		out += kpi("Errors", fmt.Sprintf("%d", cst.Errored))
+		out += "\n" + labelStyle.Render("Recent comments") + "\n"
+		if len(m.aiCommentActivity) == 0 {
+			out += helpStyle.Render("  nothing yet — press c to generate now") + "\n"
+		} else {
+			for _, a := range m.aiCommentActivity {
+				out += fmt.Sprintf("  %-8s %s %-16s\n",
+					relativeAgo(now, a.At), outcomeMark(a.Outcome), truncate(a.Player, 16))
+				detail := a.Text
+				if a.Outcome == "error" && a.Err != "" {
+					detail = a.Err
+				}
+				if detail != "" {
+					out += helpStyle.Render("      "+truncate(detail, 78)) + "\n"
+				}
+			}
+		}
+	}
+
+	out += "\n" + helpStyle.Render("picks → "+aiLogHint()+" · comments → ai_comments.log — `tail -f` to watch") + "\n"
+	out += statusLine(m) + helpStyle.Render("r: betting pass · c: regenerate comments · t: tone · any key: back · q: quit")
 	return out
 }
 
 // outcomeMark is a compact glyph for an action's outcome.
 func outcomeMark(outcome string) string {
 	switch outcome {
-	case "placed":
+	case "placed", "written":
 		return okStyle.Render("✓")
 	case "locked":
 		return helpStyle.Render("⏱")

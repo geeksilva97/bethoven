@@ -170,6 +170,42 @@ directly, with a fake clock, no terminal).
   (`service.TriggerAI` → `Bettor.Trigger`, a non-blocking coalesced channel send).
   Live bets emit the `bet_placed` analytics event; the seed (writing straight to the
   store) does not.
+  - **Leaderboard commentary ("roasts") — a second worker (`ai.CommentWorker`).**
+    Gated by `BETHOVEN_AI_COMMENTS_ENABLED` (default **true** once `AIEnabled`),
+    on a timer (`BETHOVEN_AI_COMMENT_INTERVAL_SECONDS`, default 6h; fires at
+    startup; that interval is also the comment TTL). It writes **one short
+    second-person comment per player**, grounded in *ranking narratives*, via a
+    **two-stage Claude pipeline, no web search**: stage 1 `DetectNarratives`
+    (closed `narrativeTypes` vocabulary, "never invent facts") → stage 2
+    `WriteComments` in the active tone. Each line is **second person** ("you…")
+    except **BETanIA's own row, which is first person** ("I'm…") — the worker is
+    given her display name (`self`, from the resolved AI user) and the prompt flips
+    that one line. Like the rest of `ai`, it takes function seams
+    (`CommentDeps{History, Tone, Now}`) and **never imports `service`**.
+    - **No new persistence — scores/positions are never stored.**
+      `service.StandingsHistory` reconstructs the per-matchday standings series
+      (positions + `Movement`/`PointsGained` deltas) by folding FINISHED matches by
+      UTC kickoff date — the same pure computation `Leaderboard` already does live,
+      just per round. Comments live only in the in-memory `ai.CommentCache` (TTL +
+      grace); a restart starts empty and the first pass refills it, like the live feed.
+    - **Visibility is scoped server-side** in `service.LeaderboardComments`: a
+      **player sees only their own** comment (under their own leaderboard row), an
+      **admin sees everyone's** — mirroring `AllBets` vs own-bets. Enforced here, not
+      just hidden in the UI. The TUI renders it indented under the row, `helpStyle`,
+      prefixed 🤖 (`internal/tui/results.go`).
+    - **Tone** is the DB-backed `comment_tone` setting (default `playful`, or
+      `savage`; absent ⇒ playful), like `scoring_mode`. Toggled with **`t`** on the
+      admin panel (`SetCommentTone`).
+    - **Same sanitization boundary:** comment text is untrusted model output rendered
+      into every terminal — `ai.sanitizeText` is applied in the worker before the
+      cache + log, so both get clean text.
+    - **Observability:** `service.AICommentMonitor` port
+      (`AICommentStatus`/`AICommentActivity`/`TriggerAIComments`, all `requireAdmin`);
+      the **⚙ Admin: BETanIA** screen gained a *Comments* status block + recent-comments
+      feed, and **`c` regenerates ALL comments at once** (one worker pass → full cache
+      rewrite, coalesced). **Logging:** each comment is a JSON line in
+      `BETHOVEN_AI_COMMENT_LOG_PATH` (default `ai_comments.log`; **must** be under the
+      systemd `ReadWritePaths` dir in prod, like `ai_bets.log`).
 
 ## Onboarding & admin
 

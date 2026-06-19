@@ -145,6 +145,26 @@ func main() {
 			svc.SetAITrigger(bettor.Trigger)
 			go bettor.Run(ctx)
 			log.Printf("BETanIA live betting enabled (model=%s, every %ds, lookahead %dh)", cfg.AIModel, cfg.AIIntervalSecs, cfg.AILookaheadHrs)
+
+			// Optional leaderboard commentary: a second worker regenerates one
+			// comment per player from the standings history (no web search) and
+			// swaps them into an in-memory cache the leaderboard reads. Comments are
+			// never persisted — losing them loses only flavor text.
+			if cfg.AICommentsEnabled {
+				ci := time.Duration(cfg.AICommentIntervalSec) * time.Second
+				cmon := ai.NewCommentMonitor(cfg.AIModel, ci)
+				svc.SetCommentMonitor(cmon)
+				cache := ai.NewCommentCache()
+				svc.SetCommentSource(cache)
+				cw := ai.NewCommentWorker(ai.CommentDeps{
+					History: svc.StandingsHistory,
+					Tone:    func() string { t, _ := svc.CommentTone(); return t },
+					Now:     svc.Now,
+				}, ai.NewAnthropicCommenter(cfg.AIModel), cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)
+				svc.SetCommentTrigger(cw.Trigger)
+				go cw.Run(ctx)
+				log.Printf("BETanIA commentary enabled (model=%s, every %ds)", cfg.AIModel, cfg.AICommentIntervalSec)
+			}
 		}
 	}
 

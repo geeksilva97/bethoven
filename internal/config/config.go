@@ -52,6 +52,13 @@ type Config struct {
 	AILogPath      string // JSON-lines log of every pick (seed + live)
 	AIMaxPerRun    int    // cap on bets placed per live pass (0 = no cap)
 	AILookaheadHrs int    // only bet matches kicking off within this many hours (0 = no horizon)
+
+	// BETanIA leaderboard commentary (gated by AIEnabled; on by default once AI is).
+	// The worker regenerates one comment per player on a timer; the cache TTL is the
+	// same interval. Comments are in-memory only — the log is the durable record.
+	AICommentsEnabled    bool
+	AICommentIntervalSec int    // seconds between comment regenerations (also the TTL)
+	AICommentLogPath     string // JSON-lines log of every comment
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -88,6 +95,11 @@ func Load() Config {
 		AILogPath:      env("BETHOVEN_AI_LOG_PATH", "ai_bets.log"),
 		AIMaxPerRun:    envInt("BETHOVEN_AI_MAX_PER_RUN", 0),
 		AILookaheadHrs: envInt("BETHOVEN_AI_LOOKAHEAD_HOURS", 72),
+
+		// On by default once AI is enabled; opt out with BETHOVEN_AI_COMMENTS_ENABLED=false.
+		AICommentsEnabled:    env("BETHOVEN_AI_COMMENTS_ENABLED", "true") != "false",
+		AICommentIntervalSec: envInt("BETHOVEN_AI_COMMENT_INTERVAL_SECONDS", 21600),
+		AICommentLogPath:     env("BETHOVEN_AI_COMMENT_LOG_PATH", "ai_comments.log"),
 	}
 }
 
