@@ -5,6 +5,7 @@
 package tui
 
 import (
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -198,8 +199,9 @@ type Model struct {
 	ctxRivalB     int64
 
 	// admin: BETanIA comment-prompt override editor (reached with 's' on the
-	// Comments tab). promptInput edits the full instruction body; empty ⇒ default.
-	promptInput textinput.Model
+	// Comments tab). promptInput edits the full instruction body (multi-line, since
+	// the override is a whole prompt); empty ⇒ default.
+	promptInput textarea.Model
 }
 
 // New builds the session model. user may be nil (unknown key → registration).

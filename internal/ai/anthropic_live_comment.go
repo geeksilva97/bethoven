@@ -69,15 +69,10 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 	return b.String()
 }
 
-// liveSituationJSON marshals the situation for the model, filling each pick's "pred"
-// string from its score parts so the model sees "2-1" rather than separate ints.
+// liveSituationJSON marshals the situation for the model. Each pick's "pred" string
+// (e.g. "2-1") is set by the service builder; PredA/PredB are json:"-" so the model
+// sees only the combined string.
 func liveSituationJSON(sit LiveSituation) string {
-	for i := range sit.Matches {
-		for j := range sit.Matches[i].Picks {
-			pk := &sit.Matches[i].Picks[j]
-			pk.Pred = fmt.Sprintf("%d-%d", pk.PredA, pk.PredB)
-		}
-	}
 	out, err := json.Marshal(sit)
 	if err != nil {
 		return "{}"

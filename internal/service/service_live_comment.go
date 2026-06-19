@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"time"
 
 	"bethoven/internal/ai"
@@ -64,6 +65,7 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 				Player:     pk.User.DisplayName,
 				PredA:      pk.Bet.PredA,
 				PredB:      pk.Bet.PredB,
+				Pred:       fmt.Sprintf("%d-%d", pk.Bet.PredA, pk.Bet.PredB),
 				LivePoints: pk.LivePoints,
 			})
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -364,27 +365,29 @@ func (m Model) openAIPrompt() Model {
 		m.setStatus(err.Error(), true)
 		return m
 	}
-	ti := textinput.New()
-	ti.Placeholder = "(empty — using built-in default)"
-	ti.CharLimit = 4000
-	ti.Width = 70
-	ti.SetValue(cur)
-	ti.CursorEnd()
-	ti.Focus()
-	m.promptInput = ti
+	ta := textarea.New()
+	ta.Placeholder = "(empty — using built-in default)"
+	ta.CharLimit = 4000
+	ta.SetWidth(72)
+	ta.SetHeight(12)
+	ta.SetValue(cur)
+	ta.CursorEnd()
+	ta.Focus()
+	m.promptInput = ta
 	m.screen = screenAIPrompt
 	return m
 }
 
-// updateAIPrompt edits the override: enter/ctrl+s saves, esc cancels. A blank value
-// restores the built-in default. Returns to the Comments tab either way.
+// updateAIPrompt edits the override: ctrl+s saves, esc cancels (enter inserts a
+// newline — the override is a multi-line prompt body). A blank value restores the
+// built-in default. Returns to the Comments tab on save/cancel.
 func (m Model) updateAIPrompt(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch k.Type {
 		case tea.KeyEsc:
 			m.betaniaTab = tabComments
 			return m.openBETanIA(), nil
-		case tea.KeyEnter, tea.KeyCtrlS:
+		case tea.KeyCtrlS:
 			if err := m.svc.SetCommentPromptOverride(m.user, m.promptInput.Value()); err != nil {
 				m.setStatus(err.Error(), true)
 				return m, nil
@@ -411,7 +414,7 @@ func (m Model) viewAIPrompt() string {
 	out += helpStyle.Render("submit-comments instruction are always appended automatically.") + "\n"
 	out += helpStyle.Render("Leave blank to restore the built-in default.") + "\n\n"
 	out += m.promptInput.View() + "\n\n"
-	out += statusLine(m) + helpStyle.Render("enter / ctrl+s: save · esc: cancel")
+	out += statusLine(m) + helpStyle.Render("ctrl+s: save · esc: cancel")
 	return out
 }
 

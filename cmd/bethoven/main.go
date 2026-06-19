@@ -151,6 +151,10 @@ func main() {
 			// swaps them into an in-memory cache the leaderboard reads. Comments are
 			// never persisted — losing them loses only flavor text.
 			if cfg.AICommentsEnabled {
+				// One Anthropic commenter serves both comment workers — the type
+				// implements Commenter (per-player) and LiveCommenter (live line).
+				commenter := ai.NewAnthropicCommenter(cfg.AIModel)
+
 				ci := time.Duration(cfg.AICommentIntervalSec) * time.Second
 				cmon := ai.NewCommentMonitor(cfg.AIModel, ci)
 				svc.SetCommentMonitor(cmon)
@@ -160,7 +164,7 @@ func main() {
 					History: svc.StandingsHistory,
 					Config:  svc.CommentConfig,
 					Now:     svc.Now,
-				}, ai.NewAnthropicCommenter(cfg.AIModel), cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)
+				}, commenter, cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
 				go cw.Run(ctx)
 				log.Printf("BETanIA commentary enabled (model=%s, every %ds)", cfg.AIModel, cfg.AICommentIntervalSec)
@@ -176,7 +180,7 @@ func main() {
 					Situation: svc.LiveSituation,
 					Config:    svc.CommentConfig,
 					Now:       svc.Now,
-				}, ai.NewAnthropicCommenter(cfg.AIModel), lcache, u.DisplayName, lhb, cfg.AICommentLogPath)
+				}, commenter, lcache, lhb, cfg.AICommentLogPath)
 				go lw.Run(ctx)
 				log.Printf("BETanIA live commentary enabled (model=%s, heartbeat %ds)", cfg.AIModel, cfg.AILiveCommentIntervalSec)
 			}

@@ -143,7 +143,6 @@ type LiveCommentWorker struct {
 	deps      LiveCommentDeps
 	cmt       LiveCommenter
 	cache     *LiveCommentCache
-	self      string
 	heartbeat time.Duration // regenerate at least this often while live
 	ttl       time.Duration // how long a written line stays current
 	logPath   string
@@ -154,12 +153,17 @@ type LiveCommentWorker struct {
 // NewLiveCommentWorker wires a live-comment worker. heartbeat is the longest a
 // quiet (e.g. 0-0) game waits between fresh lines; the displayed line lives for
 // twice that, so a briefly-stalled worker doesn't blank the board mid-game.
-func NewLiveCommentWorker(deps LiveCommentDeps, cmt LiveCommenter, cache *LiveCommentCache, self string, heartbeat time.Duration, logPath string) *LiveCommentWorker {
+func NewLiveCommentWorker(deps LiveCommentDeps, cmt LiveCommenter, cache *LiveCommentCache, heartbeat time.Duration, logPath string) *LiveCommentWorker {
+	// A heartbeat below the regeneration floor is meaningless and would make the
+	// TTL (2×heartbeat) shorter than the floor — the line would flash then blank
+	// for the rest of the floor window. Clamp so a misconfig can't do that.
+	if heartbeat < liveFloor {
+		heartbeat = liveFloor
+	}
 	return &LiveCommentWorker{
 		deps:      deps,
 		cmt:       cmt,
 		cache:     cache,
-		self:      self,
 		heartbeat: heartbeat,
 		ttl:       2 * heartbeat,
 		logPath:   logPath,
@@ -221,8 +225,9 @@ func (w *LiveCommentWorker) pass(ctx context.Context) {
 		return
 	}
 
+	// The live line addresses the pool in general, so cfg.Self (BETanIA's own name,
+	// used only for the per-player first-person line) is deliberately left unset.
 	cfg := w.deps.Config()
-	cfg.Self = w.self
 
 	pctx, cancel := context.WithTimeout(ctx, liveCommentPassTimeout)
 	defer cancel()

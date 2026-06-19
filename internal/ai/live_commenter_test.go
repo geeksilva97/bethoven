@@ -35,7 +35,7 @@ func TestLiveCommentWorkerPass(t *testing.T) {
 	}
 	fake := &fakeLiveCommenter{}
 	cache := NewLiveCommentCache()
-	w := NewLiveCommentWorker(deps, fake, cache, "BETanIA", 5*time.Minute, "")
+	w := NewLiveCommentWorker(deps, fake, cache, 5*time.Minute, "")
 	ctx := context.Background()
 
 	// 1) First pass: generates the opening line, no recent history.
@@ -56,27 +56,46 @@ func TestLiveCommentWorkerPass(t *testing.T) {
 		t.Fatalf("unchanged pass: calls = %d, want still 1", fake.calls)
 	}
 
-	// 3) Score changes and the floor has elapsed → regenerate, feeding the prior
-	//    line back as recent history so the model won't repeat itself.
+	// 3) Score changes but we're still inside the floor window → suppressed (the
+	//    "can a change get stuck?" case): no regeneration yet.
 	sit.Matches[0].ScoreA = 1
-	now = now.Add(liveFloor + time.Second)
+	now = now.Add(liveFloor / 2)
 	w.pass(ctx)
-	if fake.calls != 2 {
-		t.Fatalf("changed pass: calls = %d, want 2", fake.calls)
-	}
-	if got := cache.Current(now); got != "line 2" {
-		t.Errorf("changed pass: current = %q, want %q", got, "line 2")
-	}
-	if len(fake.lastRecent) != 1 || fake.lastRecent[0] != "line 1" {
-		t.Errorf("changed pass: recent = %v, want [line 1]", fake.lastRecent)
+	if fake.calls != 1 {
+		t.Fatalf("within-floor change: calls = %d, want still 1 (suppressed)", fake.calls)
 	}
 
-	// 4) Game over: the worker clears the line and the rolling history.
+	// 4) Same change, now past the floor → it finally regenerates (the stale cached
+	//    signature kept `changed` true), feeding the prior line back as history.
+	now = now.Add(liveFloor)
+	w.pass(ctx)
+	if fake.calls != 2 {
+		t.Fatalf("post-floor change: calls = %d, want 2", fake.calls)
+	}
+	if got := cache.Current(now); got != "line 2" {
+		t.Errorf("post-floor change: current = %q, want %q", got, "line 2")
+	}
+	if len(fake.lastRecent) != 1 || fake.lastRecent[0] != "line 1" {
+		t.Errorf("post-floor change: recent = %v, want [line 1]", fake.lastRecent)
+	}
+
+	// 5) Nothing changes, but the heartbeat elapses → regenerate anyway (so a quiet
+	//    0-0 grind still gets a fresh take), with both prior lines as history.
+	now = now.Add(w.heartbeat + time.Second)
+	w.pass(ctx)
+	if fake.calls != 3 {
+		t.Fatalf("heartbeat pass: calls = %d, want 3", fake.calls)
+	}
+	if len(fake.lastRecent) != 2 || fake.lastRecent[1] != "line 2" {
+		t.Errorf("heartbeat pass: recent = %v, want [line 1, line 2]", fake.lastRecent)
+	}
+
+	// 6) Game over: the worker clears the line and the rolling history.
 	isLive = false
 	now = now.Add(time.Minute)
 	w.pass(ctx)
-	if fake.calls != 2 {
-		t.Errorf("game-over pass: calls = %d, want still 2 (no generation)", fake.calls)
+	if fake.calls != 3 {
+		t.Errorf("game-over pass: calls = %d, want still 3 (no generation)", fake.calls)
 	}
 	if got := cache.Current(now); got != "" {
 		t.Errorf("game-over pass: current = %q, want empty (cleared)", got)
