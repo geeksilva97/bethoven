@@ -265,6 +265,10 @@ func (m Model) betaniaCommentsTab() string {
 		out += helpStyle.Render("  nothing yet — press c to generate now") + "\n"
 		return out
 	}
+	// Each comment is a two-line block (header + preview). Build them as single
+	// items so windowRows can scroll the feed around the cursor — without this the
+	// full field overflows the terminal and the selection slides off the bottom.
+	rows := make([]string, len(m.aiCommentActivity))
 	for i, a := range m.aiCommentActivity {
 		cursor := "  "
 		if i == m.aiCommentCursor {
@@ -274,16 +278,35 @@ func (m Model) betaniaCommentsTab() string {
 		if i == m.aiCommentCursor {
 			head = cursorOn.Render(head)
 		}
-		out += cursor + head + "\n"
+		row := cursor + head
 		detail := a.Text
 		if a.Outcome == "error" && a.Err != "" {
 			detail = a.Err
 		}
 		if detail != "" {
-			out += helpStyle.Render("      "+truncate(detail, 78)) + "\n"
+			row += "\n" + helpStyle.Render("      "+truncate(detail, 78))
 		}
+		rows[i] = row
+	}
+	for _, r := range windowRows(rows, m.aiCommentCursor, m.commentFeedCapacity()) {
+		out += r + "\n"
 	}
 	return out
+}
+
+// commentFeedCapacity is how many comment blocks fit on the Comments tab given the
+// terminal height. Each block is up to two lines (header + preview), and the tab's
+// fixed chrome (title, tab bar, status block, labels, footer) is ~19 lines. Floors
+// at 3 so the feed is always usable; falls back to 8 before the first size message.
+func (m Model) commentFeedCapacity() int {
+	if m.height <= 0 {
+		return 8
+	}
+	const commentsChrome = 19
+	if items := (m.height - commentsChrome) / 2; items >= 3 {
+		return items
+	}
+	return 3
 }
 
 // viewAICommentDetail shows the full text of the comment selected in the Comments
