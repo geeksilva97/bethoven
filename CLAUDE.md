@@ -147,7 +147,13 @@ directly, with a fake clock, no terminal).
       `service.Fixtures()`→`store.ListMatches` is `ORDER BY starts_at`, the worker
       bets the **N soonest unbet upcoming matches** soonest-first, so it picks "the
       next few games" each pass rather than the whole fixture list — and never
-      misses an imminent one. The server only **resolves** BETanIA (`svc.Lookup`);
+      misses an imminent one. **`BETHOVEN_AI_LOOKAHEAD_HOURS` (default 72) bounds
+      the horizon**: it won't bet a match kicking off further out than the window,
+      so it stays on the near-term slate instead of reaching days/weeks ahead.
+      Because fixtures are chronological, the first match past the horizon ends the
+      pass early; matches enter the window on a later pass as kickoff nears (so set
+      lookahead ≥ interval, else a match could slip past unbet). The server only
+      **resolves** BETanIA (`svc.Lookup`);
       if it's not onboarded it logs "run `bethoven ai-seed` first" and stays off.
   **Untrusted model output is sanitized** (`ai.sanitizeText`): the model's
   rationale/confidence render into the admin terminal and `ai_bets.log`, the same

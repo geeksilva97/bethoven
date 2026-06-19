@@ -33,13 +33,17 @@ type Bettor struct {
 	userID    int64
 	interval  time.Duration
 	logPath   string
-	maxPerRun int // 0 = no cap
+	maxPerRun int           // 0 = no cap
+	lookahead time.Duration // only bet matches kicking off within this window; 0 = no horizon
 	logger    *log.Logger
 	trigger   chan struct{} // manual "run now" requests (buffered, coalesced to 1)
 }
 
-// NewBettor wires a live bettor. interval is the gap between passes.
-func NewBettor(deps Deps, pred Predictor, mon *Monitor, userID int64, interval time.Duration, logPath string, maxPerRun int) *Bettor {
+// NewBettor wires a live bettor. interval is the gap between passes; lookahead
+// bounds how far ahead it will bet (so it works the near-term slate, not the whole
+// fixture list). lookahead should be >= interval so every match enters the window
+// before it kicks off; 0 disables the horizon.
+func NewBettor(deps Deps, pred Predictor, mon *Monitor, userID int64, interval time.Duration, logPath string, maxPerRun int, lookahead time.Duration) *Bettor {
 	return &Bettor{
 		deps:      deps,
 		pred:      pred,
@@ -48,6 +52,7 @@ func NewBettor(deps Deps, pred Predictor, mon *Monitor, userID int64, interval t
 		interval:  interval,
 		logPath:   logPath,
 		maxPerRun: maxPerRun,
+		lookahead: lookahead,
 		logger:    log.Default(),
 		trigger:   make(chan struct{}, 1),
 	}
@@ -120,6 +125,13 @@ func (b *Bettor) bet(ctx context.Context) {
 		if m.Finished || !now.Before(m.StartsAt) {
 			b.mon.skip()
 			continue
+		}
+		// Stay near the current date: don't bet games beyond the lookahead window.
+		// Fixtures are chronological (ORDER BY starts_at), so the first upcoming match
+		// past the horizon means every later one is too — stop the pass here. BETanIA
+		// will pick them up on a future pass as their kickoff approaches.
+		if b.lookahead > 0 && m.StartsAt.After(now.Add(b.lookahead)) {
+			return
 		}
 		if ctx.Err() != nil {
 			return

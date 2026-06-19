@@ -51,6 +51,7 @@ type Config struct {
 	AIIntervalSecs int    // seconds between live betting passes
 	AILogPath      string // JSON-lines log of every pick (seed + live)
 	AIMaxPerRun    int    // cap on bets placed per live pass (0 = no cap)
+	AILookaheadHrs int    // only bet matches kicking off within this many hours (0 = no horizon)
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -86,6 +87,7 @@ func Load() Config {
 		AIIntervalSecs: envInt("BETHOVEN_AI_INTERVAL_SECONDS", 21600),
 		AILogPath:      env("BETHOVEN_AI_LOG_PATH", "ai_bets.log"),
 		AIMaxPerRun:    envInt("BETHOVEN_AI_MAX_PER_RUN", 0),
+		AILookaheadHrs: envInt("BETHOVEN_AI_LOOKAHEAD_HOURS", 72),
 	}
 }
 
