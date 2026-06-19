@@ -392,3 +392,23 @@ Static binary + `fixtures.json` to `/opt/bethoven`, install
 `deploy/bethoven.service` (systemd, unprivileged user, env vars), open TCP 2222,
 `systemctl enable --now bethoven`. DB + host key persist under
 `/opt/bethoven/data`. No domain/TLS needed. Full steps in README.md.
+
+**`deploy/local-deploy.sh` rewrites `bethoven.env` wholesale** (it's gitignored —
+holds the invite code + admin FP). It re-reads `ANTHROPIC_API_KEY` from the deploy
+shell, so running it **without that key set clobbers the working key on the VM**.
+For a code-only change that needs no new env (e.g. a new setting with a default),
+prefer a **binary-only deploy** that leaves `bethoven.env` untouched: WAL-safe
+`.backup` → `scp` the new binary → `mv` into `/opt/bethoven/bethoven` →
+`chown bethoven:bethoven` → `systemctl restart bethoven`.
+
+**Verifying BETanIA on the VM (post-deploy or when debugging the AI).** The
+GCP deploy is `gcloud --project=edy-ai-playground compute ssh bethoven --zone=us-central1-a`.
+On the box:
+  - `sudo journalctl -u bethoven --since '2 min ago' --no-pager` — the startup
+    lines confirm which workers armed (`BETanIA live betting/commentary/live
+    commentary enabled …`). Absence of a line = that worker is off (check the env
+    flag); an `ANTHROPIC_API_KEY` problem shows up as API errors here.
+  - `sudo tail /opt/bethoven/data/ai_bets.log` — every pick (seed + live) as JSON.
+  - `sudo tail /opt/bethoven/data/ai_comments.log` — every comment, incl.
+    `source:"live_comment"` for the top-of-board line. Both logs live under the
+    systemd `ReadWritePaths` data dir, so they need `sudo` to read.
