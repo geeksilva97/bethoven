@@ -113,7 +113,9 @@ func (p *Poller) poll(ctx context.Context) {
 		// service filters it downstream — overlayLive and the leaderboard fold both
 		// skip m.Finished — so the authoritative result always wins.)
 		if ev.State == StateIn {
-			fresh[m.ID] = Score{A: a, B: b, State: StateIn, Minute: ev.Minute, Clock: ev.Clock}
+			// Odds reference team names directly in the string, so copy straight
+			// through — no home/away orientation needed.
+			fresh[m.ID] = Score{A: a, B: b, State: StateIn, Minute: ev.Minute, Clock: ev.Clock, Odds: ev.Odds}
 		}
 		if ev.State == StatePost && !m.Finished {
 			if err := p.finalize(m.ID, a, b); err != nil {

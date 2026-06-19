@@ -65,6 +65,7 @@ type Match struct {
 	LiveScoreB int
 	LiveMinute int    // feed "period" (half number), not a clock minute; display uses LiveClock
 	LiveClock  string // display clock, e.g. "67'"
+	LiveOdds   string // sanitized pre-match odds from the feed, e.g. "USA -160 · O/U 2.5"; empty if absent
 }
 
 // FormOutcome is one past result from a team's perspective, used for the bet

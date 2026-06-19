@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -144,5 +145,38 @@ func TestCommentWorkerTriggerCoalesces(t *testing.T) {
 	}
 	if w.Trigger() {
 		t.Fatal("second Trigger should coalesce to false")
+	}
+}
+
+func TestCommentPromptOverride(t *testing.T) {
+	history := oneRound()
+	narratives := []Narrative{{Type: "leader"}}
+
+	// Default: built-in persona, plus the always-appended trailer + standings.
+	def := commentPrompt(history, narratives, CommentConfig{DefaultTone: "playful"})
+	if !strings.Contains(def, "You are BETanIA") {
+		t.Error("default prompt should use the built-in persona body")
+	}
+	if !strings.Contains(def, "submit_comments") {
+		t.Error("default prompt missing the submit_comments trailer")
+	}
+	if !strings.Contains(def, "STANDINGS + HISTORY (JSON)") {
+		t.Error("default prompt missing the standings JSON block")
+	}
+
+	// Override: custom body replaces the persona, trailer + standings still appended.
+	const body = "ACT AS A PIRATE. Roast every player in pirate-speak."
+	ov := commentPrompt(history, narratives, CommentConfig{DefaultTone: "playful", PromptOverride: body})
+	if !strings.Contains(ov, body) {
+		t.Error("override prompt should contain the custom instruction body")
+	}
+	if strings.Contains(ov, "You are BETanIA") {
+		t.Error("override prompt must NOT contain the built-in persona body")
+	}
+	if !strings.Contains(ov, "submit_comments") {
+		t.Error("override prompt missing the submit_comments trailer")
+	}
+	if !strings.Contains(ov, "STANDINGS + HISTORY (JSON)") {
+		t.Error("override prompt missing the standings JSON block")
 	}
 }

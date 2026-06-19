@@ -241,6 +241,33 @@ func normalizeOverride(t string) string {
 }
 
 func commentPrompt(history []RoundStanding, narratives []Narrative, cfg CommentConfig) string {
+	var b strings.Builder
+	// An admin override replaces only the persona/tone/per-player/rules body; the
+	// grounding data (narratives + standings) and the submit_comments trailer are
+	// always appended below, so the structured-output pipeline keeps working.
+	if ov := strings.TrimSpace(cfg.PromptOverride); ov != "" {
+		b.WriteString(ov)
+		b.WriteString("\n\n")
+	} else {
+		b.WriteString(builtinCommentBody(cfg))
+	}
+
+	if len(narratives) > 0 {
+		nb, _ := json.Marshal(narratives)
+		b.WriteString("DETECTED NARRATIVES (JSON):\n")
+		b.Write(nb)
+		b.WriteString("\n\n")
+	}
+	b.WriteString(untrustedDataNote)
+	b.WriteString("STANDINGS + HISTORY (JSON):\n")
+	b.WriteString(historyJSON(history))
+	b.WriteString("\n\nCall submit_comments with one entry per player (skip muted players). name must match a player exactly.")
+	return b.String()
+}
+
+// builtinCommentBody is the default persona/tone/per-player/rules instruction
+// body, used when no admin PromptOverride is set.
+func builtinCommentBody(cfg CommentConfig) string {
 	def := normalizeTone(cfg.DefaultTone)
 	var b strings.Builder
 	b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool, known for sharp leaderboard commentary.\n\n")
@@ -295,15 +322,5 @@ func commentPrompt(history []RoundStanding, narratives []Narrative, cfg CommentC
 		b.WriteString("\n")
 	}
 
-	if len(narratives) > 0 {
-		nb, _ := json.Marshal(narratives)
-		b.WriteString("DETECTED NARRATIVES (JSON):\n")
-		b.Write(nb)
-		b.WriteString("\n\n")
-	}
-	b.WriteString(untrustedDataNote)
-	b.WriteString("STANDINGS + HISTORY (JSON):\n")
-	b.WriteString(historyJSON(history))
-	b.WriteString("\n\nCall submit_comments with one entry per player (skip muted players). name must match a player exactly.")
 	return b.String()
 }

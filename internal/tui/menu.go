@@ -104,6 +104,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		}
 		m.standings, m.screen = board, screenLeaderboard
 		m.liveMatches, _ = m.svc.LiveMatches()
+		m.liveCommentary = m.svc.LiveCommentary()         // top-of-board live line (empty when none)
 		m.rowComments = m.svc.LeaderboardComments(m.user) // own comment only (everyone)
 		m.revealLivePicks, m.livePicks = false, nil       // start collapsed each visit
 		m.leaderEpoch++                                   // supersede any tick loop from a prior visit

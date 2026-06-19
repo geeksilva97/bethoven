@@ -80,6 +80,10 @@ type Service struct {
 	// comments is the optional BETanIA leaderboard-comment cache; nil when the
 	// comment worker isn't running, in which case the leaderboard shows no comments.
 	comments CommentSource
+	// liveComments is the optional BETanIA live-commentary cache (the single
+	// top-of-board line shown while a match is in play); nil when the live-comment
+	// worker isn't running, in which case the leaderboard shows no live line.
+	liveComments LiveCommentSource
 	// aiComments / aiCommentTrigger are the comment worker's admin observability
 	// and "run now" hooks; nil when it isn't running (admin reads return ErrAIOff).
 	aiComments       AICommentMonitor
@@ -130,6 +134,7 @@ func overlayLive(m *models.Match, snap map[int64]live.Score) {
 	m.Live = true
 	m.LiveScoreA, m.LiveScoreB = ls.A, ls.B
 	m.LiveMinute, m.LiveClock = ls.Minute, ls.Clock
+	m.LiveOdds = ls.Odds
 }
 
 // IsAdmin reports whether a key fingerprint is in the admin allowlist. The TUI

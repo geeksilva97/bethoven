@@ -42,6 +42,7 @@ type Score struct {
 	State  State
 	Minute int    // feed "period" (half number), not a clock minute; UI shows Clock
 	Clock  string // display clock, e.g. "67'"
+	Odds   string // sanitized pre-match odds, e.g. "USA -160 · O/U 2.5"; empty if absent
 }
 
 // Event is one fixture as reported by a Provider, before it is resolved to a
@@ -54,6 +55,7 @@ type Event struct {
 	State                State
 	Minute               int
 	Clock                string
+	Odds                 string // sanitized pre-match odds; references team names directly, so no orientation
 }
 
 // Provider fetches the current live state for the given UTC days. Implementations

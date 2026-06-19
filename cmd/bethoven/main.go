@@ -164,6 +164,21 @@ func main() {
 				svc.SetCommentTrigger(cw.Trigger)
 				go cw.Run(ctx)
 				log.Printf("BETanIA commentary enabled (model=%s, every %ds)", cfg.AIModel, cfg.AICommentIntervalSec)
+
+				// Live top-of-board commentary: a third, fast-cadence worker writes
+				// one general line about the in-play slate (scores, movers, odds),
+				// refreshing it as the game moves and discarding it once nothing is
+				// live. Reuses the comment log file (tagged source:"live_comment").
+				lhb := time.Duration(cfg.AILiveCommentIntervalSec) * time.Second
+				lcache := ai.NewLiveCommentCache()
+				svc.SetLiveCommentSource(lcache)
+				lw := ai.NewLiveCommentWorker(ai.LiveCommentDeps{
+					Situation: svc.LiveSituation,
+					Config:    svc.CommentConfig,
+					Now:       svc.Now,
+				}, ai.NewAnthropicCommenter(cfg.AIModel), lcache, u.DisplayName, lhb, cfg.AICommentLogPath)
+				go lw.Run(ctx)
+				log.Printf("BETanIA live commentary enabled (model=%s, heartbeat %ds)", cfg.AIModel, cfg.AILiveCommentIntervalSec)
 			}
 		}
 	}
