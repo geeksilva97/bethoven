@@ -215,10 +215,16 @@ func (m Model) viewLeaderboard() string {
 		}
 		out += "  " + marker + line + "\n"
 		// BETanIA's take, indented under the row. Scoped by the service: a player
-		// sees only their own line, an admin sees everyone's.
+		// sees only their own line, an admin sees everyone's. Rendered in the
+		// terminal's default colour (italic) so it's legible on light and dark themes.
 		if c := m.rowComments[s.User.ID]; c != "" {
-			for _, ln := range wrapText("🤖 "+c, m.width-8) {
-				out += "      " + helpStyle.Render(ln) + "\n"
+			lines := wrapText(c, m.width-9)
+			for i, ln := range lines {
+				prefix := "      " + botMark.Render("🤖") + " "
+				if i > 0 {
+					prefix = "         " // align continuation under the text, past the 🤖
+				}
+				out += prefix + commentStyle.Render(ln) + "\n"
 			}
 		}
 	}
@@ -229,7 +235,7 @@ func (m Model) viewLeaderboard() string {
 		out += lockStyle.Render("▲▼ rank shift from live results · (+N) points gained live") + "\n"
 	}
 	if len(m.rowComments) > 0 {
-		out += lockStyle.Render("🤖 BETanIA's take") + "\n"
+		out += botMark.Render("🤖") + commentStyle.Render(" BETanIA's take") + "\n"
 	}
 	help := "any key: back · q: quit"
 	if len(m.liveMatches) > 0 {

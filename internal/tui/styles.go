@@ -29,6 +29,15 @@ var (
 	// leaderboard points) so it's never mistaken for a settled value.
 	liveStyle = lipgloss.NewStyle().Foreground(cyan).Bold(true)
 
+	// commentStyle renders BETanIA's leaderboard commentary. It deliberately sets
+	// NO foreground colour so it uses the terminal's default text colour — readable
+	// on both light and dark themes (any fixed grey is unreadable on one of them).
+	// Italic + the 🤖 prefix + indentation set it apart without relying on colour.
+	commentStyle = lipgloss.NewStyle().Italic(true)
+	// botMark accents the 🤖 label so the commentary is identifiable; cyan reads on
+	// both backgrounds (it's the same accent live scores use).
+	botMark = lipgloss.NewStyle().Foreground(cyan).Bold(true)
+
 	// selBar is the unmistakable "you are here" highlight: dark text on a solid
 	// gold bar. Used for the selected row in lists and the focused form field —
 	// a full-width background reads at a glance where a foreground tint doesn't.
