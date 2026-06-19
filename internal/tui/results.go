@@ -303,6 +303,24 @@ func (m Model) viewLeaderboard() string {
 	}
 	out += "\n\n"
 
+	// When picks are revealed for a SINGLE in-play match, fold each player's pick
+	// into their own leaderboard row (cleaner than a separate stacked block of the
+	// same names). With 2+ live matches one inline column would be ambiguous, so we
+	// keep the per-match block in that case.
+	pickByUser := map[int64]string{}
+	showInlinePicks := m.revealLivePicks && len(m.liveMatches) == 1
+	if showInlinePicks {
+		for _, mp := range m.livePicks {
+			if mp.Match.ID != m.liveMatches[0].ID {
+				continue
+			}
+			for _, pk := range mp.Picks {
+				b := pk.Bet
+				pickByUser[pk.User.ID] = fmtPick(&b)
+			}
+		}
+	}
+
 	// In-play header: the matches currently feeding provisional points. With the
 	// pick reveal on ('p'), each match expands to show every player's pick.
 	if len(m.liveMatches) > 0 {
@@ -327,7 +345,9 @@ func (m Model) viewLeaderboard() string {
 		for _, mt := range m.liveMatches {
 			out += "  " + liveScore(mt) +
 				labelStyle.Render(fmt.Sprintf("  %s v %s", mt.TeamA, mt.TeamB)) + "\n"
-			if m.revealLivePicks {
+			// Separate per-match pick block only when we're NOT folding picks into the
+			// standings rows below (i.e. multiple live matches).
+			if m.revealLivePicks && !showInlinePicks {
 				out += m.liveMatchPicks(mt.ID)
 			}
 		}
@@ -355,6 +375,15 @@ func (m Model) viewLeaderboard() string {
 		default:
 			line = labelStyle.Render(line)
 		}
+		// Revealed pick for the single live match, on the player's own row.
+		if showInlinePicks {
+			pick, ok := pickByUser[s.User.ID]
+			if !ok {
+				line += "  " + helpStyle.Render(fmt.Sprintf("%-4s", "—"))
+			} else {
+				line += "  " + labelStyle.Render(fmt.Sprintf("%-4s", pick))
+			}
+		}
 		// Points gained from live matches + rank shift they caused, rendered as
 		// independent segments so their colors don't nest inside the line style.
 		if s.LivePoints > 0 {
@@ -375,6 +404,8 @@ func (m Model) viewLeaderboard() string {
 		// the viewer's own comment.
 		var c string
 		switch {
+		case showInlinePicks:
+			c = "" // the pick occupies the row; the live headline covers commentary
 		case m.hideComments:
 			c = ""
 		case m.cycleComments:
