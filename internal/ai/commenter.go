@@ -95,7 +95,7 @@ func (w *CommentWorker) pass(ctx context.Context) {
 	history, err := w.deps.History()
 	if err != nil {
 		w.logger.Printf("ai: comment history: %v", err)
-		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: err.Error()})
+		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: sanitizeText(err.Error())})
 		return
 	}
 	if len(history) == 0 {
@@ -111,13 +111,13 @@ func (w *CommentWorker) pass(ctx context.Context) {
 	narratives, err := w.cmt.DetectNarratives(pctx, history)
 	if err != nil {
 		w.logger.Printf("ai: detect narratives: %v", err)
-		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: err.Error()})
+		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: sanitizeText(err.Error())})
 		return
 	}
 	comments, err := w.cmt.WriteComments(pctx, history, narratives, tone, w.self)
 	if err != nil {
 		w.logger.Printf("ai: write comments: %v", err)
-		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: err.Error()})
+		w.mon.record(CommentAction{At: w.deps.Now(), Outcome: "error", Err: sanitizeText(err.Error())})
 		return
 	}
 
