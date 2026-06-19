@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -67,6 +68,43 @@ func TestLeaderboardCycleRender(t *testing.T) {
 	if !strings.Contains(on, "cycling takes — showing Alice") {
 		t.Errorf("expected cycling hint naming Alice:\n%s", on)
 	}
+}
+
+// TestCycleOnByDefault checks every user lands on the leaderboard with the comment
+// cycle already running — except a muted user, who gets no cycle.
+func TestCycleOnByDefault(t *testing.T) {
+	svc, store, _ := newTestService(t)
+
+	player, _ := svc.Register("SHA256:p", testInvite, "Player")
+	pm := New(svc, "SHA256:p", false, player)
+	res, _ := pm.enterMenuItem(screenLeaderboard)
+	if got := res.(Model); !got.cycleComments {
+		t.Errorf("a regular player should enter with the cycle on")
+	}
+
+	// A muted player gets no cycle.
+	admin := mustRegisterAdmin(t, svc, store)
+	if err := svc.SetUserCommentTone(admin.user, player.ID, "mute"); err != nil {
+		t.Fatal(err)
+	}
+	res2, _ := pm.enterMenuItem(screenLeaderboard)
+	got2 := res2.(Model)
+	if got2.cycleComments || !got2.selfMuted {
+		t.Errorf("a muted player must not cycle (selfMuted=%v, cycle=%v)", got2.selfMuted, got2.cycleComments)
+	}
+}
+
+// mustRegisterAdmin builds an admin-backed Model whose user exists in the store
+// (so service reads resolve).
+func mustRegisterAdmin(t *testing.T, svc *service.Service, store interface {
+	CreateUser(string, string, models.Role, time.Time) (*models.User, error)
+}) Model {
+	t.Helper()
+	u, err := store.CreateUser("SHA256:boss", "Boss", models.RoleAdmin, time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	return New(svc, "SHA256:boss", true, u)
 }
 
 // TestCycleTickAdvances checks the tick rotates to a different player and that a

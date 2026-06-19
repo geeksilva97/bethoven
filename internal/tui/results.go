@@ -43,11 +43,6 @@ func cycleTick(epoch int) tea.Cmd {
 	return tea.Tick(cycleRefresh, func(time.Time) tea.Msg { return cycleTickMsg{epoch} })
 }
 
-// isAdmin reports whether the current user is an admin.
-func (m Model) isAdmin() bool {
-	return m.user != nil && m.user.Role == models.RoleAdmin
-}
-
 // cycleCandidates returns the user ids that have a (non-empty) comment to cycle
 // through, in standings order, so cycling follows the visible board.
 func (m Model) cycleCandidates() []int64 {
@@ -75,22 +70,18 @@ func (m Model) cycleCandidates() []int64 {
 	return out
 }
 
-// startCycle turns the comment cycle on: loads everyone's comments, shows the
-// viewer's own first, and begins the auto-advance loop. No-op for non-admins.
+// startCycle turns the comment cycle on: loads everyone's (non-muted) comments,
+// shows the viewer's own first, and begins the auto-advance loop. No-op for muted
+// viewers — they don't get the cycle.
 func (m Model) startCycle() (Model, tea.Cmd) {
-	if !m.isAdmin() {
+	if m.selfMuted {
 		return m, nil
 	}
-	all, err := m.svc.AllLeaderboardComments(m.user)
-	if err != nil {
-		m.setStatus(err.Error(), true)
-		return m, nil
-	}
-	m.cycleAll = all
+	m.cycleAll = m.svc.AllLeaderboardComments()
 	m.cycleComments = true
 	// Start on the viewer's own comment if they have one, else the first candidate.
 	m.cycleCurrentID = 0
-	if all[m.user.ID] != "" {
+	if m.user != nil && m.cycleAll[m.user.ID] != "" {
 		m.cycleCurrentID = m.user.ID
 	} else if cands := m.cycleCandidates(); len(cands) > 0 {
 		m.cycleCurrentID = cands[0]
@@ -115,9 +106,7 @@ func (m Model) onCycleTick(msg cycleTickMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// Refresh the set so newly (re)generated comments are picked up live.
-	if all, err := m.svc.AllLeaderboardComments(m.user); err == nil {
-		m.cycleAll = all
-	}
+	m.cycleAll = m.svc.AllLeaderboardComments()
 	cands := m.cycleCandidates()
 	switch len(cands) {
 	case 0:
@@ -173,15 +162,15 @@ func (m Model) updateLeaderboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "c":
-		// Admin-only comment cycle. For a non-admin 'c' isn't a control, so fall
-		// through to the default (back to menu).
-		if m.isAdmin() {
-			if m.cycleComments {
-				return m.stopCycle(), nil
-			}
-			return m.startCycle()
+		// Toggle the comment cycle. Muted viewers don't get it, so for them 'c'
+		// isn't a control — fall through to the default (back to menu).
+		if m.selfMuted {
+			return m.goMenu(), nil
 		}
-		return m.goMenu(), nil
+		if m.cycleComments {
+			return m.stopCycle(), nil
+		}
+		return m.startCycle()
 	default:
 		m = m.stopCycle() // leaving the screen tears down the cycle loop
 		return m.goMenu(), nil
@@ -401,7 +390,7 @@ func (m Model) viewLeaderboard() string {
 			hints = append(hints, "p: reveal live picks")
 		}
 	}
-	if m.isAdmin() {
+	if !m.selfMuted {
 		if m.cycleComments {
 			hints = append(hints, "c: stop cycling comments")
 		} else {

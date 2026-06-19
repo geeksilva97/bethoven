@@ -106,9 +106,20 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		m.liveMatches, _ = m.svc.LiveMatches()
 		m.rowComments = m.svc.LeaderboardComments(m.user) // own comment only (everyone)
 		m.revealLivePicks, m.livePicks = false, nil       // start collapsed each visit
-		m = m.stopCycle()                                 // start with the cycle off each visit
 		m.leaderEpoch++                                   // supersede any tick loop from a prior visit
-		return m, leaderTick(m.leaderEpoch)               // begin auto-refresh while on this screen
+		cmds := []tea.Cmd{leaderTick(m.leaderEpoch)}      // begin auto-refresh while on this screen
+		// The comment cycle runs by default for everyone — own comment first, then
+		// rotating through the rest; 'c' toggles it off. Muted players are the sole
+		// exception: no comment of their own and no cycle.
+		m.selfMuted = m.svc.IsMuted(m.user)
+		if m.selfMuted {
+			m = m.stopCycle()
+		} else {
+			var cy tea.Cmd
+			m, cy = m.startCycle()
+			cmds = append(cmds, cy)
+		}
+		return m, tea.Batch(cmds...)
 	case screenMatchRank:
 		// Reuse the fixtures list to pick which game to rank.
 		fx, err := m.svc.Fixtures()

@@ -194,21 +194,21 @@ directly, with a fake clock, no terminal).
       UTC kickoff date — the same pure computation `Leaderboard` already does live,
       just per round. Comments live only in the in-memory `ai.CommentCache` (TTL +
       grace); a restart starts empty and the first pass refills it, like the live feed.
-    - **Visibility is scoped server-side** in `service.LeaderboardComments`:
-      **EVERYONE — players and admins alike — sees only their own** comment (under
-      their own leaderboard row). The full set is admin-gated behind
-      **`service.AllLeaderboardComments`** (the cross-player boundary, mirroring
-      `AllBets`), which backs both the admin BETanIA panel and the leaderboard cycle.
-      Enforced here, not just hidden in the UI. The TUI renders the comment beside the
-      row in a right-hand column (`leaderCommentCol`), falling back to stacking under
-      the row on a narrow terminal, `helpStyle`, prefixed 🤖 (`internal/tui/results.go`).
-    - **Admin comment cycle (leaderboard, admin only).** On the leaderboard an admin
-      can press **`c`** to toggle a cycle that rotates which single player's comment is
-      shown — own first, then **another at random** — auto-advancing in place every
-      `cycleRefresh` (5s) via a `cycleTickMsg` loop (own `cycleEpoch`, self-stops on
-      leave/toggle-off/superseded epoch, mirroring `leaderTick`). It pulls the full set
-      from `AllLeaderboardComments` (so non-admins can't cycle others' comments). Off by
-      default each visit, so the board shows the viewer's own comment.
+    - **Visibility** in `service.LeaderboardComments`: with the cycle off, **everyone
+      sees only their own** comment (under their own leaderboard row). The full set is
+      exposed by **`service.AllLeaderboardComments`** — **NOT gated**: comments are a
+      shared, fun feature any player can cycle through (bets stay private — that's a
+      separate boundary). The TUI renders the comment beside the row in a right-hand
+      column (`leaderCommentCol`), falling back to stacking under the row on a narrow
+      terminal, `helpStyle`, prefixed 🤖 (`internal/tui/results.go`).
+    - **Comment cycle (leaderboard, ON by default for everyone).** The board rotates
+      which single player's comment is shown — own first, then **another at random** —
+      auto-advancing in place every `cycleRefresh` (12s, paced for reading) via a
+      `cycleTickMsg` loop (own `cycleEpoch`, self-stops on leave/toggle-off/superseded
+      epoch, mirroring `leaderTick`). It pulls the full non-muted set from
+      `AllLeaderboardComments`. **`c`** toggles it off → the board falls back to the
+      viewer's own comment. **Muted players are the sole exception** (`service.IsMuted`,
+      cached as `selfMuted` on entry): no comment of their own and no cycle at all.
     - **Tone** is the DB-backed `comment_tone` setting (default `playful`, or
       `savage`; absent ⇒ playful), like `scoring_mode`. Toggled with **`t`** on the
       admin panel (`SetCommentTone`). **Per-player override:** each player can be

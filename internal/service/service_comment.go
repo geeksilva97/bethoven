@@ -78,15 +78,13 @@ func (s *Service) LeaderboardComments(by *models.User) map[int64]string {
 }
 
 // AllLeaderboardComments returns every player's BETanIA comment, keyed by user id.
-// Admin only — it's the cross-player visibility boundary (mirroring AllBets), so it
-// backs the admin-only leaderboard "cycle" view and the admin panel. Mute is honored
-// at READ time, so muting a player hides their cached comment immediately.
-func (s *Service) AllLeaderboardComments(by *models.User) (map[int64]string, error) {
-	if err := requireAdmin(by); err != nil {
-		return nil, err
-	}
+// Open to all — comments are a shared, fun feature: any player can cycle through
+// everyone's takes on the (public) standings. (Bets stay private; that's a separate
+// boundary.) Mute is honored at READ time, so a muted player's comment is excluded
+// for everyone immediately, never waiting for the next regeneration pass.
+func (s *Service) AllLeaderboardComments() map[int64]string {
 	if s.comments == nil {
-		return map[int64]string{}, nil
+		return map[int64]string{}
 	}
 	all := s.comments.All(s.Now())
 	out := make(map[int64]string, len(all))
@@ -96,7 +94,14 @@ func (s *Service) AllLeaderboardComments(by *models.User) (map[int64]string, err
 		}
 		out[id] = c.Text
 	}
-	return out, nil
+	return out
+}
+
+// IsMuted reports whether a user's per-player comment tone is "mute". Used by the
+// TUI to keep muted players out of the comment cycle entirely (they get no comment
+// of their own and don't see others' rotate by). Not gated — it's about the caller.
+func (s *Service) IsMuted(u *models.User) bool {
+	return u != nil && s.userToneOverride(u.ID) == "mute"
 }
 
 // AICommentMonitor is the optional observability port for the comment worker. The

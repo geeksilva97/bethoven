@@ -97,14 +97,16 @@ type Model struct {
 	// the service to the viewer's OWN comment (players and admins alike); shown when
 	// the cycle below is off.
 	rowComments map[int64]string
-	// comment cycle (admin only): when on, the leaderboard auto-rotates which
-	// player's comment is shown — own first, then random others — on an interval,
-	// in place, without leaving the screen. cycleEpoch ties a tick loop to the
-	// current toggle session so a stale loop self-stops.
+	// comment cycle: on by default for everyone EXCEPT muted players (selfMuted),
+	// the leaderboard auto-rotates which player's comment is shown — own first, then
+	// random others — on an interval, in place, without leaving the screen.
+	// cycleEpoch ties a tick loop to the current toggle session so a stale loop
+	// self-stops. cycleAll excludes muted players (service-side).
 	cycleComments  bool
 	cycleAll       map[int64]string
 	cycleCurrentID int64
 	cycleEpoch     int
+	selfMuted      bool // the viewer is muted ⇒ no own comment, no cycle
 
 	// per-match ranking
 	rankMatch  *models.Match
