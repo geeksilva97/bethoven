@@ -63,9 +63,23 @@ type Match struct {
 	Live       bool
 	LiveScoreA int
 	LiveScoreB int
-	LiveMinute int    // feed "period" (half number), not a clock minute; display uses LiveClock
-	LiveClock  string // display clock, e.g. "67'"
-	LiveOdds   string // sanitized pre-match odds from the feed, e.g. "USA -160 · O/U 2.5"; empty if absent
+	LiveMinute int          // feed "period" (half number), not a clock minute; display uses LiveClock
+	LiveClock  string       // display clock, e.g. "67'"
+	LiveOdds   string       // sanitized pre-match odds from the feed, e.g. "USA -160 · O/U 2.5"; empty if absent
+	LiveEvents []MatchEvent // sanitized key events (goals/cards) from the feed, oldest→newest; nil if none
+}
+
+// MatchEvent is one key in-play moment from the live feed — a goal, own goal, or
+// card — sanitized for display. Like the other Live* fields it is read-time only
+// and NEVER persisted. Text is the feed's human-readable description (it carries
+// the scorer's/player's name, since the feed's structured athlete refs are empty
+// for this competition); Type is the event kind; Clock the match minute; Scoring
+// marks a goal. The feed is untrusted, so every string is sanitized at the source.
+type MatchEvent struct {
+	Clock   string // "11'"
+	Type    string // "Goal", "Own Goal", "Yellow Card"
+	Text    string // "Own Goal by Cameron Burgess, Australia. USA 1, Australia 0."
+	Scoring bool
 }
 
 // FormOutcome is one past result from a team's perspective, used for the bet

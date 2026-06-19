@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"bethoven/internal/models"
 )
 
 // espnBase is ESPN's unofficial, keyless scoreboard API. No token or signup is
@@ -90,6 +92,68 @@ func cleanOdds(details string, overUnder float64) string {
 	return clean
 }
 
+// Key-event limits. The summary endpoint returns the whole match's key events;
+// we keep only the most recent few (most-relevant for a live line) and cap the
+// text lengths so untrusted feed prose can't overrun the prompt or a log line.
+const (
+	maxKeyEvents    = 12
+	maxEventTextLen = 200
+	maxEventTypeLen = 40
+)
+
+// cleanEventText strips ANSI escapes and control characters from an UNTRUSTED
+// feed string (a key-event description — free-form prose that carries player
+// names) and collapses whitespace to single spaces, then length-caps it. Unlike
+// cleanClock/cleanOdds (small whitelists) this is prose, so it mirrors
+// ai.sanitizeText: strip the dangerous bytes, keep the printable rest. The text
+// renders into every player's terminal and into BETanIA's prompt, so it's the
+// same ANSI-injection boundary as display names and model output.
+func cleanEventText(s string, maxLen int) string {
+	var b strings.Builder
+	prevSpace := false
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		// Consume a whole CSI/escape sequence, not just the introducer (same as
+		// ai.sanitizeText), so "\x1b[31m" leaves no inert "[31m" residue.
+		if r == 0x1b || r == 0x9b {
+			if r == 0x1b && i+1 < len(rs) && rs[i+1] == '[' {
+				i++
+			}
+			for i+1 < len(rs) {
+				n := rs[i+1]
+				i++
+				if n >= 0x40 && n <= 0x7e {
+					break
+				}
+			}
+			continue
+		}
+		switch {
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\f' || r == '\v':
+			if !prevSpace {
+				b.WriteByte(' ')
+				prevSpace = true
+			}
+		case r < 0x20 || (r >= 0x7f && r <= 0x9f) || !unicode.IsPrint(r):
+			// drop remaining C0/C1 controls and non-printable runes
+		default:
+			b.WriteRune(r)
+			prevSpace = false
+		}
+	}
+	return truncateRunes(strings.TrimSpace(b.String()), maxLen)
+}
+
+// truncateRunes caps s to at most maxLen runes (not bytes), trimming trailing space.
+func truncateRunes(s string, maxLen int) string {
+	rs := []rune(s)
+	if len(rs) <= maxLen {
+		return s
+	}
+	return strings.TrimSpace(string(rs[:maxLen]))
+}
+
 // ESPNProvider fetches live scores from ESPN's keyless scoreboard endpoint.
 type ESPNProvider struct {
 	league string
@@ -110,6 +174,7 @@ func NewESPNProvider(league string) *ESPNProvider {
 // espnResp is the slim shape we parse out of ESPN's scoreboard JSON.
 type espnResp struct {
 	Events []struct {
+		ID           string `json:"id"`
 		Date         string `json:"date"`
 		Competitions []struct {
 			Competitors []struct {
@@ -159,7 +224,84 @@ func (p *ESPNProvider) Fetch(ctx context.Context, days []time.Time) ([]Event, er
 			out = append(out, e)
 		}
 	}
+	// Enrich IN-PLAY events with their key events (goals/cards) from the per-event
+	// summary endpoint. Only in-play matches — pre/post don't need a live line, and
+	// this is one extra call each, so we keep it to the handful that are live now.
+	// Any failure is tolerated: the match just carries no events this pass.
+	for i := range out {
+		if out[i].State == StateIn && out[i].ID != "" {
+			if kes, err := p.fetchKeyEvents(ctx, out[i].ID); err == nil {
+				out[i].KeyEvents = kes
+			}
+		}
+	}
 	return out, nil
+}
+
+// fetchKeyEvents pulls one match's key events (goals, cards) from ESPN's summary
+// endpoint. Returns nil (not an error to the caller) only on a successful decode;
+// transport/status failures propagate so Fetch can tolerate them per-event.
+func (p *ESPNProvider) fetchKeyEvents(ctx context.Context, eventID string) ([]models.MatchEvent, error) {
+	url := fmt.Sprintf("%s/%s/summary?event=%s", espnBase, p.league, eventID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("espn summary: status %d", resp.StatusCode)
+	}
+	kes, err := decodeKeyEvents(resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body) // drain for keep-alive
+	return kes, err
+}
+
+// summaryResp is the slim shape we parse from ESPN's match-summary JSON. We read
+// only keyEvents (the curated goals/cards/subs list); the full play-by-play
+// commentary, lineups, and box score in the same payload are left for later.
+type summaryResp struct {
+	KeyEvents []struct {
+		Type struct {
+			Text string `json:"text"`
+		} `json:"type"`
+		Text  string `json:"text"`
+		Clock struct {
+			DisplayValue string `json:"displayValue"`
+		} `json:"clock"`
+		ScoringPlay bool `json:"scoringPlay"`
+	} `json:"keyEvents"`
+}
+
+// decodeKeyEvents parses a summary body into sanitized key events, keeping the
+// most recent maxKeyEvents (the tail of the chronological list). Split out from
+// the HTTP path so it's testable against canned payloads. The feed is UNTRUSTED:
+// every string is run through cleanEventText (strip ANSI/control, length-cap).
+func decodeKeyEvents(r io.Reader) ([]models.MatchEvent, error) {
+	var body summaryResp
+	if err := json.NewDecoder(r).Decode(&body); err != nil {
+		return nil, err
+	}
+	all := make([]models.MatchEvent, 0, len(body.KeyEvents))
+	for _, ke := range body.KeyEvents {
+		text := cleanEventText(ke.Text, maxEventTextLen)
+		if text == "" {
+			continue // nothing renderable (e.g. an empty delay marker)
+		}
+		all = append(all, models.MatchEvent{
+			Clock:   cleanClock(ke.Clock.DisplayValue),
+			Type:    cleanEventText(ke.Type.Text, maxEventTypeLen),
+			Text:    text,
+			Scoring: ke.ScoringPlay,
+		})
+	}
+	if len(all) > maxKeyEvents {
+		all = all[len(all)-maxKeyEvents:] // keep the most recent
+	}
+	return all, nil
 }
 
 func (p *ESPNProvider) fetchDay(ctx context.Context, day time.Time) ([]Event, error) {
@@ -233,6 +375,7 @@ func decodeEvents(r io.Reader) ([]Event, error) {
 			odds = cleanOdds(pick.Details, pick.OverUnder)
 		}
 		out = append(out, Event{
+			ID:        ev.ID,
 			Home:      home.name,
 			Away:      away.name,
 			HomeScore: home.score,

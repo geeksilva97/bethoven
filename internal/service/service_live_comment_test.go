@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"bethoven/internal/live"
+	"bethoven/internal/models"
 )
 
 // TestLiveSituation builds the live-comment snapshot from an in-play match: it
@@ -26,7 +27,10 @@ func TestLiveSituation(t *testing.T) {
 	}
 
 	fc.T = base.Add(90 * time.Minute) // past kickoff
-	svc.SetLiveStore(liveSnap{livem: {A: 1, B: 0, State: live.StateIn, Clock: "30'", Odds: "TeamA -160 · O/U 2.5"}})
+	svc.SetLiveStore(liveSnap{livem: {
+		A: 1, B: 0, State: live.StateIn, Clock: "30'", Odds: "TeamA -160 · O/U 2.5",
+		Events: []models.MatchEvent{{Clock: "23'", Type: "Goal", Text: "Goal! TeamA 1, TeamB 0. Someone scores.", Scoring: true}},
+	}})
 
 	sit, isLive, err := svc.LiveSituation()
 	if err != nil {
@@ -44,6 +48,10 @@ func TestLiveSituation(t *testing.T) {
 	}
 	if m.Odds != "TeamA -160 · O/U 2.5" {
 		t.Errorf("odds = %q, want the snapshot odds", m.Odds)
+	}
+	// Key events flow through to the commenter so it can name the scorer.
+	if len(m.Events) != 1 || m.Events[0].Clock != "23'" || m.Events[0].Type != "Goal" {
+		t.Errorf("events = %+v, want one 23' Goal", m.Events)
 	}
 	if len(m.Picks) != 2 {
 		t.Fatalf("picks = %d, want 2", len(m.Picks))

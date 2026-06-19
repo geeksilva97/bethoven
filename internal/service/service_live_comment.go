@@ -56,6 +56,15 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 			Clock:  mp.Match.LiveClock,
 			Odds:   mp.Match.LiveOdds,
 		}
+		// Key events (goals/cards) so BETanIA can name the scorer; already sanitized
+		// and capped at the feed boundary, oldest→newest.
+		for _, ev := range mp.Match.LiveEvents {
+			info.Events = append(info.Events, ai.LiveEventInfo{
+				Clock: ev.Clock,
+				Type:  ev.Type,
+				Text:  ev.Text,
+			})
+		}
 		// Picks arrive sorted by provisional points desc — take the closest few.
 		for i, pk := range mp.Picks {
 			if i >= livePicksTop {

@@ -109,6 +109,17 @@ directly, with a fake clock, no terminal).
   like `cleanClock`), carried as `Score.Odds`/`Match.LiveOdds`. It's never rendered
   directly — it's grounding fed to BETanIA's live commentary (see below). Present
   pre-match and may drop in-play; absent ⇒ empty string, no behaviour change.
+  **Key events (goals/cards):** for **in-play** events only, the provider also hits
+  ESPN's per-match **summary** endpoint (`fetchKeyEvents`/`decodeKeyEvents`) and
+  pulls `keyEvents[]` — the curated goal/card list — into `[]models.MatchEvent`
+  (`Clock`/`Type`/`Text`/`Scoring`), carried as `Score.Events`/`Match.LiveEvents`.
+  The scorer's name lives in the **prose `text`** (ESPN's structured athlete refs are
+  empty for `fifa.world`), so it's sanitized with `cleanEventText` — a prose stripper
+  mirroring `ai.sanitizeText` (whole-CSI strip + C0/C1 drop + length cap), since it
+  reaches both terminals and the model. Capped at the most-recent `maxKeyEvents`; one
+  extra ~350 KB GET per live match per poll, tolerated on failure. Fed into BETanIA's
+  live commentary so it can name the scorer (see below). **Full ESPN feed reference:
+  `docs/espn-api.md`** (endpoints, every field, what's used vs available, sanitizers).
 - **Analytics (optional, `internal/analytics`).** A usage tracker behind the
   `service.AnalyticsSink` port (nil ⇒ disabled ⇒ behaviour identical to no
   analytics, mirroring the live feed). Enable with `BETHOVEN_ANALYTICS_ENABLED=true`
@@ -275,18 +286,21 @@ directly, with a fake clock, no terminal).
     - **Live top-of-board commentary (`ai.LiveCommentWorker`).** A THIRD worker
       (gated by `AICommentsEnabled`, alongside the per-player one) writes a single
       general line about the **in-play slate** — who's nailing the scoreline, who's
-      climbing/falling, and what the **odds** implied — shown at the top of the
-      leaderboard next to the live scores (`results.go`, 🤖-prefixed, ungated like
-      `AllLeaderboardComments`). Like the rest of `ai` it takes function seams
+      climbing/falling, which side the **odds** favour (the model is told to
+      translate the American moneyline into plain favourite/underdog language, never
+      quote the raw `-180`), and **who scored** (from the feed's key events) — shown
+      at the **top** of the live section as a headline (`results.go`, 🤖-prefixed,
+      **ungated** like `AllLeaderboardComments`: the per-viewer comment hide (`h`)
+      does NOT cover it). Like the rest of `ai` it takes function seams
       (`LiveCommentDeps{Situation, Config, Now}`) and never imports `service`;
       `service.LiveSituation` builds the snapshot (live matches + closest picks +
-      movers, from `LivePicks`/`Leaderboard`), `service.LiveCommentary` reads the
+      **key events** + movers, from `LivePicks`/`Leaderboard`), `service.LiveCommentary` reads the
       cache via the `LiveCommentSource` port. **Throwaway by design:** one Claude
       call (no web search, tone-aware, honours the prompt override), sanitized via
       `sanitizeText`, cached in `ai.LiveCommentCache` (current line + expiry + a short
       history ring fed back so it doesn't repeat itself). **Cadence — on-change +
       heartbeat:** ticks every `liveTick` (30s), regenerates when the situation
-      **signature** (scores + movers, *not* the clock) changes OR the heartbeat
+      **signature** (scores + movers + the key-event tail, *not* the clock) changes OR the heartbeat
       (`BETHOVEN_AI_LIVE_COMMENT_INTERVAL_SECONDS`, default 300s) elapses, never two
       lines closer than `liveFloor` (120s). **Cleared entirely when nothing is live**,
       so a game's lines are discarded the moment it ends. Logged to the same file as

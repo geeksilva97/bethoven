@@ -35,15 +35,26 @@ type LivePickInfo struct {
 	LivePoints   int    `json:"points"` // provisional points right now
 }
 
+// LiveEventInfo is one key in-play moment (goal/card) for the live commenter. Text
+// carries the scorer/player name (the feed's structured athlete refs are empty for
+// this competition), so it's the source of truth for "who scored". Sanitized at the
+// feed boundary before it ever reaches here.
+type LiveEventInfo struct {
+	Clock string `json:"clock,omitempty"`
+	Type  string `json:"type"`
+	Text  string `json:"text"`
+}
+
 // LiveMatchInfo is one in-play match's situation for the live commenter.
 type LiveMatchInfo struct {
-	TeamA  string         `json:"team_a"`
-	TeamB  string         `json:"team_b"`
-	ScoreA int            `json:"score_a"`
-	ScoreB int            `json:"score_b"`
-	Clock  string         `json:"clock"`
-	Odds   string         `json:"odds,omitempty"` // sanitized pre-match odds; may be empty
-	Picks  []LivePickInfo `json:"picks,omitempty"`
+	TeamA  string          `json:"team_a"`
+	TeamB  string          `json:"team_b"`
+	ScoreA int             `json:"score_a"`
+	ScoreB int             `json:"score_b"`
+	Clock  string          `json:"clock"`
+	Odds   string          `json:"odds,omitempty"` // sanitized pre-match odds; may be empty
+	Events []LiveEventInfo `json:"key_events,omitempty"`
+	Picks  []LivePickInfo  `json:"picks,omitempty"`
 }
 
 // LiveMover is a player whose standing is shifting because of the in-play results:
@@ -260,7 +271,14 @@ func liveSignature(sit LiveSituation) string {
 	var b strings.Builder
 	ms := make([]string, 0, len(sit.Matches))
 	for _, m := range sit.Matches {
-		ms = append(ms, fmt.Sprintf("%s%d-%d%s", m.TeamA, m.ScoreA, m.ScoreB, m.TeamB))
+		// Score change triggers a fresh line; also fold in the key-event tail so a
+		// card (which doesn't move the score) still prompts a new take promptly.
+		ev := ""
+		if n := len(m.Events); n > 0 {
+			last := m.Events[n-1]
+			ev = fmt.Sprintf("|%d:%s:%s", n, last.Clock, last.Type)
+		}
+		ms = append(ms, fmt.Sprintf("%s%d-%d%s%s", m.TeamA, m.ScoreA, m.ScoreB, m.TeamB, ev))
 	}
 	sort.Strings(ms)
 	b.WriteString(strings.Join(ms, "|"))

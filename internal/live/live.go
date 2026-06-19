@@ -13,6 +13,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"bethoven/internal/models"
 )
 
 // State is where a match is in its lifecycle, per the feed.
@@ -40,22 +42,25 @@ func ParseState(s string) State {
 type Score struct {
 	A, B   int
 	State  State
-	Minute int    // feed "period" (half number), not a clock minute; UI shows Clock
-	Clock  string // display clock, e.g. "67'"
-	Odds   string // sanitized pre-match odds, e.g. "USA -160 · O/U 2.5"; empty if absent
+	Minute int                 // feed "period" (half number), not a clock minute; UI shows Clock
+	Clock  string              // display clock, e.g. "67'"
+	Odds   string              // sanitized pre-match odds, e.g. "USA -160 · O/U 2.5"; empty if absent
+	Events []models.MatchEvent // sanitized key events (goals/cards), oldest→newest; the text references team names directly, so no TeamA/TeamB orientation
 }
 
 // Event is one fixture as reported by a Provider, before it is resolved to a
 // stored match. Scores are keyed by home/away because feeds don't share our
 // TeamA/TeamB ordering; the Poller orients them.
 type Event struct {
+	ID                   string // provider event id, used to fetch the summary (key events)
 	Home, Away           string
 	HomeScore, AwayScore int
 	Date                 time.Time // kickoff, UTC
 	State                State
 	Minute               int
 	Clock                string
-	Odds                 string // sanitized pre-match odds; references team names directly, so no orientation
+	Odds                 string              // sanitized pre-match odds; references team names directly, so no orientation
+	KeyEvents            []models.MatchEvent // sanitized goals/cards; populated only for in-play events
 }
 
 // Provider fetches the current live state for the given UTC days. Implementations

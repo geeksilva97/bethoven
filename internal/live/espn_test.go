@@ -132,6 +132,70 @@ func TestDecodeEventsSanitizesOdds(t *testing.T) {
 	}
 }
 
+// sampleSummary mirrors the real fifa.world summary payload shape: a kickoff
+// marker (no minute), an own goal, a yellow card, and an empty delay marker.
+const sampleSummary = `{
+  "keyEvents": [
+    {"type": {"text": "Kickoff"}, "text": "First Half begins.", "clock": {"displayValue": "0'"}, "scoringPlay": false},
+    {"type": {"text": "Own Goal"}, "text": "Own Goal by Cameron Burgess, Australia. USA 1, Australia 0.", "clock": {"displayValue": "11'"}, "scoringPlay": true},
+    {"type": {"text": "Yellow Card"}, "text": "Jordan Bos (Australia) is shown the yellow card for a bad foul.", "clock": {"displayValue": "16'"}, "scoringPlay": false},
+    {"type": {"text": "Start Delay"}, "text": "", "clock": {"displayValue": "25'"}, "scoringPlay": false}
+  ]
+}`
+
+func TestDecodeKeyEvents(t *testing.T) {
+	kes, err := decodeKeyEvents(strings.NewReader(sampleSummary))
+	if err != nil {
+		t.Fatalf("decodeKeyEvents: %v", err)
+	}
+	// The empty-text delay marker is dropped; the other three survive.
+	if len(kes) != 3 {
+		t.Fatalf("got %d key events, want 3: %+v", len(kes), kes)
+	}
+	og := kes[1]
+	if og.Type != "Own Goal" || og.Clock != "11'" || !og.Scoring {
+		t.Errorf("own goal wrong: %+v", og)
+	}
+	if !strings.Contains(og.Text, "Cameron Burgess") {
+		t.Errorf("own goal text lost the scorer: %q", og.Text)
+	}
+	if kes[2].Type != "Yellow Card" || kes[2].Scoring {
+		t.Errorf("yellow card wrong: %+v", kes[2])
+	}
+}
+
+func TestDecodeKeyEventsSanitizes(t *testing.T) {
+	// Key-event text is UNTRUSTED feed prose rendered into terminals and BETanIA's
+	// prompt, so an ANSI/control payload must be neutralized (strip, keep prose).
+	const evil = `{"keyEvents":[{"type":{"text":"Goal"},` +
+		`"text":"\u001b[31mGoal! \u001b[2JLionel Messi scores.","clock":{"displayValue":"\u001b[1m45'"},"scoringPlay":true}]}`
+	kes, err := decodeKeyEvents(strings.NewReader(evil))
+	if err != nil {
+		t.Fatalf("decodeKeyEvents: %v", err)
+	}
+	if len(kes) != 1 {
+		t.Fatalf("got %d, want 1", len(kes))
+	}
+	got := kes[0]
+	if strings.ContainsRune(got.Text, '\x1b') || strings.ContainsAny(got.Text, "[") {
+		t.Errorf("event text not sanitized: %q", got.Text)
+	}
+	if !strings.Contains(got.Text, "Lionel Messi scores") {
+		t.Errorf("sanitized text lost legit content: %q", got.Text)
+	}
+	if strings.ContainsRune(got.Clock, '\x1b') || !strings.Contains(got.Clock, "45'") {
+		t.Errorf("clock not sanitized/kept: %q", got.Clock)
+	}
+}
+
+func TestCleanEventTextTruncates(t *testing.T) {
+	long := strings.Repeat("a", maxEventTextLen+50)
+	got := cleanEventText(long, maxEventTextLen)
+	if len([]rune(got)) != maxEventTextLen {
+		t.Errorf("len = %d, want %d", len([]rune(got)), maxEventTextLen)
+	}
+}
+
 func TestDecodeEventsRejectsBadScores(t *testing.T) {
 	for _, score := range []string{"-3", "150"} {
 		body := `{"events":[{"date":"2026-06-12T19:00Z","competitions":[{` +

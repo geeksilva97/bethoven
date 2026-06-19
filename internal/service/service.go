@@ -135,6 +135,7 @@ func overlayLive(m *models.Match, snap map[int64]live.Score) {
 	m.LiveScoreA, m.LiveScoreB = ls.A, ls.B
 	m.LiveMinute, m.LiveClock = ls.Minute, ls.Clock
 	m.LiveOdds = ls.Odds
+	m.LiveEvents = ls.Events
 }
 
 // IsAdmin reports whether a key fingerprint is in the admin allowlist. The TUI

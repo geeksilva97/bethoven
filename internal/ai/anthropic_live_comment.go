@@ -54,6 +54,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 	b.WriteString("2. One sentence, at most ~140 characters. No emojis and no line breaks.\n")
 	b.WriteString("3. The score will change as the game moves — react to the CURRENT state.\n")
 	b.WriteString("4. The \"odds\" field is American moneyline (negative = favourite, e.g. -180; positive = underdog). TRANSLATE it into plain favourite/underdog language (\"heavy favourites\", \"slight edge\", \"long shot\") — NEVER quote the raw number.\n")
+	b.WriteString("5. Each match may include \"key_events\" (goals, cards) with the minute and a text description. You MAY name the scorer or call out a card using ONLY that text — never invent a scorer, minute, or event not listed there.\n")
 
 	if len(recent) > 0 {
 		b.WriteString("\nYOUR RECENT LINES (most recent last) — say something NEW, do not repeat these:\n")
