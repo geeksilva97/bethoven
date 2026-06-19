@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"bethoven/internal/ai"
 	"bethoven/internal/analytics"
 	"bethoven/internal/models"
 	"bethoven/internal/scoring"
@@ -32,6 +33,7 @@ const (
 	screenSettings
 	screenScoringRules // read-only: explains the active scoring mode
 	screenAnalytics    // admin-only: usage stats panel
+	screenBETanIA      // admin-only: AI player status + activity
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -135,6 +137,12 @@ type Model struct {
 	anTimeline []analytics.Bucket
 	anPlayers  []analytics.PlayerStat
 	anRecent   []analytics.Event
+
+	// admin: BETanIA panel. aiDisabled is set when no worker is attached, so the
+	// screen explains that instead of showing empty stats.
+	aiDisabled bool
+	aiStatus   ai.Status
+	aiActivity []ai.Action
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -203,6 +211,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateScoringRules(msg)
 	case screenAnalytics:
 		return m.updateList(msg) // read-only: any key returns to the menu
+	case screenBETanIA:
+		return m.updateBETanIA(msg)
 	}
 	return m, nil
 }
@@ -236,6 +246,8 @@ func (m Model) View() string {
 		return m.viewScoringRules()
 	case screenAnalytics:
 		return m.viewAnalytics()
+	case screenBETanIA:
+		return m.viewBETanIA()
 	}
 	return ""
 }

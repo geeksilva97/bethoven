@@ -2,11 +2,13 @@
 /bethoven
 /bethoven-linux-amd64
 /bethoven-linux-arm64
+/bin/
 
 # runtime state (never commit these)
 *.db
 *.db-wal
 *.db-shm
+*.db.bak
 host_key
 data/
 
@@ -20,3 +22,6 @@ id_rsa.pub
 # personal deploy script (contains invite code + admin fingerprint)
 deploy/local-deploy.sh
 bethoven-linux-amd64
+
+# BETanIA pick log (durable history; not source)
+ai_bets.log

@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/muesli/termenv"
 
+	"bethoven/internal/ai"
 	"bethoven/internal/analytics"
 	"bethoven/internal/clock"
 	"bethoven/internal/config"
@@ -33,6 +34,13 @@ func main() {
 	// lock). Handled before any server setup. See placebet.go.
 	if len(os.Args) > 1 && os.Args[1] == "place-bet" {
 		runPlaceBet(os.Args[2:])
+		return
+	}
+
+	// Admin subcommand: onboard BETanIA — create the AI player and seed past games
+	// (web search off). One-time; see ai_seed.go.
+	if len(os.Args) > 1 && os.Args[1] == "ai-seed" {
+		runAISeed(os.Args[2:])
 		return
 	}
 
@@ -107,6 +115,36 @@ func main() {
 		)
 		go poller.Run(ctx)
 		log.Printf("live feed enabled (league=%s, every %s)", cfg.LiveLeague, interval)
+	}
+
+	// Optional AI player (BETanIA): a background worker that researches and bets
+	// UPCOMING matches through the service (kickoff lock fully applies). Onboarding
+	// (user creation + the historical seed) is the separate `bethoven ai-seed`
+	// subcommand — here we only RESOLVE the already-created player. Disabled => no
+	// worker, no SDK calls, behaviour identical to before.
+	if cfg.AIEnabled {
+		switch {
+		case os.Getenv("ANTHROPIC_API_KEY") == "":
+			log.Println("WARNING: BETHOVEN_AI_ENABLED but ANTHROPIC_API_KEY unset — BETanIA disabled")
+		default:
+			u, err := svc.Lookup(ai.Fingerprint)
+			if err != nil {
+				log.Println("WARNING: BETanIA not onboarded — run `bethoven ai-seed` first; live betting disabled")
+				break
+			}
+			interval := time.Duration(cfg.AIIntervalSecs) * time.Second
+			mon := ai.NewMonitor(cfg.AIModel, interval)
+			svc.SetAIMonitor(mon)
+			bettor := ai.NewBettor(ai.Deps{
+				Fixtures: svc.Fixtures,
+				MyBets:   svc.MyBets,
+				PlaceBet: svc.PlaceBet,
+				Now:      svc.Now,
+			}, ai.NewAnthropicPredictor(cfg.AIModel, true), mon, u.ID, interval, cfg.AILogPath, cfg.AIMaxPerRun)
+			svc.SetAITrigger(bettor.Trigger)
+			go bettor.Run(ctx)
+			log.Printf("BETanIA live betting enabled (model=%s, every %ds)", cfg.AIModel, cfg.AIIntervalSecs)
+		}
 	}
 
 	addr := net.JoinHostPort("", cfg.Port)

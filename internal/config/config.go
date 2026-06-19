@@ -41,6 +41,16 @@ type Config struct {
 	// tracker; when off, no analytics DB is opened and behaviour is unchanged.
 	AnalyticsEnabled bool
 	AnalyticsDBPath  string // SQLite file for analytics events (separate from DBPath)
+
+	// BETanIA — the AI player (optional, off by default). AIEnabled gates the live
+	// betting worker; onboarding (user creation + the historical seed) is the
+	// separate `bethoven ai-seed` subcommand. ANTHROPIC_API_KEY is read by the SDK.
+	AIEnabled      bool
+	AIName         string // display name (used by the seed script when creating the player)
+	AIModel        string // Claude model id
+	AIIntervalSecs int    // seconds between live betting passes
+	AILogPath      string // JSON-lines log of every pick (seed + live)
+	AIMaxPerRun    int    // cap on bets placed per live pass (0 = no cap)
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -68,6 +78,14 @@ func Load() Config {
 		// Opt-in: defaults off (note the inverted test vs LiveEnabled).
 		AnalyticsEnabled: env("BETHOVEN_ANALYTICS_ENABLED", "false") == "true",
 		AnalyticsDBPath:  env("BETHOVEN_ANALYTICS_DB_PATH", "analytics.db"),
+
+		// BETanIA — opt-in, defaults off (mirrors analytics).
+		AIEnabled:      env("BETHOVEN_AI_ENABLED", "false") == "true",
+		AIName:         env("BETHOVEN_AI_NAME", "BETanIA 🤖"),
+		AIModel:        env("BETHOVEN_AI_MODEL", "claude-sonnet-4-6"),
+		AIIntervalSecs: envInt("BETHOVEN_AI_INTERVAL_SECONDS", 21600),
+		AILogPath:      env("BETHOVEN_AI_LOG_PATH", "ai_bets.log"),
+		AIMaxPerRun:    envInt("BETHOVEN_AI_MAX_PER_RUN", 0),
 	}
 }
 

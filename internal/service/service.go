@@ -71,6 +71,12 @@ type Service struct {
 	// analytics is the optional usage tracker; nil when analytics is disabled,
 	// in which case every emit site is a cheap no-op (see track / trackByID).
 	analytics AnalyticsSink
+	// ai is the optional BETanIA live-worker monitor; nil when BETanIA isn't
+	// running, in which case the admin AI reads return ErrAIOff.
+	ai AIMonitor
+	// aiTrigger is the optional "run now" hook into the live worker; nil when
+	// BETanIA isn't running, in which case TriggerAI returns ErrAIOff.
+	aiTrigger func() bool
 	// forms holds each team's pre-tournament recent-form baseline (oldest→newest),
 	// seeded from fixtures.json. Optional; nil when no baseline is configured.
 	forms map[string][]models.FormOutcome
