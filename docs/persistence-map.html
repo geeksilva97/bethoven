@@ -1,0 +1,484 @@
+<title>BEThoven — Persistence Map</title>
+<style>
+  :root {
+    --ground: #0F171D;
+    --ground-2: #14202A;
+    --panel: #16232E;
+    --text: #D6DDE3;
+    --dim: #8A9AA6;
+    --faint: #5E707C;
+    --persist: #E3A53C;   /* durable — in the vault */
+    --volatile: #46B4C6;  /* ephemeral — gone on restart */
+    --log: #C8B68C;       /* append-only paper */
+    --derived: #7FA39B;   /* computed ghost */
+    --new: #F4C66A;       /* the two new tables */
+    --hair: #243441;
+    --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(1100px 540px at 82% -8%, rgba(227,165,60,0.07), transparent 60%),
+      radial-gradient(900px 480px at 8% 6%, rgba(70,180,198,0.05), transparent 62%);
+    background-attachment: fixed;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 26px; }
+
+  /* ---- shared section scaffolding ---- */
+  .band { padding: 60px 0; border-top: 1px solid var(--hair); }
+  .band:first-of-type { border-top: none; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--persist);
+    margin: 0 0 18px;
+  }
+  .eyebrow .num { color: var(--faint); margin-right: 0.9em; }
+
+  h2.head {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: clamp(1.5rem, 3.4vw, 2.1rem);
+    letter-spacing: -0.01em;
+    margin: 0 0 10px;
+    line-height: 1.08;
+  }
+  .lede { color: var(--dim); max-width: 64ch; margin: 0 0 32px; font-size: 1.02rem; }
+
+  /* ---- hero ---- */
+  .hero { padding: 86px 0 64px; }
+  .prompt {
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    color: var(--dim);
+    margin: 0 0 30px;
+    letter-spacing: 0.02em;
+  }
+  .prompt .host { color: var(--volatile); }
+  .prompt .cur {
+    display: inline-block; width: 0.62em; height: 1.05em;
+    background: var(--persist); margin-left: 4px;
+    transform: translateY(0.18em);
+    animation: blink 1.1s steps(2, start) infinite;
+  }
+  @keyframes blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
+  h1 {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: clamp(2.4rem, 7.2vw, 4.9rem);
+    line-height: 0.98;
+    letter-spacing: -0.025em;
+    margin: 0;
+  }
+  h1 .l2 { color: var(--persist); }
+  .hero-sub {
+    margin: 30px 0 0; max-width: 60ch;
+    font-size: 1.12rem; color: var(--text);
+  }
+  .hero-sub b { color: var(--persist); font-weight: 600; }
+
+  /* ---- legend ---- */
+  .legend { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 8px; }
+  .key {
+    display: grid; grid-template-columns: auto 1fr; gap: 14px;
+    align-items: start; padding: 16px 18px;
+    background: var(--ground-2); border: 1px solid var(--hair); border-radius: 9px;
+  }
+  .chip { width: 16px; height: 16px; border-radius: 4px; margin-top: 4px; }
+  .chip.persist { background: var(--persist); box-shadow: 0 0 0 1px rgba(227,165,60,0.4); }
+  .chip.log { background: repeating-linear-gradient(45deg, var(--log) 0 3px, transparent 3px 6px); border: 1px solid var(--log); }
+  .chip.volatile { background: transparent; border: 1.5px dashed var(--volatile); }
+  .chip.derived { background: transparent; border: 1.5px solid var(--derived); opacity: 0.8; }
+  .key .name { font-family: var(--mono); font-size: 0.84rem; font-weight: 600; letter-spacing: 0.02em; }
+  .key .desc { color: var(--dim); font-size: 0.88rem; line-height: 1.45; margin-top: 2px; }
+
+  /* ---- schema groups ---- */
+  .group { margin-bottom: 30px; }
+  .group-label {
+    font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--dim); margin: 0 0 4px;
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  }
+  .group-label .meta { color: var(--faint); letter-spacing: 0.02em; text-transform: none; font-size: 0.78rem; }
+  .group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; margin-top: 14px; }
+
+  .tbl {
+    border: 1px solid var(--hair); border-radius: 10px; padding: 14px 15px;
+    background: var(--panel); position: relative; overflow: hidden;
+  }
+  .tbl.persist { border-left: 3px solid var(--persist); }
+  .tbl.volatile { border-style: dashed; border-color: rgba(70,180,198,0.55); background: rgba(70,180,198,0.04); }
+  .tbl.log {
+    border-style: dashed; border-color: rgba(200,182,140,0.5);
+    background: rgba(200,182,140,0.035);
+  }
+  .tbl.derived { border-color: rgba(127,163,155,0.4); background: transparent; opacity: 0.92; }
+  .tbl.new {
+    border: 1px solid var(--new); border-left: 3px solid var(--new);
+    box-shadow: 0 0 0 1px rgba(244,198,106,0.18), 0 0 26px -6px rgba(244,198,106,0.35);
+    animation: glow 3.6s ease-in-out infinite;
+  }
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(244,198,106,0.16), 0 0 22px -8px rgba(244,198,106,0.28); }
+    50% { box-shadow: 0 0 0 1px rgba(244,198,106,0.3), 0 0 30px -4px rgba(244,198,106,0.5); }
+  }
+  .tbl .tname { font-family: var(--mono); font-weight: 700; font-size: 0.94rem; letter-spacing: 0.01em; }
+  .tbl.persist .tname, .tbl.new .tname { color: var(--persist); }
+  .tbl.new .tname { color: var(--new); }
+  .tbl.volatile .tname { color: var(--volatile); }
+  .tbl.log .tname { color: var(--log); }
+  .tbl.derived .tname { color: var(--derived); }
+  .tbl .cols { font-family: var(--mono); font-size: 0.74rem; color: var(--dim); margin-top: 7px; line-height: 1.7; }
+  .tag-new {
+    position: absolute; top: 11px; right: 12px;
+    font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em;
+    color: var(--ground); background: var(--new); padding: 2px 7px; border-radius: 4px; font-weight: 700;
+  }
+  .tbl .note { font-size: 0.78rem; color: var(--faint); margin-top: 8px; line-height: 1.4; }
+
+  /* ---- inventory ---- */
+  .inv-group { margin-bottom: 22px; }
+  .inv-sub {
+    font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--faint); margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--hair);
+  }
+  .row {
+    display: grid; grid-template-columns: 13px 1fr; gap: 12px;
+    padding: 7px 0; align-items: start; border-bottom: 1px solid rgba(36,52,65,0.5);
+  }
+  .row:last-child { border-bottom: none; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; margin-top: 6px; }
+  .dot.persist { background: var(--persist); }
+  .dot.volatile { background: transparent; border: 1.5px dashed var(--volatile); }
+  .dot.log { background: var(--log); }
+  .dot.derived { background: transparent; border: 1.5px solid var(--derived); }
+  .row .ent { font-family: var(--mono); font-size: 0.82rem; color: var(--text); }
+  .row .why { color: var(--dim); font-size: 0.86rem; }
+  .row .ent .verdict { color: var(--faint); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; margin-left: 8px; }
+
+  /* ---- decision records ---- */
+  .adr { background: var(--ground-2); border: 1px solid var(--hair); border-radius: 13px; padding: 28px 28px 26px; margin-top: 18px; }
+  .adr-top { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  .adr-no { font-family: var(--mono); font-size: 0.78rem; color: var(--persist); letter-spacing: 0.2em; }
+  .adr h3 { font-family: var(--mono); font-size: 1.32rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+  .verdict-line {
+    font-size: 1.1rem; margin: 14px 0 22px; padding-left: 16px;
+    border-left: 3px solid var(--persist); color: var(--text);
+  }
+  .verdict-line b { color: var(--persist); }
+  .adr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 30px; }
+  .adr-col h4 {
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 8px;
+  }
+  .adr-col.reject h4 { color: #C77B6A; }
+  .adr-col p { margin: 0 0 10px; font-size: 0.92rem; color: var(--text); }
+  .adr-col p.muted { color: var(--dim); }
+  .adr-col code, .icode { font-family: var(--mono); font-size: 0.85em; color: var(--persist); background: rgba(227,165,60,0.08); padding: 1px 5px; border-radius: 4px; }
+  .adr-col.reject code { color: #D78c7b; background: rgba(199,123,106,0.1); }
+
+  .ddl {
+    font-family: var(--mono); font-size: 0.78rem; line-height: 1.65;
+    background: var(--ground); border: 1px solid var(--hair); border-left: 3px solid var(--new);
+    border-radius: 8px; padding: 14px 16px; margin: 4px 0 20px; overflow-x: auto; white-space: pre;
+    color: var(--dim);
+  }
+  .ddl .kw { color: var(--volatile); }
+  .ddl .cn { color: var(--text); }
+  .ddl .cm { color: var(--faint); }
+  .ddl .nw { color: var(--new); }
+
+  .adversary {
+    margin-top: 22px; padding: 16px 18px; border: 1px solid var(--hair);
+    border-radius: 9px; background: rgba(199,123,106,0.05);
+  }
+  .adversary .lbl { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; color: #C77B6A; margin: 0 0 6px; }
+  .adversary p { margin: 0; font-size: 0.9rem; color: var(--dim); }
+  .adversary p + p { margin-top: 8px; }
+  .adversary .rebut b { color: var(--persist); }
+
+  /* ---- disagreement + questions ---- */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 6px; }
+  .view { border: 1px solid var(--hair); border-radius: 10px; padding: 18px 20px; background: var(--panel); }
+  .view h4 { font-family: var(--mono); font-size: 0.82rem; margin: 0 0 4px; letter-spacing: 0.02em; }
+  .view.expansive h4 { color: var(--volatile); }
+  .view.trimmed h4 { color: var(--persist); }
+  .view .tagline { font-size: 0.78rem; color: var(--faint); margin: 0 0 12px; }
+  .view ul { margin: 0; padding-left: 18px; }
+  .view li { font-size: 0.88rem; color: var(--dim); margin-bottom: 6px; }
+  .view li .icode { font-size: 0.82em; }
+  .resolve { margin-top: 16px; font-size: 0.95rem; color: var(--text); padding-left: 16px; border-left: 3px solid var(--derived); }
+
+  .q { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--hair); }
+  .q:last-child { border-bottom: none; }
+  .q .qm { font-family: var(--mono); color: var(--persist); font-size: 0.84rem; }
+  .q .qt { font-size: 0.92rem; }
+  .q .qt .ans { color: var(--dim); }
+
+  .optional { margin-top: 22px; padding: 16px 18px; border: 1px dashed var(--hair); border-radius: 9px; }
+  .optional .lbl { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--volatile); margin: 0 0 8px; }
+  .optional p { margin: 0 0 8px; font-size: 0.89rem; color: var(--dim); }
+  .optional p:last-child { margin-bottom: 0; }
+
+  footer { border-top: 1px solid var(--hair); padding: 34px 0 70px; color: var(--faint); font-size: 0.82rem; }
+  footer .pipe {
+    font-family: var(--mono); color: var(--dim); margin-bottom: 8px; font-size: 0.8rem;
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  }
+  footer .pipe span { color: var(--faint); }
+  footer .pipe b { color: var(--persist); font-weight: 600; }
+
+  @media (max-width: 720px) {
+    .legend, .adr-grid, .split { grid-template-columns: 1fr; }
+    .band { padding: 46px 0; }
+    .adr { padding: 22px 18px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cur, .tbl.new { animation: none; }
+    .tbl.new { box-shadow: 0 0 0 1px rgba(244,198,106,0.3); }
+  }
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="prompt"><span class="host">bethoven</span>:~$ analyze --entities all --target persistence<span class="cur"></span></p>
+    <h1>Persist the inputs.<br><span class="l2">Recompute the rest.</span></h1>
+    <p class="hero-sub">A map of every BEThoven entity — in memory, on disk, or never stored at all — and where each should live once persistence lands. The answer is <b>two new tables</b>. Everything else stays exactly as durable, or as disposable, as it already is.</p>
+  </div>
+</header>
+
+<section class="band">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">00</span>How to read the map</p>
+    <h2 class="head">Four ways a thing can exist</h2>
+    <p class="lede">Color is the argument. A thing's durability decides its treatment — solid and warm if it survives a restart and a backup, cool and dashed if it evaporates, a ghost outline if it was never really there to begin with.</p>
+    <div class="legend">
+      <div class="key">
+        <span class="chip persist"></span>
+        <div><div class="name">Persisted — domain DB</div><div class="desc">In the vault. Single-writer SQLite, covered by the <span class="icode">.backup</span> rule. Non-reproducible, or the auth credential itself.</div></div>
+      </div>
+      <div class="key">
+        <span class="chip log"></span>
+        <div><div class="name">Append-only log</div><div class="desc">On disk, greppable, unbounded by design. A forensic trail an operator tails — never read by the app, never state.</div></div>
+      </div>
+      <div class="key">
+        <span class="chip volatile"></span>
+        <div><div class="name">Volatile — in memory</div><div class="desc">Gone on restart, on purpose. Re-fetched from the feed or regenerated by a worker within one interval.</div></div>
+      </div>
+      <div class="key">
+        <span class="chip derived"></span>
+        <div><div class="name">Derived — recomputed</div><div class="desc">Never stored. A pure fold of the durable inputs, recomputed on every read so a corrected result re-flows for free.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">01</span>The schema, drawn</p>
+    <h2 class="head">Where everything lands</h2>
+    <p class="lede">The domain DB grows by two tables and nothing else. The separate analytics DB gains a couple of indexes. The volatile and derived tiers stay exactly where they are — that restraint is the design.</p>
+
+    <div class="group">
+      <p class="group-label">Domain DB <span class="meta">— bethoven.db · single writer · WAL · backed up</span></p>
+      <div class="group-grid">
+        <div class="tbl persist"><div class="tname">tournaments</div><div class="cols">id · name · active · created_at</div></div>
+        <div class="tbl persist"><div class="tname">users</div><div class="cols">id · fingerprint · display_name · role · created_at</div><div class="note">Fingerprint = identity. Immutable.</div></div>
+        <div class="tbl persist"><div class="tname">matches</div><div class="cols">id · teams · phase · starts_at · score_a/b · finished</div><div class="note">Live* fields overlaid at read — never columns.</div></div>
+        <div class="tbl persist"><div class="tname">bets</div><div class="cols">id · user_id · match_id · pred_a/b · timestamps</div><div class="note">The one non-reproducible scoreline. BETanIA's picks live here too.</div></div>
+        <div class="tbl persist"><div class="tname">settings</div><div class="cols">key → value <span style="color:var(--faint)">(KV)</span></div><div class="note">public_bets · scoring_mode · comment_tone · per-user tone/hide · comment_context.</div></div>
+        <div class="tbl new"><span class="tag-new">NEW</span><div class="tname">result_events</div><div class="cols">id · match_id · score_a/b · source · actor_fp · created_at</div><div class="note">Append-only audit of every result write. Input history — who, when, admin vs feed.</div></div>
+        <div class="tbl new"><span class="tag-new">NEW</span><div class="tname">ai_prediction</div><div class="cols">bet_id <span style="color:var(--faint)">(PK)</span> · source · rationale · confidence · created_at</div><div class="note">BETanIA's reasoning, 1:1 with the bet. The one datum that isn't derivable.</div></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <p class="group-label">Separate DB <span class="meta">— analytics.db · own connection · losable · opt-in</span></p>
+      <div class="group-grid">
+        <div class="tbl persist"><div class="tname">events</div><div class="cols">at · user_id · actor · name · props <span style="color:var(--faint)">(JSON)</span></div><div class="note">+ idx_events_name_at, idx_events_user_name_at for the admin rollups.</div></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <p class="group-label">In memory <span class="meta">— evaporates on restart, re-fills within one interval</span></p>
+      <div class="group-grid">
+        <div class="tbl volatile"><div class="tname">live.Cache</div><div class="cols">score by match_id · in-play only</div></div>
+        <div class="tbl volatile"><div class="tname">ai.Monitor</div><div class="cols">status counters + 50-action ring</div></div>
+        <div class="tbl volatile"><div class="tname">ai.CommentCache</div><div class="cols">comment by user_id · TTL + grace</div></div>
+        <div class="tbl volatile"><div class="tname">ai.CommentMonitor</div><div class="cols">comment-worker ring + counters</div></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <p class="group-label">Append-only logs <span class="meta">— on disk under ReadWritePaths · operator forensics</span></p>
+      <div class="group-grid">
+        <div class="tbl log"><div class="tname">ai_bets.log</div><div class="cols">JSON line per pick · seed + live</div></div>
+        <div class="tbl log"><div class="tname">ai_comments.log</div><div class="cols">JSON line per comment · full history</div></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <p class="group-label">Derived <span class="meta">— computed every read · a pure fold of the durable inputs</span></p>
+      <div class="group-grid">
+        <div class="tbl derived"><div class="tname">Leaderboard / Standing</div><div class="cols">totals · exact/result tiebreak · live fold</div></div>
+        <div class="tbl derived"><div class="tname">StandingsHistory</div><div class="cols">per-round positions · movement</div></div>
+        <div class="tbl derived"><div class="tname">Scarcity Pool</div><div class="cols">per-match pick distribution</div></div>
+        <div class="tbl derived"><div class="tname">Breakdown · MatchResult</div><div class="cols">per-bet score explanation</div></div>
+        <div class="tbl derived"><div class="tname">CommentConfig · Narrative</div><div class="cols">tone projection · fact-only intermediate</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">02</span>The two that matter</p>
+    <h2 class="head">Decision records</h2>
+    <p class="lede">Scoring and BETanIA were the contested ground. Both resolved the same way: the durable thing earns a row; the derivable thing does not, no matter how convenient a cache would feel.</p>
+
+    <div class="adr">
+      <div class="adr-top"><span class="adr-no">DEC · 01</span><h3>Scoring &amp; standings</h3></div>
+      <p class="verdict-line">Persist <b>nothing derived</b>. Keep recompute-on-read for the whole board. Add <b>one</b> append-only audit log of result writes — and nothing more.</p>
+
+      <div class="ddl"><span class="cm">-- the only new scoring table: input history, never output</span>
+<span class="kw">CREATE TABLE IF NOT EXISTS</span> <span class="nw">result_events</span> (
+  <span class="cn">id</span>            <span class="kw">INTEGER PRIMARY KEY AUTOINCREMENT</span>,
+  <span class="cn">match_id</span>      <span class="kw">INTEGER NOT NULL REFERENCES</span> matches(id),
+  <span class="cn">score_a</span>       <span class="kw">INTEGER NOT NULL</span>,
+  <span class="cn">score_b</span>       <span class="kw">INTEGER NOT NULL</span>,
+  <span class="cn">source</span>        <span class="kw">TEXT NOT NULL</span>,   <span class="cm">-- 'admin' | 'feed'</span>
+  <span class="cn">actor_fp</span>      <span class="kw">TEXT</span>,            <span class="cm">-- admin fingerprint; NULL for feed</span>
+  <span class="cn">created_at</span>    <span class="kw">TEXT NOT NULL</span>    <span class="cm">-- RFC3339 UTC, from clock.Now()</span>
+);</div>
+
+      <div class="adr-grid">
+        <div class="adr-col">
+          <h4>Why this, and only this</h4>
+          <p>Every score on the board is a pure function of <code>(bets, results, mode)</code>. That's what makes "edit a result, or flip the mode, and everything re-derives" free — the property worth protecting above all.</p>
+          <p>The one real hole: a result write <em>destructively overwrites</em> <code>matches.score_a/b</code> with zero trace of the prior value, the actor, or whether it came from an admin or the feed. <code>result_events</code> records the <b>input</b>, never the output — so it can never drift from <code>scoring.Score</code>, and it costs one INSERT on a path that fires a few hundred times across an entire World Cup.</p>
+        </div>
+        <div class="adr-col reject">
+          <h4>Rejected</h4>
+          <p class="muted"><b>Points ledger</b> and <b>per-round standings snapshots</b>. Both store <em>output</em>, so both rot the instant <code>scoring_mode</code> flips (Classic → Proximity rescales every historical point) or a late Scarcity bet lands (pool-relative — one bet shifts everyone on that match).</p>
+          <p class="muted">They'd trade today's <b>zero</b> invalidation points for five: PlaceBet, EnterResult, FinalizeFromFeed, seed-Upsert, and SetScoringMode. A missed one is a silent wrong-scoreboard bug.</p>
+          <p class="muted"><b>In-memory memo</b> of the settled base: deferred, not built — correct as an eventual perf lever, theoretical at friend-pool scale.</p>
+        </div>
+      </div>
+
+      <div class="adversary">
+        <p class="lbl">⚔ Strongest objection · and the rebuttal</p>
+        <p>"You're adding schema and a txn refactor to fix a hole that never bit a hobby pool — analytics already logs result entries. You broke your own 'persist nothing' instinct for a forensic nicety."</p>
+        <p class="rebut"><b>Rebuttal:</b> the result write is the single least-reversible mutation in the system — it re-derives every standing for the rest of the tournament, and today it's overwritten with no in-domain record at all. The supposed coverage doesn't hold: analytics is off by default, in a separate lossy DB explicitly excluded from the backup rule. The ledger stores an <b>input</b>, not derived state — the one category that genuinely earns a row — so it adds zero invalidation surface. The "persist nothing" instinct was right for <em>derived</em> state, and it's kept absolutely.</p>
+      </div>
+    </div>
+
+    <div class="adr">
+      <div class="adr-top"><span class="adr-no">DEC · 02</span><h3>BETanIA — the AI player</h3></div>
+      <p class="verdict-line">Persist exactly <b>one</b> new thing: the model's rationale, keyed 1:1 to the bet. Comments, narratives, and worker counters stay volatile. Logs stay the audit trail.</p>
+
+      <div class="ddl"><span class="cm">-- sibling to the bet, not a column on it</span>
+<span class="kw">CREATE TABLE IF NOT EXISTS</span> <span class="nw">ai_prediction</span> (
+  <span class="cn">bet_id</span>     <span class="kw">INTEGER PRIMARY KEY REFERENCES</span> bets(id) <span class="kw">ON DELETE CASCADE</span>,
+  <span class="cn">source</span>     <span class="kw">TEXT NOT NULL DEFAULT</span> '',   <span class="cm">-- 'seed' | 'live'</span>
+  <span class="cn">rationale</span>  <span class="kw">TEXT NOT NULL DEFAULT</span> '',   <span class="cm">-- ai.sanitizeText'd before write</span>
+  <span class="cn">confidence</span> <span class="kw">TEXT NOT NULL DEFAULT</span> '',
+  <span class="cn">created_at</span> <span class="kw">TEXT NOT NULL</span>
+);</div>
+
+      <div class="adr-grid">
+        <div class="adr-col">
+          <h4>Why this, and only this</h4>
+          <p>The pick already persists — it's a <code>bet</code>, re-priced by <code>AIBets</code> across restarts. Comments are a pure fold of finished matches via <code>StandingsHistory</code>; caching them would let a stale roast outlive a corrected result.</p>
+          <p>The one thing neither stored nor derivable is the model's free-text reasoning — external Claude output you'd otherwise re-pay for or lose. Today it lives only in the volatile 50-entry ring (the documented <em>"Recent picks: nothing yet"</em> gap) and a grep-only log. A sibling row keyed to the bet closes that permanently, and <code>AIBets</code> already loads exactly the rows to join against.</p>
+          <p class="muted">Sibling, not <code>ALTER bets</code>: keeps untrusted model text out of the hot, heavily-tested scoring source row. Read only on the admin's gated session. The <code>ai</code> package never learns the table exists — the service writes it after the bet, preserving <span class="icode">ai-never-imports-service</span>.</p>
+        </div>
+        <div class="adr-col reject">
+          <h4>Rejected</h4>
+          <p class="muted"><b>ALTER bets</b> with AI columns — pollutes the most-tested table with fields empty for every human bet, and puts model text inside the scoring fold's source row.</p>
+          <p class="muted"><b>ai_runs</b> — worker counters are per-process by design; a 6h write-per-pass onto the single writer buys forensics that belong in <code>analytics.db</code> if anywhere.</p>
+          <p class="muted"><b>ai_comments / ai_narratives</b> tables — caching a pure derivation. The TTL + grace cache is the correct decay story; the log is the history.</p>
+        </div>
+      </div>
+
+      <div class="adversary">
+        <p class="lbl">⚔ Strongest objection · and the rebuttal</p>
+        <p>"Cosmetic. The rationale already lives in <span class="icode">ai_bets.log</span> — tail it. Net-new schema and a write path on a one-VM hobby pool for a column that's blank for one interval."</p>
+        <p class="rebut"><b>Rebuttal:</b> rationale is the one datum genuinely <em>not</em> derivable — external API output, not a fold of stored data — so the test that correctly kills <code>ai_comments</code> points the other way here. The log is an append-only tail, not a query surface; the admin panel was explicitly built around DB-sourced picks "so they survive a restart." The rationale is the lone column of that panel still living only in the volatile ring. This finishes a fix the codebase already committed to.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">03</span>The honest part</p>
+    <h2 class="head">Where the agents disagreed</h2>
+    <p class="lede">The inventory pass wanted to persist far more. The synthesis pass — adversarially checked — trimmed nearly all of it. The split is itself the useful artifact.</p>
+
+    <div class="split">
+      <div class="view expansive">
+        <h4>The expansive view</h4>
+        <p class="tagline">optimizes for: admin observability surviving a restart</p>
+        <ul>
+          <li>A whole separate <span class="icode">ai.db</span> — <span class="icode">ai_picks</span>, <span class="icode">ai_actions</span>, <span class="icode">ai_comments</span></li>
+          <li>Persist the <span class="icode">CommentCache</span> behind a write seam, hydrate on boot</li>
+          <li>A <span class="icode">standings_snapshots</span> table — an "as-shown" archive per round</li>
+          <li>Persist <span class="icode">live.Cache</span> as a write-behind shadow</li>
+        </ul>
+      </div>
+      <div class="view trimmed">
+        <h4>The trimmed view <span style="color:var(--faint);font-weight:400">(adopted)</span></h4>
+        <p class="tagline">refuses to: cache any pure derivation</p>
+        <ul>
+          <li>Two tables, both in the domain DB: <span class="icode">result_events</span>, <span class="icode">ai_prediction</span></li>
+          <li>Comments stay volatile — the cache + log already answer "what does she say now" and "what has she ever said"</li>
+          <li>No snapshots — <span class="icode">StandingsHistory</span> re-derives, and a snapshot lies the moment a result is edited</li>
+          <li>No <span class="icode">live.Cache</span> shadow — the feed re-populates in &lt; 60s, and a stale row fabricates phantom points</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="resolve">Resolution leans trimmed: every rejected table caches a fold of data the system already holds, and each one buys an invalidation burden the system currently has <b>zero</b> of. The expansive view's one fair point — admin telemetry blanks for ~6h after a restart — is a cosmetic gap on an admin-only panel, not a correctness hole.</p>
+
+    <div class="optional">
+      <p class="lbl">+ Cheap additive wins both passes liked</p>
+      <p><b>Analytics indexes</b> — <span class="icode">idx_events_name_at</span> and <span class="icode">idx_events_user_name_at</span> so the admin rollups stay index-only as the event log grows. Pure <span class="icode">CREATE INDEX IF NOT EXISTS</span>, applied on boot.</p>
+      <p><b>team_forms</b> (optional) — persist only the <em>pre-tournament</em> form baseline, so admin corrections survive restart and form decouples from the placeholder <span class="icode">fixtures.json</span>. The computed strip stays derived.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <p class="eyebrow"><span class="num">04</span>Before any of it ships</p>
+    <h2 class="head">Open questions</h2>
+    <div>
+      <div class="q"><span class="qm">?</span><div class="qt">Backfill <span class="icode">result_events</span> from existing match scores on first deploy, or start history at the migration? <span class="ans">→ Recommend: start at migration; the projection stays authoritative.</span></div></div>
+      <div class="q"><span class="qm">?</span><div class="qt">Wrap <span class="icode">SetResult</span> / <span class="icode">SetResultIfUnfinished</span> in a txn at the store, or compose append + update at the service layer? <span class="ans">→ Decides whether the store grows a txn API.</span></div></div>
+      <div class="q"><span class="qm">?</span><div class="qt">Wire <span class="icode">SavePrediction</span> into the seed too, or accept that backfilled past-game rationale stays log-only? <span class="ans">→ Cheap to include; the panel mostly cares about live reasoning.</span></div></div>
+      <div class="q"><span class="qm">?</span><div class="qt">Keep <span class="icode">confidence</span> as opaque TEXT, or normalize to an enum at the sanitize boundary so the panel can sort by it later?</div></div>
+      <div class="q"><span class="qm">?</span><div class="qt">Does the result audit need a gated admin TUI screen for launch, or is a DB-query artifact enough at first?</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p class="pipe"><b>20 agents</b><span>·</span>6 inventory <span>→</span> 6 design <span>→</span> 6-lens trade-off panel <span>→</span> 2 adversarial syntheses</p>
+    <p>Persistence map for BEThoven · scope: every entity, in memory or not · emphasis: scoring &amp; BETanIA. The recommendation is deliberately small — two tables — because the codebase's existing discipline (pure scoring, volatile caches, separate analytics DB) is already most of the right answer.</p>
+  </div>
+</footer>
