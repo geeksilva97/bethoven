@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,5 +103,55 @@ func TestLiveCommentWorkerPass(t *testing.T) {
 	}
 	if sig, hist := cache.snapshot(); sig != "" || len(hist) != 0 {
 		t.Errorf("game-over pass: cache not cleared (sig=%q hist=%v)", sig, hist)
+	}
+}
+
+func TestHalftimeFocus(t *testing.T) {
+	none := LiveSituation{}
+	if halftimeFocus(none) {
+		t.Error("empty situation should not be halftime focus")
+	}
+	ht := LiveSituation{Matches: []LiveMatchInfo{{TeamA: "A", TeamB: "B", Phase: "halftime"}}}
+	if !halftimeFocus(ht) {
+		t.Error("single halftime match should be halftime focus")
+	}
+	mixed := LiveSituation{Matches: []LiveMatchInfo{{Phase: "halftime"}, {Phase: ""}}}
+	if halftimeFocus(mixed) {
+		t.Error("a match in open play means not halftime focus")
+	}
+}
+
+func TestLiveCommentPromptSwitchesAtHalftime(t *testing.T) {
+	cfg := CommentConfig{DefaultTone: "savage"}
+
+	open := LiveSituation{Matches: []LiveMatchInfo{{TeamA: "Scotland", TeamB: "Morocco", ScoreA: 0, ScoreB: 1}}}
+	p := liveCommentPrompt(open, nil, cfg)
+	if !strings.Contains(p, "RIGHT NOW") {
+		t.Error("open-play prompt should be about the match right now")
+	}
+	if strings.Contains(p, "LEADERBOARD DYNAMICS") {
+		t.Error("open-play prompt should NOT pivot to leaderboard dynamics")
+	}
+
+	half := LiveSituation{
+		Matches:   []LiveMatchInfo{{TeamA: "Scotland", TeamB: "Morocco", ScoreA: 0, ScoreB: 1, Phase: "halftime"}},
+		Standings: []LiveStanding{{Player: "miguel", Position: 1, Total: 66}, {Player: "Edy", Position: 2, Total: 64}},
+	}
+	ph := liveCommentPrompt(half, nil, cfg)
+	if !strings.Contains(ph, "HALFTIME") || !strings.Contains(ph, "LEADERBOARD DYNAMICS") {
+		t.Error("halftime prompt should pivot to leaderboard dynamics")
+	}
+	if strings.Contains(ph, "play-by-play") {
+		t.Error("halftime prompt should NOT ask for play-by-play")
+	}
+	// The standings snapshot must reach the model.
+	if !strings.Contains(ph, "miguel") {
+		t.Error("halftime prompt should carry the standings snapshot")
+	}
+
+	// Admin override still pivots at halftime.
+	po := liveCommentPrompt(half, nil, CommentConfig{PromptOverride: "Talk like a pirate."})
+	if !strings.Contains(po, "pirate") || !strings.Contains(po, "LEADERBOARD DYNAMICS") {
+		t.Errorf("override+halftime should keep voice and pivot; got:\n%s", po)
 	}
 }

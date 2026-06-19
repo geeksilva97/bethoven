@@ -345,7 +345,14 @@ directly, with a fake clock, no terminal).
       (`LiveCommentDeps{Situation, Config, Now}`) and never imports `service`;
       `service.LiveSituation` builds the snapshot (live matches + closest picks +
       **key events** + movers, from `LivePicks`/`Leaderboard`), `service.LiveCommentary` reads the
-      cache via the `LiveCommentSource` port. **Throwaway by design:** one Claude
+      cache via the `LiveCommentSource` port. **Halftime pivot:** when every in-play
+      match is at the interval (`liveAllHalftime` → all `LivePhase == live.PhaseHalftime`),
+      she's already narrated the half, so the prompt **switches** (not appends) to a
+      leaderboard-dynamics body — who's climbing/sliding on live points, shrinking
+      gaps, who leads the match's picks, who's stuck on zero — and `LiveSituation`
+      attaches a compact `Standings` snapshot (position + total, **only at halftime**)
+      so it can ground gap claims; `halftimeFocus(sit)` in `ai` picks the body (works
+      under an admin override too). **Throwaway by design:** one Claude
       call (no web search, tone-aware, honours the prompt override), sanitized via
       `sanitizeText`, cached in `ai.LiveCommentCache` (current line + expiry + a short
       history ring fed back so it doesn't repeat itself). **Cadence — on-change +

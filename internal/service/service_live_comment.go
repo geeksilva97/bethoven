@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"bethoven/internal/ai"
+	"bethoven/internal/live"
 )
 
 // livePicksTop caps how many picks per live match we hand the commenter — the
@@ -99,5 +100,35 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 		})
 	}
 
-	return ai.LiveSituation{Matches: matches, Movers: movers}, true, nil
+	sit := ai.LiveSituation{Matches: matches, Movers: movers}
+
+	// At halftime the commentary pivots from the match to the pool race, so hand it
+	// the full standings (positions + totals → who's closing on whom). Only at the
+	// interval — open-play lines stay lean. board is already rank-sorted.
+	if liveAllHalftime(picks) {
+		for i, st := range board {
+			sit.Standings = append(sit.Standings, ai.LiveStanding{
+				Player:     st.User.DisplayName,
+				Position:   i + 1,
+				Total:      st.Total,
+				LivePoints: st.LivePoints,
+			})
+		}
+	}
+
+	return sit, true, nil
+}
+
+// liveAllHalftime reports whether every in-play match is at the interval, so the
+// live commentary should focus on leaderboard dynamics instead of the match.
+func liveAllHalftime(picks []LiveMatchPicks) bool {
+	if len(picks) == 0 {
+		return false
+	}
+	for _, mp := range picks {
+		if mp.Match.LivePhase != live.PhaseHalftime {
+			return false
+		}
+	}
+	return true
 }
