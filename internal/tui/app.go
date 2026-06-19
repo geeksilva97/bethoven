@@ -107,6 +107,10 @@ type Model struct {
 	cycleCurrentID int64
 	cycleEpoch     int
 	selfMuted      bool // the viewer is muted ⇒ no own comment, no cycle
+	// hideComments is the viewer's own persisted "don't show BETanIA comments on the
+	// leaderboard" preference (toggled with 'h'); when set, no comment shows and the
+	// cycle doesn't run.
+	hideComments bool
 
 	// per-match ranking
 	rankMatch  *models.Match

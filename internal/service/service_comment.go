@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"bethoven/internal/ai"
@@ -95,6 +96,35 @@ func (s *Service) AllLeaderboardComments() map[int64]string {
 		out[id] = c.Text
 	}
 	return out
+}
+
+// settingHideCommentsPrefix keys a per-user "hide BETanIA comments on my
+// leaderboard" preference, e.g. "lb_comments_off_u_42" = "1". It's a viewing
+// preference (the viewer's own choice), distinct from "mute" (which stops BETanIA
+// commenting ON a player, for everyone).
+const settingHideCommentsPrefix = "lb_comments_off_u_"
+
+// LeaderboardCommentsHidden reports whether a user has opted out of seeing BETanIA
+// comments on the leaderboard. Self-preference — no gating.
+func (s *Service) LeaderboardCommentsHidden(u *models.User) bool {
+	if u == nil {
+		return false
+	}
+	v, _ := s.store.GetSetting(fmt.Sprintf("%s%d", settingHideCommentsPrefix, u.ID))
+	return v == "1"
+}
+
+// SetLeaderboardCommentsHidden persists a user's own show/hide preference for
+// leaderboard comments. Self-preference — a user sets only their own (by.ID).
+func (s *Service) SetLeaderboardCommentsHidden(by *models.User, off bool) error {
+	if by == nil {
+		return ErrForbidden
+	}
+	v := "0"
+	if off {
+		v = "1"
+	}
+	return s.store.SetSetting(fmt.Sprintf("%s%d", settingHideCommentsPrefix, by.ID), v)
 }
 
 // IsMuted reports whether a user's per-player comment tone is "mute". Used by the

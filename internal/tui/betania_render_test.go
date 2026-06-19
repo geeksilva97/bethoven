@@ -107,6 +107,59 @@ func mustRegisterAdmin(t *testing.T, svc *service.Service, store interface {
 	return New(svc, "SHA256:boss", true, u)
 }
 
+// TestHideCommentsToggle checks 'h' hides comments on the board, persists the
+// preference, and that entering with it set keeps the cycle off.
+func TestHideCommentsToggle(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	u, _ := svc.Register("SHA256:u", testInvite, "U")
+	m := New(svc, "SHA256:u", false, u)
+	m.width = 120
+	m.screen = screenLeaderboard
+	m.standings = []service.Standing{{User: *u, Total: 10}}
+	m.rowComments = map[int64]string{u.ID: "your line"}
+
+	if !strings.Contains(m.viewLeaderboard(), "your line") {
+		t.Fatalf("comment should be visible before hiding")
+	}
+
+	res, _ := m.updateLeaderboard(keyMsg("h"))
+	hm := res.(Model)
+	if !hm.hideComments {
+		t.Errorf("'h' should set hideComments")
+	}
+	if !svc.LeaderboardCommentsHidden(u) {
+		t.Errorf("hide preference must be persisted")
+	}
+	if strings.Contains(hm.viewLeaderboard(), "your line") {
+		t.Errorf("comment must not render once hidden")
+	}
+
+	// Entering the leaderboard fresh respects the persisted preference (cycle off).
+	res2, _ := m.enterMenuItem(screenLeaderboard)
+	em := res2.(Model)
+	if !em.hideComments || em.cycleComments {
+		t.Errorf("entry should honor hide pref: hide=%v cycle=%v", em.hideComments, em.cycleComments)
+	}
+}
+
+// TestCommentWidthCapped checks a long comment wraps into multiple lines (a squarer
+// block) even on a very wide terminal, instead of one long line.
+func TestCommentWidthCapped(t *testing.T) {
+	m := adminModel(t)
+	m.screen = screenLeaderboard
+	m.width = 220 // very wide: without a cap this would be one line
+	long := strings.Repeat("word ", 40)
+	m.rowComments = map[int64]string{1: strings.TrimSpace(long)}
+
+	out := m.viewLeaderboard()
+	// The continuation indent (leaderCommentCol+3 spaces) only appears when the
+	// comment wrapped past the first line.
+	indent := strings.Repeat(" ", leaderCommentCol+3)
+	if !strings.Contains(out, "\n"+indent+"word") {
+		t.Errorf("a long comment should wrap into multiple lines on a wide terminal:\n%s", out)
+	}
+}
+
 // TestCycleTickAdvances checks the tick rotates to a different player and that a
 // stale epoch / leaving the screen stops the loop.
 func TestCycleTickAdvances(t *testing.T) {

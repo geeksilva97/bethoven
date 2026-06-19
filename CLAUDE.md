@@ -199,8 +199,13 @@ directly, with a fake clock, no terminal).
       exposed by **`service.AllLeaderboardComments`** — **NOT gated**: comments are a
       shared, fun feature any player can cycle through (bets stay private — that's a
       separate boundary). The TUI renders the comment beside the row in a right-hand
-      column (`leaderCommentCol`), falling back to stacking under the row on a narrow
-      terminal, `helpStyle`, prefixed 🤖 (`internal/tui/results.go`).
+      column (`leaderCommentCol`), width-capped (`leaderCommentMaxWidth`) so it wraps into
+      a squarer, readable block, falling back to stacking under the row on a narrow
+      terminal, `helpStyle`, prefixed 🤖 (`internal/tui/results.go`). **Per-viewer
+      opt-out:** **`h`** toggles a persisted "hide BETanIA comments on my leaderboard"
+      preference (`LeaderboardCommentsHidden`/`SetLeaderboardCommentsHidden`, KV
+      `lb_comments_off_u_<id>`) — distinct from `mute` (which stops BETanIA commenting ON
+      a player). When hidden, no comment shows and the cycle doesn't run.
     - **Comment cycle (leaderboard, ON by default for everyone).** The board rotates
       which single player's comment is shown — own first, then **another at random** —
       auto-advancing in place every `cycleRefresh` (12s, paced for reading) via a

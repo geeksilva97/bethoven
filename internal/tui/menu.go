@@ -109,10 +109,11 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		m.leaderEpoch++                                   // supersede any tick loop from a prior visit
 		cmds := []tea.Cmd{leaderTick(m.leaderEpoch)}      // begin auto-refresh while on this screen
 		// The comment cycle runs by default for everyone — own comment first, then
-		// rotating through the rest; 'c' toggles it off. Muted players are the sole
-		// exception: no comment of their own and no cycle.
+		// rotating through the rest; 'c' toggles it off. It's skipped for muted
+		// players (no comment of their own) and for anyone who turned comments off ('h').
 		m.selfMuted = m.svc.IsMuted(m.user)
-		if m.selfMuted {
+		m.hideComments = m.svc.LeaderboardCommentsHidden(m.user)
+		if m.selfMuted || m.hideComments {
 			m = m.stopCycle()
 		} else {
 			var cy tea.Cmd

@@ -18,6 +18,10 @@ import (
 // leaderboard, leaving the rank/name/pts line in a fixed-width left gutter.
 const leaderCommentCol = 38
 
+// leaderCommentMaxWidth caps the comment column so takes wrap into a squarer,
+// readable block instead of one very long line on a wide terminal.
+const leaderCommentMaxWidth = 54
+
 // leaderTickMsg drives the live leaderboard's auto-refresh. epoch ties a tick to
 // the visit that scheduled it, so a stale loop from a prior visit is ignored.
 type leaderTickMsg struct{ epoch int }
@@ -161,10 +165,21 @@ func (m Model) updateLeaderboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.livePicks = nil
 		}
 		return m, nil
+	case "h":
+		// Toggle the viewer's own "hide comments" preference (persisted). Hiding also
+		// tears down the cycle; un-hiding restarts it (unless the viewer is muted).
+		m.hideComments = !m.hideComments
+		if err := m.svc.SetLeaderboardCommentsHidden(m.user, m.hideComments); err != nil {
+			m.setStatus(err.Error(), true)
+		}
+		if m.hideComments {
+			return m.stopCycle(), nil
+		}
+		return m.startCycle()
 	case "c":
-		// Toggle the comment cycle. Muted viewers don't get it, so for them 'c'
-		// isn't a control — fall through to the default (back to menu).
-		if m.selfMuted {
+		// Toggle the comment cycle. Not a control when comments are hidden or the
+		// viewer is muted — fall through to the default (back to menu).
+		if m.selfMuted || m.hideComments {
 			return m.goMenu(), nil
 		}
 		if m.cycleComments {
@@ -326,25 +341,37 @@ func (m Model) viewLeaderboard() string {
 			line += errStyle.Render(" ▼")
 		}
 		row := "  " + marker + line
-		// BETanIA's take. Scoped by the service to the viewer's OWN comment, shown in
-		// the terminal's default colour (italic) so it's legible on any theme, laid
-		// out in a right-hand column to keep the board uncluttered (falling back to
-		// stacking under the row on a narrow terminal). When an admin turns on the
-		// cycle, that is replaced by ONE rotating player's comment at a time.
-		c := m.rowComments[s.User.ID]
-		if m.cycleComments {
+		// BETanIA's take, shown in the terminal's default colour (italic) so it's
+		// legible on any theme, laid out in a right-hand column to keep the board
+		// uncluttered (falling back to stacking under the row on a narrow terminal),
+		// width-capped so it wraps into a squarer block. Source: nothing when the
+		// viewer hid comments ('h'); the single rotating player while cycling; else
+		// the viewer's own comment.
+		var c string
+		switch {
+		case m.hideComments:
 			c = ""
+		case m.cycleComments:
 			if s.User.ID == m.cycleCurrentID {
 				c = m.cycleAll[s.User.ID]
 			}
+		default:
+			c = m.rowComments[s.User.ID]
 		}
 		commentWidth := m.width - leaderCommentCol - 3
+		if commentWidth > leaderCommentMaxWidth {
+			commentWidth = leaderCommentMaxWidth
+		}
+		narrowWidth := m.width - 9
+		if narrowWidth > leaderCommentMaxWidth {
+			narrowWidth = leaderCommentMaxWidth
+		}
 		switch {
 		case c == "":
 			out += row + "\n"
 		case commentWidth < 24:
 			out += row + "\n"
-			for i, ln := range wrapText(c, m.width-9) {
+			for i, ln := range wrapText(c, narrowWidth) {
 				prefix := "      " + botMark.Render("🤖") + " "
 				if i > 0 {
 					prefix = "         " // align continuation under the text, past the 🤖
@@ -371,6 +398,8 @@ func (m Model) viewLeaderboard() string {
 		out += lockStyle.Render("▲▼ rank shift from live results · (+N) points gained live") + "\n"
 	}
 	switch {
+	case m.hideComments:
+		// nothing — comments are hidden by the viewer's choice
 	case m.cycleComments:
 		who := "…"
 		if name := m.cycleName(m.cycleCurrentID); name != "" {
@@ -381,7 +410,7 @@ func (m Model) viewLeaderboard() string {
 		out += botMark.Render("🤖") + commentStyle.Render(" BETanIA's take") + "\n"
 	}
 
-	// Help line: live-pick toggle + (admins) the comment-cycle toggle.
+	// Help line: live-pick toggle + comment controls (cycle + show/hide).
 	var hints []string
 	if len(m.liveMatches) > 0 {
 		if m.revealLivePicks {
@@ -390,12 +419,16 @@ func (m Model) viewLeaderboard() string {
 			hints = append(hints, "p: reveal live picks")
 		}
 	}
-	if !m.selfMuted {
+	switch {
+	case m.hideComments:
+		hints = append(hints, "h: show comments")
+	case !m.selfMuted:
 		if m.cycleComments {
 			hints = append(hints, "c: stop cycling comments")
 		} else {
 			hints = append(hints, "c: cycle comments")
 		}
+		hints = append(hints, "h: hide comments")
 	}
 	hints = append(hints, "other: back", "q: quit")
 	out += helpStyle.Render(strings.Join(hints, " · "))
