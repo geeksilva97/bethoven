@@ -37,6 +37,7 @@ func (m *Model) buildMenu() {
 			menuItem{"⚙  Admin: all bets", screenAllBets},
 			menuItem{"⚙  Admin: settings", screenSettings},
 			menuItem{"⚙  Admin: analytics", screenAnalytics},
+			menuItem{"⚙  Admin: BETanIA", screenBETanIA},
 		)
 	}
 	m.menuItems = items
@@ -173,6 +174,20 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		m.anPlayers, _ = m.svc.AnalyticsPerPlayer(m.user)
 		m.anRecent, _ = m.svc.AnalyticsRecent(m.user, analyticsRecentLimit)
 		m.screen = screenAnalytics
+	case screenBETanIA:
+		m.aiDisabled = false
+		st, err := m.svc.AIStatus(m.user)
+		if errors.Is(err, service.ErrAIOff) {
+			m.aiDisabled, m.screen = true, screenBETanIA
+			return m, nil
+		}
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.aiStatus = st
+		m.aiActivity, _ = m.svc.AIActivity(m.user, betaniaActivityLimit)
+		m.screen = screenBETanIA
 	}
 	return m, nil
 }
@@ -202,6 +217,8 @@ func screenName(s screen) string {
 		return "admin_settings"
 	case screenAnalytics:
 		return "admin_analytics"
+	case screenBETanIA:
+		return "admin_betania"
 	default:
 		return "menu"
 	}
