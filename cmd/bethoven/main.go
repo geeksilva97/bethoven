@@ -165,10 +165,16 @@ func main() {
 				svc.SetCommentMonitor(cmon)
 				cache := ai.NewCommentCache()
 				svc.SetCommentSource(cache)
+				// The service recovers a finished match's live "story" from the
+				// comment log, so it needs the path.
+				svc.SetAICommentLogPath(cfg.AICommentLogPath)
 				cw := ai.NewCommentWorker(ai.CommentDeps{
-					History: svc.StandingsHistory,
-					Config:  svc.CommentConfig,
-					Now:     svc.Now,
+					History:        svc.StandingsHistory,
+					Config:         svc.CommentConfig,
+					Now:            svc.Now,
+					Results:        svc.ResultsDigestData,
+					DerivedNotes:   svc.DerivedNotesText,
+					AddDerivedNote: svc.AddDerivedNote,
 				}, commenter, cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
 				go cw.Run(ctx)

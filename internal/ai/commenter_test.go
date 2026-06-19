@@ -9,11 +9,15 @@ import (
 
 // fakeCommenter is a network-free Commenter for the worker tests.
 type fakeCommenter struct {
-	narratives []Narrative
-	comments   []Comment
-	nErr, cErr error
-	calls      int
-	lastCfg    CommentConfig
+	narratives  []Narrative
+	comments    []Comment
+	nErr, cErr  error
+	calls       int
+	lastCfg     CommentConfig
+	digest      string
+	digestErr   error
+	digestCalls int
+	lastDigest  ResultsDigestData
 }
 
 func (f *fakeCommenter) DetectNarratives(ctx context.Context, h []RoundStanding) ([]Narrative, error) {
@@ -24,6 +28,12 @@ func (f *fakeCommenter) WriteComments(ctx context.Context, h []RoundStanding, n 
 	f.calls++
 	f.lastCfg = cfg
 	return f.comments, f.cErr
+}
+
+func (f *fakeCommenter) DigestResults(ctx context.Context, data ResultsDigestData, cfg CommentConfig) (string, error) {
+	f.digestCalls++
+	f.lastDigest = data
+	return f.digest, f.digestErr
 }
 
 func oneRound() []RoundStanding {

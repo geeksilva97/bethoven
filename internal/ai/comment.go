@@ -70,6 +70,12 @@ type CommentConfig struct {
 	ToneByName  map[string]string // display name -> "playful" | "savage" | "mute"; absent ⇒ default
 	Rivalries   []Rivalry
 	Notes       []string
+	// DerivedNotes is BETanIA's own auto-generated "house notes" snapshot: a short
+	// condensation of recently finished matches and how the pool's picks fared,
+	// produced by DigestResults and refreshed when a match settles. It's a SEPARATE
+	// tier from the admin's Notes — context the writer may weave in, never the
+	// admin's curated text. Empty ⇒ no snapshot yet.
+	DerivedNotes string
 	// PromptOverride, when non-empty, REPLACES the built-in persona/tone/rules
 	// instruction body of the stage-2 comment prompt. The harness still appends
 	// the untrusted-data trailer + standings JSON + the submit_comments line, and
@@ -90,6 +96,38 @@ func (c CommentConfig) toneFor(name string) string {
 type Commenter interface {
 	DetectNarratives(ctx context.Context, history []RoundStanding) ([]Narrative, error)
 	WriteComments(ctx context.Context, history []RoundStanding, narratives []Narrative, cfg CommentConfig) ([]Comment, error)
+	// DigestResults condenses recently finished matches + how the pool's picks
+	// fared into a short "house notes" snapshot (the extra summary call). Returns
+	// "" when there's nothing settled to summarize.
+	DigestResults(ctx context.Context, data ResultsDigestData, cfg CommentConfig) (string, error)
+}
+
+// DigestPick is one player's pick on a finished match, for the results snapshot.
+type DigestPick struct {
+	Player string `json:"player"`
+	Pred   string `json:"pred"`   // "2-1"
+	Points int    `json:"points"` // points scored under the active mode
+}
+
+// FinishedMatchDigest is a settled match plus how the pool bet it — the raw
+// material DigestResults condenses into the derived-notes snapshot.
+type FinishedMatchDigest struct {
+	TeamA string       `json:"team_a"`
+	TeamB string       `json:"team_b"`
+	Score string       `json:"score"` // regulation 90' result, "2-1"
+	Stage string       `json:"stage,omitempty"`
+	Picks []DigestPick `json:"picks"`
+}
+
+// ResultsDigestData is the input to DigestResults: the most recently finished
+// matches (newest first), every player's pick on them, and the live-commentary
+// lines that played while those games were on — so the snapshot can tell the
+// STORY of the game, not just the final numbers.
+type ResultsDigestData struct {
+	Matches []FinishedMatchDigest `json:"matches"`
+	// LiveStory is BETanIA's own play-by-play from during the matches (recovered
+	// from the comment log; oldest first). Optional grounding for the narrative.
+	LiveStory []string `json:"live_story,omitempty"`
 }
 
 // narrativeTypes is the closed vocabulary the detector may use (from the brief).

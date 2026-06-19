@@ -283,8 +283,29 @@ directly, with a fake clock, no terminal).
       resolved to names) and free-text house notes. Fed into the stage-2 prompt as
       *context, not instructions* (output still sanitized; admin-trusted but the
       prompt is explicit it never overrides "don't invent results"). Built into
-      `ai.CommentConfig` (`{DefaultTone, Self, ToneByName, Rivalries, Notes, PromptOverride}`)
+      `ai.CommentConfig` (`{DefaultTone, Self, ToneByName, Rivalries, Notes, DerivedNotes, PromptOverride}`)
       by `service.CommentConfig` — the worker seam (replaces the old `Tone` seam).
+    - **Derived notes — BETanIA's auto "story of the game" tier (`comment_derived_notes`).**
+      A SEPARATE tier from the admin's house `Notes`, never mixed. When a match
+      **settles** — `EnterResult` (admin) or `FinalizeFromFeed` (feed, only on the
+      poll that actually transitions it) — `service.onMatchSettled` fires the comment
+      trigger (the same coalesced send as the admin "regenerate" key, so a cluster of
+      finishes collapses into ~one pass). That pass calls the worker's
+      `refreshDerivedNotes`: if the finished-match set's signature changed
+      (`digestSignature`), it makes ONE extra Claude call (`AnthropicCommenter.DigestResults`,
+      usage category **`digest`**) to condense the **result + every player's pick + the
+      live-commentary "story"** into a snapshot, then **appends** it to the persisted
+      list. The combined notes (last `derivedNoteFeedCap`) feed the per-player prompt
+      as a distinct tier (always appended, even under a prompt override). **The live
+      story survives the game:** the live worker discards its in-memory lines the moment
+      a match ends, so `service.ResultsDigestData` recovers them from the comment log
+      (`ai.RecentLiveComments` reads `source:"live_comment"` lines logged since the
+      earliest finished match — `service.SetAICommentLogPath` gives it the path).
+      **Worker seams** (`CommentDeps.Results`/`DerivedNotes`/`AddDerivedNote`); the `ai`
+      package still never imports `service`. **Admin curation** on `screenAIContext`
+      (gated `DerivedNotes`/`DeleteDerivedNote`/`CompactDerivedNotes`/`ClearDerivedNotes`):
+      `d` deletes the selected note, `c` compacts the diary to the latest snapshot, `C`
+      clears it (the next finish regenerates one).
     - **Full prompt override** (`s` → `screenAIPrompt`): the DB-backed
       `comment_prompt_override` setting (`CommentPromptOverride`/`SetCommentPromptOverride`,
       admin only) lets an admin **replace BETanIA's entire instruction body**. Empty ⇒

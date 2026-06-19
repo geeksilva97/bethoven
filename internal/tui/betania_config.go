@@ -156,6 +156,7 @@ func (m Model) openAIContext() Model {
 		return m
 	}
 	m.ctxView, m.tonePlayers = v, pts
+	m.ctxDerived, _ = m.svc.DerivedNotes(m.user)
 	m.ctxMode, m.ctxCursor = ctxModeList, 0
 	m.screen = screenAIContext
 	return m
@@ -165,6 +166,13 @@ func (m *Model) reloadCtx() {
 	if v, err := m.svc.CommentContextView(m.user); err == nil {
 		m.ctxView = v
 	}
+	m.ctxDerived, _ = m.svc.DerivedNotes(m.user)
+}
+
+// ctxTotal is the number of selectable rows: rivalries, then house notes, then
+// derived notes.
+func (m Model) ctxTotal() int {
+	return len(m.ctxView.Rivalries) + len(m.ctxView.Notes) + len(m.ctxDerived)
 }
 
 func (m Model) updateAIContext(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -183,7 +191,8 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	total := len(m.ctxView.Rivalries) + len(m.ctxView.Notes)
+	total := m.ctxTotal()
+	nRiv, nNote := len(m.ctxView.Rivalries), len(m.ctxView.Notes)
 	switch k.String() {
 	case "q":
 		return m, tea.Quit
@@ -208,26 +217,52 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.ctxMode, m.ctxPickCursor = ctxModePickA, 0
 		return m, nil
+	case "c":
+		// Compact BETanIA's derived "story" notes down to the most recent snapshot.
+		if err := m.svc.CompactDerivedNotes(m.user); err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.setStatus("derived notes compacted to the latest snapshot", false)
+		m.reloadCtx()
+		m.clampCtxCursor()
+	case "C":
+		// Clear all derived notes (the next finished match regenerates one).
+		if err := m.svc.ClearDerivedNotes(m.user); err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.setStatus("derived notes cleared", false)
+		m.reloadCtx()
+		m.clampCtxCursor()
 	case "d":
 		if total == 0 {
 			return m, nil
 		}
 		var err error
-		if m.ctxCursor < len(m.ctxView.Rivalries) {
+		switch {
+		case m.ctxCursor < nRiv:
 			err = m.svc.DeleteRivalry(m.user, m.ctxCursor)
-		} else {
-			err = m.svc.DeleteCommentNote(m.user, m.ctxCursor-len(m.ctxView.Rivalries))
+		case m.ctxCursor < nRiv+nNote:
+			err = m.svc.DeleteCommentNote(m.user, m.ctxCursor-nRiv)
+		default:
+			err = m.svc.DeleteDerivedNote(m.user, m.ctxCursor-nRiv-nNote)
 		}
 		if err != nil {
 			m.setStatus(err.Error(), true)
 			return m, nil
 		}
 		m.reloadCtx()
-		if n := len(m.ctxView.Rivalries) + len(m.ctxView.Notes); m.ctxCursor >= n && m.ctxCursor > 0 {
-			m.ctxCursor = n - 1
-		}
+		m.clampCtxCursor()
 	}
 	return m, nil
+}
+
+// clampCtxCursor keeps the selection in range after the list shrinks.
+func (m *Model) clampCtxCursor() {
+	if n := m.ctxTotal(); m.ctxCursor >= n && m.ctxCursor > 0 {
+		m.ctxCursor = n - 1
+	}
 }
 
 func (m Model) updateCtxInput(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -337,8 +372,22 @@ func (m Model) viewCtxList() string {
 		out += cursorRow(idx == m.ctxCursor, truncate(n, w)) + "\n"
 		idx++
 	}
+
+	out += "\n" + labelStyle.Render("Derived notes (auto — BETanIA's story of finished matches)") + "\n"
+	if len(m.ctxDerived) == 0 {
+		out += helpStyle.Render("  none yet — generated when a match finishes") + "\n"
+	}
+	for _, n := range m.ctxDerived {
+		label := n.Text
+		if !n.At.IsZero() {
+			label = relativeAgo(m.svc.Now(), n.At) + " · " + label
+		}
+		out += cursorRow(idx == m.ctxCursor, truncate(label, w)) + "\n"
+		idx++
+	}
+
 	out += "\n" + statusLine(m) +
-		helpStyle.Render("a: add rivalry · n: add note · d: delete · ↑/↓: move · esc: back")
+		helpStyle.Render("a: add rivalry · n: add note · d: delete · c: compact derived · C: clear derived · ↑/↓: move · esc: back")
 	return out
 }
 

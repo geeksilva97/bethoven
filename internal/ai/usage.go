@@ -133,7 +133,7 @@ type UsageReport struct {
 
 // categoryOrder fixes the stable display order of categories in the report. The
 // human-facing headings live in the TUI (usageCategoryLabel).
-var categoryOrder = []string{"bet", "comment", "live"}
+var categoryOrder = []string{"bet", "comment", "live", "digest"}
 
 // aggregateUsage folds a usage-log stream into a UsageReport. Pure (takes an
 // io.Reader) so it's unit-testable without touching the filesystem. Malformed

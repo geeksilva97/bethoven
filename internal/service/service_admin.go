@@ -75,7 +75,19 @@ func (s *Service) EnterResult(by *models.User, matchID int64, scoreA, scoreB int
 		"match_id": fmt.Sprintf("%d", matchID),
 		"score":    fmt.Sprintf("%d-%d", scoreA, scoreB),
 	})
+	s.onMatchSettled()
 	return nil
+}
+
+// onMatchSettled fires whenever a match transitions to finished (admin entry or
+// the feed). It nudges the comment worker to regenerate: that pass also refreshes
+// the derived-notes snapshot ("the story of that game") from the new result. The
+// trigger is the same non-blocking coalesced send as the admin "regenerate" key,
+// so a cluster of finishes collapses into ~one pass. No-op when BETanIA is off.
+func (s *Service) onMatchSettled() {
+	if s.aiCommentTrigger != nil {
+		s.aiCommentTrigger()
+	}
 }
 
 // AllBets builds the admin grid of every player's bets and points, across every

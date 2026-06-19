@@ -266,6 +266,8 @@ func usageCategoryLabel(key string) string {
 		return "Comments"
 	case "live":
 		return "Live commentary"
+	case "digest":
+		return "Derived notes"
 	default:
 		return key
 	}

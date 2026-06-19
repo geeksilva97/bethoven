@@ -196,8 +196,16 @@ func (s *Service) FinalizeFromFeed(matchID int64, scoreA, scoreB int) error {
 	// Conditional write: if an admin's EnterResult landed between the read above
 	// and here, finished=1 already and this is a no-op, so the feed never
 	// clobbers an admin correction (admin always wins).
-	_, err = s.store.SetResultIfUnfinished(matchID, scoreA, scoreB)
-	return err
+	changed, err := s.store.SetResultIfUnfinished(matchID, scoreA, scoreB)
+	if err != nil {
+		return err
+	}
+	if changed {
+		// This poll is the one that settled the match — regenerate comments + the
+		// derived-notes story. A no-op write means it was already settled.
+		s.onMatchSettled()
+	}
+	return nil
 }
 
 // MyResults returns the player's per-match results plus their running total.

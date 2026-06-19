@@ -91,6 +91,9 @@ type Service struct {
 	// aiUsage is the optional persistent reader for BETanIA's Claude token usage and
 	// estimated cost (backed by the on-disk usage log); nil when BETanIA isn't running.
 	aiUsage AIUsageSource
+	// aiCommentLogPath is where live-commentary lines are logged; used to recover a
+	// finished match's "story" for the derived-notes digest. "" ⇒ no live story.
+	aiCommentLogPath string
 	// forms holds each team's pre-tournament recent-form baseline (oldest→newest),
 	// seeded from fixtures.json. Optional; nil when no baseline is configured.
 	forms map[string][]models.FormOutcome

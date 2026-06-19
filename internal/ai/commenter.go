@@ -16,6 +16,17 @@ type CommentDeps struct {
 	History func() ([]RoundStanding, error)
 	Config  func() CommentConfig // default tone + per-player tones + rivalry/house context
 	Now     func() time.Time
+	// Results returns the recently finished matches + the pool's picks + the live
+	// story, for the derived-notes snapshot. Optional — nil ⇒ no snapshot.
+	Results func() (ResultsDigestData, error)
+	// DerivedNotes returns the persisted derived-notes tier: the combined note text
+	// to feed the prompt, plus the results signature the most recent note was built
+	// from (so the worker regenerates only when results actually change). Optional —
+	// nil ⇒ no derived-notes tier at all.
+	DerivedNotes func() (combined string, sig string)
+	// AddDerivedNote appends a freshly generated snapshot note + the signature it
+	// was built from. Optional — nil ⇒ snapshots are never persisted/appended.
+	AddDerivedNote func(text, sig string) error
 }
 
 // CommentWorker is BETanIA's commentary worker: on a timer it reconstructs the
@@ -109,6 +120,13 @@ func (w *CommentWorker) pass(ctx context.Context) {
 	pctx, cancel := context.WithTimeout(ctx, commentPassTimeout)
 	defer cancel()
 
+	// Derived notes: BETanIA's own "house notes" snapshot tier. When new matches
+	// have settled since the last snapshot, summarize them (result + the pool's
+	// picks + the live commentary story) and append a note. The combined notes feed
+	// the per-player prompt as context. Best-effort — a digest fault never blocks the
+	// comments themselves.
+	cfg.DerivedNotes = w.refreshDerivedNotes(pctx, cfg)
+
 	narratives, err := w.cmt.DetectNarratives(pctx, history)
 	if err != nil {
 		w.logger.Printf("ai: detect narratives: %v", err)
@@ -146,4 +164,44 @@ func (w *CommentWorker) pass(ctx context.Context) {
 	}
 	w.cache.Replace(stamped)
 	w.logger.Printf("ai: wrote %d comments (default tone=%s, %d narratives)", len(stamped), normalizeTone(cfg.DefaultTone), len(narratives))
+}
+
+// refreshDerivedNotes returns the combined derived-notes text to feed the comment
+// prompt, generating + appending a fresh snapshot first when new matches have
+// settled since the last one. All steps are optional/best-effort: missing seams or
+// a digest error just yield whatever notes already exist (possibly ""). The seams
+// (Results/DerivedNotes/AddDerivedNote) are nil unless wired, so this is a no-op
+// for a worker built without them.
+func (w *CommentWorker) refreshDerivedNotes(ctx context.Context, cfg CommentConfig) string {
+	if w.deps.DerivedNotes == nil {
+		return ""
+	}
+	combined, lastSig := w.deps.DerivedNotes()
+	if w.deps.Results == nil || w.deps.AddDerivedNote == nil || w.cmt == nil {
+		return combined
+	}
+	data, err := w.deps.Results()
+	if err != nil {
+		w.logger.Printf("ai: derived-notes results: %v", err)
+		return combined
+	}
+	sig := digestSignature(data)
+	if len(data.Matches) == 0 || sig == lastSig {
+		return combined // nothing new to summarize
+	}
+	text, err := w.cmt.DigestResults(ctx, data, cfg)
+	if err != nil {
+		w.logger.Printf("ai: derived-notes digest: %v", err)
+		return combined
+	}
+	text = sanitizeText(text)
+	if text == "" {
+		return combined
+	}
+	if err := w.deps.AddDerivedNote(text, sig); err != nil {
+		w.logger.Printf("ai: save derived note: %v", err)
+	}
+	// Re-read so the prompt sees the freshly appended note alongside the prior ones.
+	combined, _ = w.deps.DerivedNotes()
+	return combined
 }
