@@ -60,10 +60,14 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(err.Error(), true)
 		} else {
 			m.commentTone = next
-			m.setStatus("BETanIA tone set to "+next+" — press c to regenerate comments", false)
+			m.setStatus("BETanIA default tone set to "+next+" — press c to regenerate comments", false)
 		}
 		m.refreshBETanIA()
 		return m, nil
+	case k.String() == "u":
+		return m.openAITones(), nil
+	case k.String() == "x":
+		return m.openAIContext(), nil
 	default:
 		return m.goMenu(), nil
 	}
@@ -165,7 +169,9 @@ func (m Model) viewBETanIA() string {
 	}
 
 	out += "\n" + helpStyle.Render("picks → "+aiLogHint()+" · comments → ai_comments.log — `tail -f` to watch") + "\n"
-	out += statusLine(m) + helpStyle.Render("r: betting pass · c: regenerate comments · t: tone · any key: back · q: quit")
+	out += statusLine(m) +
+		helpStyle.Render("r: betting · c: regen comments · t: default tone · u: tone per player · x: context") + "\n" +
+		helpStyle.Render("any other key: back · q: quit")
 	return out
 }
 

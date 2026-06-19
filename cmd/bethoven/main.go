@@ -158,7 +158,7 @@ func main() {
 				svc.SetCommentSource(cache)
 				cw := ai.NewCommentWorker(ai.CommentDeps{
 					History: svc.StandingsHistory,
-					Tone:    func() string { t, _ := svc.CommentTone(); return t },
+					Config:  svc.CommentConfig,
 					Now:     svc.Now,
 				}, ai.NewAnthropicCommenter(cfg.AIModel), cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)

@@ -12,14 +12,16 @@ type fakeCommenter struct {
 	comments   []Comment
 	nErr, cErr error
 	calls      int
+	lastCfg    CommentConfig
 }
 
 func (f *fakeCommenter) DetectNarratives(ctx context.Context, h []RoundStanding) ([]Narrative, error) {
 	return f.narratives, f.nErr
 }
 
-func (f *fakeCommenter) WriteComments(ctx context.Context, h []RoundStanding, n []Narrative, tone, self string) ([]Comment, error) {
+func (f *fakeCommenter) WriteComments(ctx context.Context, h []RoundStanding, n []Narrative, cfg CommentConfig) ([]Comment, error) {
 	f.calls++
+	f.lastCfg = cfg
 	return f.comments, f.cErr
 }
 
@@ -39,7 +41,7 @@ func TestCommentWorkerPassCachesSanitized(t *testing.T) {
 	mon := NewCommentMonitor("test", time.Hour)
 	w := NewCommentWorker(CommentDeps{
 		History: func() ([]RoundStanding, error) { return oneRound(), nil },
-		Tone:    func() string { return "savage" },
+		Config:  func() CommentConfig { return CommentConfig{DefaultTone: "savage"} },
 		Now:     func() time.Time { return now },
 	}, fc, cache, mon, "", time.Hour, "")
 
@@ -66,7 +68,7 @@ func TestCommentWorkerSkipsEmptyHistory(t *testing.T) {
 	fc := &fakeCommenter{}
 	w := NewCommentWorker(CommentDeps{
 		History: func() ([]RoundStanding, error) { return nil, nil },
-		Tone:    func() string { return "playful" },
+		Config:  func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
 		Now:     func() time.Time { return now },
 	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", time.Hour, "")
 
@@ -90,6 +92,47 @@ func TestCommentCacheTTLExpiry(t *testing.T) {
 	}
 	if n := len(cache.All(now.Add(3 * time.Hour))); n != 0 {
 		t.Fatalf("dropped past grace: got %d", n)
+	}
+}
+
+func TestCommentConfigToneFor(t *testing.T) {
+	cfg := CommentConfig{DefaultTone: "playful", ToneByName: map[string]string{
+		"Joao": "savage", "Maria": "mute",
+	}}
+	if got := cfg.toneFor("Joao"); got != "savage" {
+		t.Errorf("Joao override: got %q", got)
+	}
+	if got := cfg.toneFor("Maria"); got != "mute" {
+		t.Errorf("Maria mute: got %q", got)
+	}
+	if got := cfg.toneFor("Pedro"); got != "playful" {
+		t.Errorf("Pedro default: got %q", got)
+	}
+}
+
+func TestCommentWorkerDropsMuted(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{
+		{UserID: 1, Player: "Joao", Text: "you slipped"},
+		{UserID: 2, Player: "Maria", Text: "should be dropped"},
+	}}
+	cache := NewCommentCache()
+	w := NewCommentWorker(CommentDeps{
+		History: func() ([]RoundStanding, error) { return oneRound(), nil },
+		Config: func() CommentConfig {
+			return CommentConfig{DefaultTone: "playful", ToneByName: map[string]string{"Maria": "mute"}}
+		},
+		Now: func() time.Time { return now },
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", time.Hour, "")
+
+	w.pass(context.Background())
+
+	got := cache.All(now)
+	if _, ok := got[1]; !ok {
+		t.Error("Joao's comment should be cached")
+	}
+	if _, ok := got[2]; ok {
+		t.Error("Maria is muted — her comment must be dropped")
 	}
 }
 

@@ -34,6 +34,8 @@ const (
 	screenScoringRules // read-only: explains the active scoring mode
 	screenAnalytics    // admin-only: usage stats panel
 	screenBETanIA      // admin-only: AI player status + activity
+	screenAITones      // admin-only: per-player comment tone
+	screenAIContext    // admin-only: rivalry + house-note context
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -152,6 +154,21 @@ type Model struct {
 	aiCommentStatus    ai.CommentStatus
 	aiCommentActivity  []ai.CommentAction
 	commentTone        string
+
+	// admin: BETanIA per-player tone editor (reached with 'u' on the panel).
+	tonePlayers []service.PlayerTone
+	toneCursor  int
+
+	// admin: BETanIA rivalry/house-note context editor (reached with 'x').
+	// ctxMode drives a small wizard: list → add-note / pick-A → pick-B → rivalry-note.
+	ctxView       service.CommentContextView
+	ctxCursor     int // over the combined rivalries-then-notes list
+	ctxMode       int
+	ctxInput      textinput.Model
+	ctxPickCursor int
+	ctxRivalA     int64
+	ctxRivalAName string
+	ctxRivalB     int64
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -222,6 +239,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateList(msg) // read-only: any key returns to the menu
 	case screenBETanIA:
 		return m.updateBETanIA(msg)
+	case screenAITones:
+		return m.updateAITones(msg)
+	case screenAIContext:
+		return m.updateAIContext(msg)
 	}
 	return m, nil
 }
@@ -257,6 +278,10 @@ func (m Model) View() string {
 		return m.viewAnalytics()
 	case screenBETanIA:
 		return m.viewBETanIA()
+	case screenAITones:
+		return m.viewAITones()
+	case screenAIContext:
+		return m.viewAIContext()
 	}
 	return ""
 }

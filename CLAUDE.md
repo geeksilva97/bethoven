@@ -195,7 +195,18 @@ directly, with a fake clock, no terminal).
       prefixed 🤖 (`internal/tui/results.go`).
     - **Tone** is the DB-backed `comment_tone` setting (default `playful`, or
       `savage`; absent ⇒ playful), like `scoring_mode`. Toggled with **`t`** on the
-      admin panel (`SetCommentTone`).
+      admin panel (`SetCommentTone`). **Per-player override:** each player can be
+      `default`/`playful`/`savage`/`mute` via `comment_tone_u_<id>` settings
+      (`SetUserCommentTone`; absent ⇒ inherit). **Mute** ⇒ that player gets no
+      comment at all (dropped in both the writer and the worker, so nothing is
+      cached/shown). Edited with **`u`** on the panel (`screenAITones`).
+    - **Rivalry / house context** (`x` → `screenAIContext`): a single
+      `comment_context` JSON setting holds rivalry pairs (two user ids + note,
+      resolved to names) and free-text house notes. Fed into the stage-2 prompt as
+      *context, not instructions* (output still sanitized; admin-trusted but the
+      prompt is explicit it never overrides "don't invent results"). Built into
+      `ai.CommentConfig` (`{DefaultTone, Self, ToneByName, Rivalries, Notes}`) by
+      `service.CommentConfig` — the worker seam (replaces the old `Tone` seam).
     - **Same sanitization boundary:** comment text is untrusted model output rendered
       into every terminal — `ai.sanitizeText` is applied in the worker before the
       cache + log, so both get clean text.
