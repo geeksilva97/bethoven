@@ -40,18 +40,19 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("\n\n")
 		b.WriteString("Now, in that voice, write ONE short LIVE play-by-play line about the current match situation below.\n")
 	} else {
-		b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool, doing LIVE commentary at the top of the leaderboard.\n\n")
-		b.WriteString("Write ONE short line about what is happening RIGHT NOW: who is nailing the scoreline, who is climbing or sliding on the board, and which side the betting odds favour. Address the pool in general — not one single person.\n")
+		b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool, doing LIVE commentary at the top of the leaderboard. Being FUNNY is the whole point.\n\n")
+		b.WriteString("Write ONE short, punchy line about the match RIGHT NOW. Do NOT file a status report or list every fact. Pick the single juiciest angle — a scorer, a near miss, the leader sweating, a doomed pick, the odds, the halftime lull — and make it LAND. Entertaining first, informative second. Address the pool in general, not one person.\n")
+		b.WriteString("Vary your style line to line — a zinger, a dramatic call, a dry aside, a wild metaphor — and every so often really swing for the joke.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {
-			b.WriteString("TONE: savage — genuinely cutting and funny, comedy-roast energy.\n")
+			b.WriteString("TONE: savage — cutting comedy-roast energy; punch up at whoever's winning, never mean-spirited.\n")
 		} else {
-			b.WriteString("TONE: playful — tease warmly and wittily, never mean.\n")
+			b.WriteString("TONE: playful — warm, quick, clever teasing.\n")
 		}
 	}
 
 	b.WriteString("\nRULES:\n")
 	b.WriteString("1. Ground every claim ONLY in the live data below. Never invent scores, names, odds, or events.\n")
-	b.WriteString("2. One sentence, at most ~140 characters. No emojis and no line breaks.\n")
+	b.WriteString("2. One punchy sentence, ~160 characters max. Mention AT MOST one or two things — cramming every name, score, and stat kills the joke. No emojis, no line breaks.\n")
 	b.WriteString("3. The score will change as the game moves — react to the CURRENT state.\n")
 	b.WriteString("4. The \"odds\" field is American moneyline (negative = favourite, e.g. -180; positive = underdog). TRANSLATE it into plain favourite/underdog language (\"heavy favourites\", \"slight edge\", \"long shot\") — NEVER quote the raw number.\n")
 	b.WriteString("5. Each match may include \"key_events\" (goals, cards) with the minute and a text description. You MAY name the scorer or call out a card using ONLY that text — never invent a scorer, minute, or event not listed there.\n")
