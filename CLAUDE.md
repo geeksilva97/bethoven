@@ -199,8 +199,8 @@ directly, with a fake clock, no terminal).
   systemd `ReadWritePaths` dir in prod, i.e. `/opt/bethoven/data/ai_bets.log`) — not
   the DB schema. **Admin observability:** gated `Analytics`-style methods behind the
   `service.AIMonitor` port (`AIStatus`/`AIActivity`/`TriggerAI`, all `requireAdmin`).
-  The **⚙ Admin: BETanIA** TUI screen is **tabbed** (`tab` switches Betting ↔
-  Comments). The **Betting** tab shows model/schedule/last+next run/totals plus
+  The **⚙ Admin: BETanIA** TUI screen is **tabbed** (`tab` cycles Betting →
+  Comments → Usage). The **Betting** tab shows model/schedule/last+next run/totals plus
   **"Picks on record"** — BETanIA's bets sourced from the DB via
   `service.AIBets` (admin only), so they **survive a restart**, unlike the volatile
   in-memory `AIActivity` ring (which only fills as the worker *places* a bet this
@@ -210,6 +210,24 @@ directly, with a fake clock, no terminal).
   (`service.TriggerAI` → `Bettor.Trigger`, a non-blocking coalesced channel send).
   Live bets emit the `bet_placed` analytics event; the seed (writing straight to the
   store) does not.
+  - **Token usage / estimated cost — the Usage tab (`internal/ai/usage.go`).** Every
+    Claude call (bets via `Predict`, comments via `runTool`) records one JSON line —
+    `{category, model, calls, input/output tokens, web_searches, latency_ms}` — to a
+    **persistent `ai_usage.log`** (the `*ai.UsageLog` shared by predictor + commenter;
+    sums usage **across the agentic loop**, so a multi-call web-search pick is one
+    line). Path is `BETHOVEN_AI_USAGE_LOG_PATH`, defaulting **beside `ai_bets.log`**
+    (`filepath.Dir(AILogPath)/ai_usage.log`) so prod's data-dir log path carries it
+    automatically — no new env var, binary-only deploy works; **must** be under the
+    systemd `ReadWritePaths` dir in prod like the other AI logs. Categories: `bet`
+    (seed + live), `comment` (the two-call per-player pass), `live`. The admin
+    **Usage** tab reads `service.AIUsage` (`requireAdmin`, behind the
+    `service.AIUsageSource` port) which calls `UsageLog.Report()` → the pure
+    `aggregateUsage` to roll the log up **at read time** by category + grand total
+    with an **estimated USD cost** (editable per-Mtok `modelPrices` table + web-search
+    rate; unknown models flagged, cost under-counted not wrong) and **avg latency**.
+    Because it's log-backed it **survives restarts** — the whole point, unlike the
+    volatile monitor rings. Latency uses wall-clock `time.Now()` inside `ai` (pure
+    observability, never touches bets/scores — outside the injected-`Clock` rule).
   - **Leaderboard commentary ("roasts") — a second worker (`ai.CommentWorker`).**
     Gated by `BETHOVEN_AI_COMMENTS_ENABLED` (default **true** once `AIEnabled`),
     on a timer (`BETHOVEN_AI_COMMENT_INTERVAL_SECONDS`, default 6h; fires at
@@ -283,8 +301,8 @@ directly, with a fake clock, no terminal).
       cache + log, so both get clean text.
     - **Observability:** `service.AICommentMonitor` port
       (`AICommentStatus`/`AICommentActivity`/`TriggerAIComments`, all `requireAdmin`).
-      The **⚙ Admin: BETanIA** panel is **tabbed** (`tab` switches Betting ↔ Comments;
-      see the BETanIA bullet above). On the **Comments** tab the recent-comments feed
+      The **⚙ Admin: BETanIA** panel is **tabbed** (`tab` cycles Betting → Comments →
+      Usage; see the BETanIA bullet above). On the **Comments** tab the recent-comments feed
       is a **selectable list** (`↑↓`/`jk` move, `enter` opens `screenAICommentDetail`
       with the full untruncated text), and **`c` regenerates ALL comments at once** (one
       worker pass → full cache rewrite, coalesced). **Logging:** each comment is a JSON line in

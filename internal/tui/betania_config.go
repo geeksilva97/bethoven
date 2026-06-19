@@ -38,6 +38,7 @@ func (m Model) openBETanIA() Model {
 	m.aiStatus = st
 	m.aiActivity, _ = m.svc.AIActivity(m.user, betaniaActivityLimit)
 	m.aiBets, _ = m.svc.AIBets(m.user, betaniaBetsLimit)
+	m.aiUsage, _ = m.svc.AIUsage(m.user)
 	m.loadBETanIAComments()
 	m.screen = screenBETanIA
 	return m

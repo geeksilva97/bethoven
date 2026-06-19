@@ -88,6 +88,9 @@ type Service struct {
 	// and "run now" hooks; nil when it isn't running (admin reads return ErrAIOff).
 	aiComments       AICommentMonitor
 	aiCommentTrigger func() bool
+	// aiUsage is the optional persistent reader for BETanIA's Claude token usage and
+	// estimated cost (backed by the on-disk usage log); nil when BETanIA isn't running.
+	aiUsage AIUsageSource
 	// forms holds each team's pre-tournament recent-form baseline (oldest→newest),
 	// seeded from fixtures.json. Optional; nil when no baseline is configured.
 	forms map[string][]models.FormOutcome

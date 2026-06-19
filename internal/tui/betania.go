@@ -3,6 +3,8 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,7 +28,11 @@ const betaniaCommentLimit = 40
 const (
 	tabBetting  = 0
 	tabComments = 1
+	tabUsage    = 2
 )
+
+// betaniaTabCount is the number of admin tabs to cycle through.
+const betaniaTabCount = 3
 
 // updateBETanIA handles the admin panel keys: "r" runs a betting pass; "c"
 // regenerates ALL leaderboard comments; "t" toggles the comment tone; "q" quits;
@@ -42,13 +48,13 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case m.aiDisabled:
 		return m.goMenu(), nil
-	case k.String() == "tab" || k.String() == "right" || k.String() == "left" || k.String() == "shift+tab":
-		// Two tabs only — any switch key just flips between them.
-		if m.betaniaTab == tabBetting {
-			m.betaniaTab = tabComments
-		} else {
-			m.betaniaTab = tabBetting
-		}
+	case k.String() == "tab" || k.String() == "right":
+		// Cycle forward: Betting → Comments → Usage → Betting.
+		m.betaniaTab = (m.betaniaTab + 1) % betaniaTabCount
+		return m, nil
+	case k.String() == "left" || k.String() == "shift+tab":
+		// Cycle backward.
+		m.betaniaTab = (m.betaniaTab + betaniaTabCount - 1) % betaniaTabCount
 		return m, nil
 	case k.String() == "r":
 		switch err := m.svc.TriggerAI(m.user); {
@@ -150,6 +156,7 @@ func (m *Model) refreshBETanIA() {
 		m.aiStatus = st
 		m.aiActivity, _ = m.svc.AIActivity(m.user, betaniaActivityLimit)
 	}
+	m.aiUsage, _ = m.svc.AIUsage(m.user)
 	m.loadBETanIAComments()
 }
 
@@ -166,12 +173,19 @@ func (m Model) viewBETanIA() string {
 	}
 
 	out += m.betaniaTabBar()
-	if m.betaniaTab == tabComments {
+	switch m.betaniaTab {
+	case tabComments:
 		out += m.betaniaCommentsTab()
 		out += "\n" + helpStyle.Render("comments → ai_comments.log — `tail -f` to watch") + "\n"
 		out += statusLine(m) +
 			helpStyle.Render("↑↓: select · enter: full text · c: regen all · t: tone · u: per-player · x: context · s: prompt") + "\n" +
-			helpStyle.Render("tab: betting · q: quit · other: back")
+			helpStyle.Render("tab: usage · q: quit · other: back")
+		return out
+	case tabUsage:
+		out += m.betaniaUsageTab()
+		out += "\n" + helpStyle.Render("usage → ai_usage.log — the durable cost record (survives restarts)") + "\n"
+		out += statusLine(m) +
+			helpStyle.Render("tab: betting · any other key: back · q: quit")
 		return out
 	}
 
@@ -183,7 +197,7 @@ func (m Model) viewBETanIA() string {
 	return out
 }
 
-// betaniaTabBar renders the two-tab selector, highlighting the active tab.
+// betaniaTabBar renders the tab selector, highlighting the active tab.
 func (m Model) betaniaTabBar() string {
 	tab := func(label string, idx int) string {
 		if m.betaniaTab == idx {
@@ -191,7 +205,90 @@ func (m Model) betaniaTabBar() string {
 		}
 		return helpStyle.Render(" " + label + " ")
 	}
-	return tab("Betting", tabBetting) + " " + tab("Comments", tabComments) + "\n\n"
+	return tab("Betting", tabBetting) + " " + tab("Comments", tabComments) + " " + tab("Usage", tabUsage) + "\n\n"
+}
+
+// betaniaUsageTab renders BETanIA's Claude token usage and estimated cost, broken
+// down by category (bets / comments / live commentary) with a grand total. The
+// figures come from the durable on-disk usage log, so they persist across restarts
+// — unlike the "since restart" counters on the Betting tab.
+func (m Model) betaniaUsageTab() string {
+	now := m.svc.Now()
+	rep := m.aiUsage
+
+	if rep.Total.Calls == 0 {
+		out := labelStyle.Render("Token usage & estimated cost") + "\n"
+		out += helpStyle.Render("  no usage recorded yet — it accrues as BETanIA bets and comments") + "\n"
+		return out
+	}
+
+	section := func(label string, c ai.CategoryUsage) string {
+		s := labelStyle.Render(label) + "\n"
+		s += kpi("Estimated cost", fmt.Sprintf("$%.2f", c.EstCostUSD))
+		s += kpi("Calls", commaInt(c.Calls))
+		s += kpi("Input tokens", commaInt(c.InputTokens))
+		s += kpi("Output tokens", commaInt(c.OutputTokens))
+		if c.WebSearches > 0 {
+			s += kpi("Web searches", commaInt(c.WebSearches))
+		}
+		s += kpi("Avg latency", fmt.Sprintf("%d ms", c.AvgLatencyMS))
+		if !c.LastAt.IsZero() {
+			s += kpi("Last call", relativeAgo(now, c.LastAt))
+		}
+		return s
+	}
+
+	out := ""
+	for _, c := range rep.Categories {
+		out += section(usageCategoryLabel(c.Category), c) + "\n"
+	}
+
+	// Grand total — the headline numbers.
+	out += labelStyle.Render("Total") + "\n"
+	out += kpi("Estimated cost", okStyle.Render(fmt.Sprintf("$%.2f", rep.Total.EstCostUSD)))
+	out += kpi("Tokens (in + out)", commaInt(rep.Total.InputTokens+rep.Total.OutputTokens))
+	out += kpi("Calls", commaInt(rep.Total.Calls))
+	out += "\n"
+
+	out += helpStyle.Render("  Estimated from the on-disk usage log; persists across restarts. Prices are approximate.") + "\n"
+	if len(rep.UnknownModels) > 0 {
+		out += helpStyle.Render("  Cost under-counts unknown model(s): "+strings.Join(rep.UnknownModels, ", ")) + "\n"
+	}
+	return out
+}
+
+// usageCategoryLabel maps a usage category key to its panel heading.
+func usageCategoryLabel(key string) string {
+	switch key {
+	case "bet":
+		return "Bets"
+	case "comment":
+		return "Comments"
+	case "live":
+		return "Live commentary"
+	default:
+		return key
+	}
+}
+
+// commaInt formats an integer with thousands separators (e.g. 1234567 → "1,234,567").
+func commaInt(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	neg := strings.HasPrefix(s, "-")
+	if neg {
+		s = s[1:]
+	}
+	var b strings.Builder
+	for i, r := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(r)
+	}
+	if neg {
+		return "-" + b.String()
+	}
+	return b.String()
 }
 
 // betaniaBettingTab renders the live-worker status block and BETanIA's picks on

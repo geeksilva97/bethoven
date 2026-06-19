@@ -135,12 +135,17 @@ func main() {
 			interval := time.Duration(cfg.AIIntervalSecs) * time.Second
 			mon := ai.NewMonitor(cfg.AIModel, interval)
 			svc.SetAIMonitor(mon)
+			// One shared usage log records every Claude call (bets + comments) to disk
+			// and aggregates it for the admin Usage tab — the cumulative cost record
+			// that survives restarts (unlike the in-memory monitor rings).
+			usageLog := ai.NewUsageLog(cfg.AIUsageLogPath)
+			svc.SetAIUsageSource(usageLog)
 			bettor := ai.NewBettor(ai.Deps{
 				Fixtures: svc.Fixtures,
 				MyBets:   svc.MyBets,
 				PlaceBet: svc.PlaceBet,
 				Now:      svc.Now,
-			}, ai.NewAnthropicPredictor(cfg.AIModel, true), mon, u.ID, interval, cfg.AILogPath, cfg.AIMaxPerRun,
+			}, ai.NewAnthropicPredictor(cfg.AIModel, true, usageLog), mon, u.ID, interval, cfg.AILogPath, cfg.AIMaxPerRun,
 				time.Duration(cfg.AILookaheadHrs)*time.Hour)
 			svc.SetAITrigger(bettor.Trigger)
 			go bettor.Run(ctx)
@@ -153,7 +158,7 @@ func main() {
 			if cfg.AICommentsEnabled {
 				// One Anthropic commenter serves both comment workers — the type
 				// implements Commenter (per-player) and LiveCommenter (live line).
-				commenter := ai.NewAnthropicCommenter(cfg.AIModel)
+				commenter := ai.NewAnthropicCommenter(cfg.AIModel, usageLog)
 
 				ci := time.Duration(cfg.AICommentIntervalSec) * time.Second
 				cmon := ai.NewCommentMonitor(cfg.AIModel, ci)

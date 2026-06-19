@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 )
@@ -24,23 +25,26 @@ const (
 type AnthropicCommenter struct {
 	client anthropic.Client
 	model  anthropic.Model
+	usage  *UsageLog // optional; nil ⇒ no usage recording
 }
 
 // NewAnthropicCommenter builds a commenter. The client reads ANTHROPIC_API_KEY
-// from the environment. An empty model falls back to Claude Opus 4.8.
-func NewAnthropicCommenter(model string) *AnthropicCommenter {
+// from the environment. An empty model falls back to Claude Opus 4.8. usage may be
+// nil (no token-usage recording), mirroring a nil monitor.
+func NewAnthropicCommenter(model string, usage *UsageLog) *AnthropicCommenter {
 	if model == "" {
 		model = string(anthropic.ModelClaudeOpus4_8)
 	}
 	return &AnthropicCommenter{
 		client: anthropic.NewClient(),
 		model:  anthropic.Model(model),
+		usage:  usage,
 	}
 }
 
 // DetectNarratives is stage 1: it returns the grounded ranking stories in the data.
 func (p *AnthropicCommenter) DetectNarratives(ctx context.Context, history []RoundStanding) ([]Narrative, error) {
-	raw, err := p.runTool(ctx, narrativePrompt(history), narrativeTool(),
+	raw, err := p.runTool(ctx, "comment", narrativePrompt(history), narrativeTool(),
 		"Call submit_narratives now with the narratives you found.")
 	if err != nil {
 		return nil, err
@@ -61,7 +65,7 @@ func (p *AnthropicCommenter) WriteComments(ctx context.Context, history []RoundS
 	if len(history) == 0 {
 		return nil, nil
 	}
-	raw, err := p.runTool(ctx, commentPrompt(history, narratives, cfg), commentTool(),
+	raw, err := p.runTool(ctx, "comment", commentPrompt(history, narratives, cfg), commentTool(),
 		"Call submit_comments now with one short line per player.")
 	if err != nil {
 		return nil, err
@@ -96,9 +100,17 @@ func (p *AnthropicCommenter) WriteComments(ctx context.Context, history []RoundS
 // runTool runs the agentic loop until the model calls the named tool, returning
 // that call's raw JSON input. Mirrors AnthropicPredictor.Predict's loop, minus the
 // web-search machinery.
-func (p *AnthropicCommenter) runTool(ctx context.Context, prompt string, tool anthropic.ToolParam, nudge string) (string, error) {
+func (p *AnthropicCommenter) runTool(ctx context.Context, category, prompt string, tool anthropic.ToolParam, nudge string) (string, error) {
 	messages := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(prompt))}
 	tools := []anthropic.ToolUnionParam{{OfTool: &tool}}
+
+	// Token usage summed across the loop (the nudge round), with the wall-clock
+	// latency of the whole call, recorded once on the way out under `category`.
+	// time.Now() here is pure observability, outside the injected-Clock rule.
+	var u Usage
+	start := time.Now()
+	record := func(ok bool) { p.usage.Record(category, string(p.model), u, time.Since(start), ok) }
+
 	for i := 0; i < maxCommentIters; i++ {
 		resp, err := p.client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     p.model,
@@ -107,10 +119,13 @@ func (p *AnthropicCommenter) runTool(ctx context.Context, prompt string, tool an
 			Tools:     tools,
 		})
 		if err != nil {
+			record(false)
 			return "", err
 		}
+		u.add(resp.Usage)
 		for _, block := range resp.Content {
 			if tu, ok := block.AsAny().(anthropic.ToolUseBlock); ok && tu.Name == tool.Name {
+				record(true)
 				return tu.JSON.Input.Raw(), nil
 			}
 		}
@@ -119,6 +134,7 @@ func (p *AnthropicCommenter) runTool(ctx context.Context, prompt string, tool an
 			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(nudge)))
 		}
 	}
+	record(false)
 	return "", fmt.Errorf("model did not call %s", tool.Name)
 }
 

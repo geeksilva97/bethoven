@@ -17,7 +17,7 @@ func (p *AnthropicCommenter) WriteLiveComment(ctx context.Context, sit LiveSitua
 	if len(sit.Matches) == 0 {
 		return "", nil
 	}
-	raw, err := p.runTool(ctx, liveCommentPrompt(sit, recent, cfg), liveCommentTool(),
+	raw, err := p.runTool(ctx, "live", liveCommentPrompt(sit, recent, cfg), liveCommentTool(),
 		"Call submit_live_comment now with your single line.")
 	if err != nil {
 		return "", err

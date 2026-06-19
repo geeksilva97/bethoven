@@ -4,6 +4,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -50,6 +51,7 @@ type Config struct {
 	AIModel        string // Claude model id
 	AIIntervalSecs int    // seconds between live betting passes
 	AILogPath      string // JSON-lines log of every pick (seed + live)
+	AIUsageLogPath string // JSON-lines log of per-call Claude token usage (the durable cost record)
 	AIMaxPerRun    int    // cap on bets placed per live pass (0 = no cap)
 	AILookaheadHrs int    // only bet matches kicking off within this many hours (0 = no horizon)
 
@@ -77,6 +79,7 @@ func (c Config) UsingDefaultInvite() bool {
 // Load reads configuration from the environment. Defaults target a local
 // dev run; production sets the BETHOVEN_* vars explicitly (see deploy docs).
 func Load() Config {
+	aiLogPath := env("BETHOVEN_AI_LOG_PATH", "ai_bets.log")
 	return Config{
 		Port:        env("BETHOVEN_PORT", "2222"),
 		DBPath:      env("BETHOVEN_DB_PATH", "bethoven.db"),
@@ -98,7 +101,10 @@ func Load() Config {
 		AIName:         env("BETHOVEN_AI_NAME", "BETanIA 🤖"),
 		AIModel:        env("BETHOVEN_AI_MODEL", "claude-sonnet-4-6"),
 		AIIntervalSecs: envInt("BETHOVEN_AI_INTERVAL_SECONDS", 21600),
-		AILogPath:      env("BETHOVEN_AI_LOG_PATH", "ai_bets.log"),
+		AILogPath:      aiLogPath,
+		// Defaults beside ai_bets.log, so prod's BETHOVEN_AI_LOG_PATH under the data
+		// dir carries the usage log along with it — no extra env var needed.
+		AIUsageLogPath: env("BETHOVEN_AI_USAGE_LOG_PATH", filepath.Join(filepath.Dir(aiLogPath), "ai_usage.log")),
 		AIMaxPerRun:    envInt("BETHOVEN_AI_MAX_PER_RUN", 0),
 		AILookaheadHrs: envInt("BETHOVEN_AI_LOOKAHEAD_HOURS", 72),
 

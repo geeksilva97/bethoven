@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
@@ -28,11 +29,13 @@ type AnthropicPredictor struct {
 	client       anthropic.Client
 	model        anthropic.Model
 	useWebSearch bool
+	usage        *UsageLog // optional; nil ⇒ no usage recording
 }
 
 // NewAnthropicPredictor builds a predictor. The client reads ANTHROPIC_API_KEY
-// from the environment. An empty model falls back to Claude Opus 4.8.
-func NewAnthropicPredictor(model string, useWebSearch bool) *AnthropicPredictor {
+// from the environment. An empty model falls back to Claude Opus 4.8. usage may be
+// nil (no token-usage recording), mirroring a nil monitor.
+func NewAnthropicPredictor(model string, useWebSearch bool, usage *UsageLog) *AnthropicPredictor {
 	if model == "" {
 		model = string(anthropic.ModelClaudeOpus4_8)
 	}
@@ -40,6 +43,7 @@ func NewAnthropicPredictor(model string, useWebSearch bool) *AnthropicPredictor 
 		client:       anthropic.NewClient(),
 		model:        anthropic.Model(model),
 		useWebSearch: useWebSearch,
+		usage:        usage,
 	}
 }
 
@@ -78,6 +82,14 @@ func (p *AnthropicPredictor) Predict(ctx context.Context, m models.Match) (Predi
 	messages := []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(p.prompt(m)))}
 	tools := p.tools()
 
+	// Token usage summed across the agentic loop (web-search rounds + nudge), with
+	// the wall-clock latency of the whole pick. Recorded once on the way out.
+	// time.Now() here is pure observability — it never affects bets/scores and the
+	// kickoff-lock tests don't reach it — so it's outside the injected-Clock rule.
+	var u Usage
+	start := time.Now()
+	record := func(ok bool) { p.usage.Record("bet", string(p.model), u, time.Since(start), ok) }
+
 	for i := 0; i < maxPredictIters; i++ {
 		resp, err := p.client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     p.model,
@@ -86,14 +98,18 @@ func (p *AnthropicPredictor) Predict(ctx context.Context, m models.Match) (Predi
 			Tools:     tools,
 		})
 		if err != nil {
+			record(false)
 			return Prediction{}, err
 		}
+		u.add(resp.Usage)
 		for _, block := range resp.Content {
 			if tu, ok := block.AsAny().(anthropic.ToolUseBlock); ok && tu.Name == "submit_prediction" {
 				var in predictionInput
 				if err := json.Unmarshal([]byte(tu.JSON.Input.Raw()), &in); err != nil {
+					record(false)
 					return Prediction{}, fmt.Errorf("parse prediction: %w", err)
 				}
+				record(true)
 				return in.prediction(), nil
 			}
 		}
@@ -108,6 +124,7 @@ func (p *AnthropicPredictor) Predict(ctx context.Context, m models.Match) (Predi
 				"Call submit_prediction now with your final regulation 90-minute scoreline.")))
 		}
 	}
+	record(false)
 	return Prediction{}, fmt.Errorf("model did not submit a prediction for %s", matchLabel(m))
 }
 

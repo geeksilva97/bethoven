@@ -49,8 +49,9 @@ func runAISeed(args []string) {
 		log.Printf("ai-seed: player %q already exists", cfg.AIName)
 	}
 
-	// Web search OFF: the seed must be unbiased pre-tournament knowledge.
-	pred := ai.NewAnthropicPredictor(cfg.AIModel, false)
+	// Web search OFF: the seed must be unbiased pre-tournament knowledge. The seed's
+	// token usage is recorded to the same cumulative usage log as the live worker.
+	pred := ai.NewAnthropicPredictor(cfg.AIModel, false, ai.NewUsageLog(cfg.AIUsageLogPath))
 	res, err := ai.SeedPastGames(context.Background(), store, t.ID, pred, userID, time.Now().UTC(), cfg.AILogPath, log.Default())
 	if err != nil {
 		log.Fatalf("ai-seed: %v", err)

@@ -173,6 +173,9 @@ type Model struct {
 	// unlike aiActivity's in-memory ring). betaniaTab selects which panel tab shows.
 	aiBets     []service.AIBet
 	betaniaTab int
+	// aiUsage is BETanIA's cumulative token usage + estimated cost, read from the
+	// durable on-disk usage log (survives restarts). Shown on the Usage tab.
+	aiUsage ai.UsageReport
 	// admin: BETanIA comment worker. aiCommentsDisabled is set when the comment
 	// worker isn't running; commentTone is the active tone (toggled with 't').
 	aiCommentsDisabled bool
