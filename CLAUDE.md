@@ -213,11 +213,14 @@ directly, with a fake clock, no terminal).
       `savage`; absent ⇒ playful), like `scoring_mode`. Toggled with **`t`** on the
       admin panel (`SetCommentTone`). **Per-player override:** each player can be
       `default`/`playful`/`savage`/`mute` via `comment_tone_u_<id>` settings
-      (`SetUserCommentTone`; absent ⇒ inherit). **Mute** ⇒ that player gets no
-      comment at all, enforced in three places: the writer skips them, the worker
-      never caches them, and **`LeaderboardComments` drops them at READ time** — so
-      muting hides an already-cached comment immediately, without waiting for the
-      next regeneration pass. Edited with **`u`** on the panel (`screenAITones`).
+      (`SetUserCommentTone`; absent ⇒ inherit). **Mute** ⇒ that player gets **no
+      comment at all, anywhere**, enforced at every surface so muting takes effect
+      immediately without waiting for the next regeneration pass: the writer skips
+      them, the worker never caches them, **`LeaderboardComments`/`AllLeaderboardComments`
+      drop them at READ time** (so they never show on the board or in the admin cycle),
+      and **`AICommentActivity` drops them at READ time** too (a pre-mute entry lingering
+      in the in-memory ring never reaches the admin feed/detail). Edited with **`u`** on
+      the panel (`screenAITones`).
     - **Rivalry / house context** (`x` → `screenAIContext`): a single
       `comment_context` JSON setting holds rivalry pairs (two user ids + note,
       resolved to names) and free-text house notes. Fed into the stage-2 prompt as

@@ -125,7 +125,11 @@ func (s *Service) AICommentStatus(by *models.User) (ai.CommentStatus, error) {
 	return s.aiComments.Status(), nil
 }
 
-// AICommentActivity returns the worker's most recent comments, newest first. Admin only.
+// AICommentActivity returns the worker's most recent comments, newest first. Admin
+// only. Muted players are dropped at READ time: the worker stops recording them once
+// muted, but pre-mute entries linger in the in-memory ring until they age out — so a
+// muted player must show NO comment anywhere, the admin feed included. Error entries
+// (no player) are always kept.
 func (s *Service) AICommentActivity(by *models.User, limit int) ([]ai.CommentAction, error) {
 	if err := requireAdmin(by); err != nil {
 		return nil, err
@@ -133,7 +137,34 @@ func (s *Service) AICommentActivity(by *models.User, limit int) ([]ai.CommentAct
 	if s.aiComments == nil {
 		return nil, ErrAIOff
 	}
-	return s.aiComments.Activity(limit), nil
+	muted := s.mutedNames()
+	all := s.aiComments.Activity(0) // fetch all, then filter, then cap
+	out := make([]ai.CommentAction, 0, len(all))
+	for _, a := range all {
+		if a.Player != "" && muted[a.Player] {
+			continue
+		}
+		out = append(out, a)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// mutedNames returns the set of display names whose per-player tone is "mute".
+func (s *Service) mutedNames() map[string]bool {
+	users, err := s.store.AllUsers()
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]bool)
+	for _, u := range users {
+		if s.userToneOverride(u.ID) == "mute" {
+			out[u.DisplayName] = true
+		}
+	}
+	return out
 }
 
 // TriggerAIComments asks the comment worker to regenerate ALL players' comments

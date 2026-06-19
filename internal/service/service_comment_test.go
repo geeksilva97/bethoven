@@ -16,6 +16,54 @@ func betOK(t *testing.T, svc *Service, uid, mid int64, a, b int) {
 	}
 }
 
+// fakeCommentMonitor is a minimal AICommentMonitor for testing the read-time feed.
+type fakeCommentMonitor struct{ acts []ai.CommentAction }
+
+func (f fakeCommentMonitor) Status() ai.CommentStatus { return ai.CommentStatus{} }
+func (f fakeCommentMonitor) Activity(limit int) []ai.CommentAction {
+	if limit > 0 && limit < len(f.acts) {
+		return f.acts[:limit]
+	}
+	return f.acts
+}
+
+// TestAICommentActivityHidesMuted checks a muted player's lingering pre-mute entry
+// is dropped from the admin feed at read time, while errors (no player) survive.
+func TestAICommentActivityHidesMuted(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	admin, _ := svc.Register(adminFP, testInvite, "Admin")
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	svc.Register("SHA256:bob", testInvite, "Bob")
+
+	svc.SetCommentMonitor(fakeCommentMonitor{acts: []ai.CommentAction{
+		{Player: "Alice", Text: "alice line", Outcome: "written"},
+		{Player: "Bob", Text: "bob line", Outcome: "written"},
+		{Player: "", Outcome: "error", Err: "boom"},
+	}})
+
+	// Before muting, all three entries are visible.
+	if got, _ := svc.AICommentActivity(admin, 0); len(got) != 3 {
+		t.Fatalf("expected 3 entries before mute, got %d", len(got))
+	}
+
+	// Mute Alice -> her lingering entry vanishes; Bob + the error remain.
+	if err := svc.SetUserCommentTone(admin, alice.ID, "mute"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.AICommentActivity(admin, 0)
+	if err != nil {
+		t.Fatalf("AICommentActivity: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("muted Alice must be dropped, got %d entries: %+v", len(got), got)
+	}
+	for _, a := range got {
+		if a.Player == "Alice" {
+			t.Errorf("muted Alice must not appear: %+v", a)
+		}
+	}
+}
+
 // psByName returns the standing for a named player in a round (fails if absent).
 func psByName(t *testing.T, r ai.RoundStanding, name string) ai.PlayerStanding {
 	t.Helper()
