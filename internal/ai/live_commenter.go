@@ -52,7 +52,8 @@ type LiveMatchInfo struct {
 	ScoreA int             `json:"score_a"`
 	ScoreB int             `json:"score_b"`
 	Clock  string          `json:"clock"`
-	Odds   string          `json:"odds,omitempty"` // sanitized pre-match odds; may be empty
+	Phase  string          `json:"phase,omitempty"` // "halftime"/"extra_time"/"penalties"; absent for ordinary play
+	Odds   string          `json:"odds,omitempty"`  // sanitized pre-match odds; may be empty
 	Events []LiveEventInfo `json:"key_events,omitempty"`
 	Picks  []LivePickInfo  `json:"picks,omitempty"`
 }
@@ -278,7 +279,9 @@ func liveSignature(sit LiveSituation) string {
 			last := m.Events[n-1]
 			ev = fmt.Sprintf("|%d:%s:%s", n, last.Clock, last.Type)
 		}
-		ms = append(ms, fmt.Sprintf("%s%d-%d%s%s", m.TeamA, m.ScoreA, m.ScoreB, m.TeamB, ev))
+		// Phase is part of the signature so the whistle for halftime (or full-time
+		// pending) prompts a fresh line even though the score didn't move.
+		ms = append(ms, fmt.Sprintf("%s%d-%d%s@%s%s", m.TeamA, m.ScoreA, m.ScoreB, m.TeamB, m.Phase, ev))
 	}
 	sort.Strings(ms)
 	b.WriteString(strings.Join(ms, "|"))

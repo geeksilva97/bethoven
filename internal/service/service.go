@@ -134,6 +134,7 @@ func overlayLive(m *models.Match, snap map[int64]live.Score) {
 	m.Live = true
 	m.LiveScoreA, m.LiveScoreB = ls.A, ls.B
 	m.LiveMinute, m.LiveClock = ls.Minute, ls.Clock
+	m.LivePhase = ls.Phase
 	m.LiveOdds = ls.Odds
 	m.LiveEvents = ls.Events
 }

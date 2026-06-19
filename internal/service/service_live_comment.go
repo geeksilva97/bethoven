@@ -54,6 +54,7 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 			ScoreA: mp.Match.LiveScoreA,
 			ScoreB: mp.Match.LiveScoreB,
 			Clock:  mp.Match.LiveClock,
+			Phase:  mp.Match.LivePhase,
 			Odds:   mp.Match.LiveOdds,
 		}
 		// Key events (goals/cards) so BETanIA can name the scorer; already sanitized

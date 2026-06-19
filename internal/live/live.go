@@ -11,6 +11,7 @@ package live
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,12 +39,39 @@ func ParseState(s string) State {
 	}
 }
 
+// Phase is a finer, in-play breakdown than State — the match is "in" but paused or
+// past regulation. Empty means ordinary live play. These are OUR controlled labels
+// (a closed vocabulary), never raw feed text, so they're safe to render and to feed
+// the model. ParsePhase derives them from ESPN's status.type.name.
+const (
+	PhaseHalftime  = "halftime"   // the interval — comment as a break, not live play
+	PhaseExtraTime = "extra_time" // knockout extra time (we still score regulation 90')
+	PhasePenalties = "penalties"  // shootout
+)
+
+// ParsePhase maps an ESPN status.type.name ("STATUS_HALFTIME", …) to one of our
+// controlled Phase labels, or "" for ordinary in-play. Substring matching keeps it
+// robust to ESPN's naming variants (e.g. "STATUS_HALFTIME_ET").
+func ParsePhase(name string) string {
+	switch {
+	case strings.Contains(name, "HALFTIME"):
+		return PhaseHalftime
+	case strings.Contains(name, "PENALT"), strings.Contains(name, "SHOOTOUT"):
+		return PhasePenalties
+	case strings.Contains(name, "EXTRA"):
+		return PhaseExtraTime
+	default:
+		return ""
+	}
+}
+
 // Score is the live snapshot for a single match, oriented to our TeamA/TeamB.
 type Score struct {
 	A, B   int
 	State  State
 	Minute int                 // feed "period" (half number), not a clock minute; UI shows Clock
 	Clock  string              // display clock, e.g. "67'"
+	Phase  string              // controlled in-play phase label (PhaseHalftime, …); "" for ordinary play
 	Odds   string              // sanitized pre-match odds, e.g. "USA -160 · O/U 2.5"; empty if absent
 	Events []models.MatchEvent // sanitized key events (goals/cards), oldest→newest; the text references team names directly, so no TeamA/TeamB orientation
 }
@@ -59,6 +87,7 @@ type Event struct {
 	State                State
 	Minute               int
 	Clock                string
+	Phase                string              // controlled in-play phase label (PhaseHalftime, …); "" for ordinary play
 	Odds                 string              // sanitized pre-match odds; references team names directly, so no orientation
 	KeyEvents            []models.MatchEvent // sanitized goals/cards; populated only for in-play events
 }

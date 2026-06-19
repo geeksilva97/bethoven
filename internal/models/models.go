@@ -65,6 +65,7 @@ type Match struct {
 	LiveScoreB int
 	LiveMinute int          // feed "period" (half number), not a clock minute; display uses LiveClock
 	LiveClock  string       // display clock, e.g. "67'"
+	LivePhase  string       // controlled in-play phase label ("halftime", …) from the feed; "" for ordinary play
 	LiveOdds   string       // sanitized pre-match odds from the feed, e.g. "USA -160 · O/U 2.5"; empty if absent
 	LiveEvents []MatchEvent // sanitized key events (goals/cards) from the feed, oldest→newest; nil if none
 }

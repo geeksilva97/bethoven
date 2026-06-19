@@ -196,6 +196,46 @@ func TestCleanEventTextTruncates(t *testing.T) {
 	}
 }
 
+func TestParsePhase(t *testing.T) {
+	cases := map[string]string{
+		"STATUS_HALFTIME":          PhaseHalftime,
+		"STATUS_HALFTIME_ET":       PhaseHalftime,
+		"STATUS_FIRST_HALF":        "",
+		"STATUS_IN_PROGRESS":       "",
+		"STATUS_PENALTIES":         PhasePenalties,
+		"STATUS_SHOOTOUT":          PhasePenalties,
+		"STATUS_SECOND_EXTRA_TIME": PhaseExtraTime,
+		"":                         "",
+	}
+	for name, want := range cases {
+		if got := ParsePhase(name); got != want {
+			t.Errorf("ParsePhase(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestDecodeEventsParsesHalftime(t *testing.T) {
+	// An in-play match at the interval: state stays "in", but the type name marks
+	// halftime, which must surface as PhaseHalftime.
+	const body = `{"events":[{"date":"2026-06-12T19:00Z","competitions":[{` +
+		`"competitors":[{"homeAway":"home","score":"2","team":{"displayName":"USA"}},` +
+		`{"homeAway":"away","score":"0","team":{"displayName":"Australia"}}],` +
+		`"status":{"displayClock":"45'+8'","period":1,"type":{"state":"in","name":"STATUS_HALFTIME"}}}]}]}`
+	evs, err := decodeEvents(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("decodeEvents: %v", err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1", len(evs))
+	}
+	if evs[0].State != StateIn {
+		t.Errorf("state = %v, want in", evs[0].State)
+	}
+	if evs[0].Phase != PhaseHalftime {
+		t.Errorf("phase = %q, want %q", evs[0].Phase, PhaseHalftime)
+	}
+}
+
 func TestDecodeEventsRejectsBadScores(t *testing.T) {
 	for _, score := range []string{"-3", "150"} {
 		body := `{"events":[{"date":"2026-06-12T19:00Z","competitions":[{` +

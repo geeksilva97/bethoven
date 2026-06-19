@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"bethoven/internal/live"
 	"bethoven/internal/models"
 )
 
@@ -218,11 +219,17 @@ func wrapText(s string, width int) []string {
 }
 
 // liveScore renders a match's running score with the live accent, e.g.
-// "⚡67' 1–0" (or "⚡ 1–0" when the feed gives no clock). Caller guarantees mt.Live.
+// "⚡67' 1–0" (or "⚡ 1–0" when the feed gives no clock). At halftime the clock
+// reads a stale stoppage time like "45'+8'", so show "HT" instead — clearer that
+// play is paused. Caller guarantees mt.Live.
 func liveScore(mt models.Match) string {
+	label := mt.LiveClock
+	if mt.LivePhase == live.PhaseHalftime {
+		label = "HT"
+	}
 	prefix := "⚡"
-	if mt.LiveClock != "" {
-		prefix = "⚡" + mt.LiveClock + " "
+	if label != "" {
+		prefix = "⚡" + label + " "
 	}
 	return liveStyle.Render(fmt.Sprintf("%s%d-%d", prefix, mt.LiveScoreA, mt.LiveScoreB))
 }

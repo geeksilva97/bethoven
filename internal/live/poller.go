@@ -115,7 +115,7 @@ func (p *Poller) poll(ctx context.Context) {
 		if ev.State == StateIn {
 			// Odds and key-event text reference team names directly, so copy straight
 			// through — no home/away orientation needed.
-			fresh[m.ID] = Score{A: a, B: b, State: StateIn, Minute: ev.Minute, Clock: ev.Clock, Odds: ev.Odds, Events: ev.KeyEvents}
+			fresh[m.ID] = Score{A: a, B: b, State: StateIn, Minute: ev.Minute, Clock: ev.Clock, Phase: ev.Phase, Odds: ev.Odds, Events: ev.KeyEvents}
 		}
 		if ev.State == StatePost && !m.Finished {
 			if err := p.finalize(m.ID, a, b); err != nil {

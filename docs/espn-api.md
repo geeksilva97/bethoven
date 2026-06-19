@@ -57,7 +57,8 @@ Shape we parse (`espnResp` / `decodeEvents` in `espn.go`):
           "statistics": [ { "name": "possessionPct", "displayValue": "71.4" }, … ] },
         { "homeAway": "away", "score": "0", "team": { "displayName": "Australia" }, … }
       ],
-      "status": { "displayClock": "44'", "period": 2, "type": { "state": "in" } },
+      "status": { "displayClock": "44'", "period": 2,
+                   "type": { "state": "in", "name": "STATUS_HALFTIME", "shortDetail": "HT" } },
       "details": [                          // curated key plays (see "athlete refs" caveat)
         { "type": { "text": "Own Goal" }, "clock": { "displayValue": "11'" },
           "scoringPlay": true, "team": { "id": "660" }, "athletesInvolved": [] }
@@ -81,11 +82,24 @@ Shape we parse (`espnResp` / `decodeEvents` in `espn.go`):
 | `status.displayClock` | display clock (sanitized, `cleanClock`) |
 | `status.period` | `LiveMinute` (half number, not a wall-clock minute) |
 | `status.type.state` | `pre`/`in`/`post` → `live.State` (`ParseState`) |
+| `status.type.name` | finer in-play phase → `live.Phase` (`ParsePhase`) |
 | `odds[]` (priority-1 provider) | `LiveOdds` string (sanitized, `cleanOdds`) |
 
-**Status states:** `pre` (never revealed — preserves blind betting), `in` (cached +
-folded into provisional points), `post` (auto-finalized via `FinalizeFromFeed`, only
-if not already finished — admin entry always wins).
+**Status states (`status.type.state`)** — the coarse bucket: `pre` (never revealed —
+preserves blind betting), `in` (cached + folded into provisional points), `post`
+(auto-finalized via `FinalizeFromFeed`, only if not already finished — admin entry
+always wins).
+
+**Phase (`status.type.name`)** — the finer breakdown *within* `in`. The match is
+still `state:"in"` at the interval, so the coarse state can't tell you it's paused;
+`status.type.name` can. We map a few via `ParsePhase` into OUR controlled labels
+(never raw feed text): `STATUS_HALFTIME*` → `halftime`, `STATUS_*EXTRA*` →
+`extra_time`, `STATUS_PENALTIES`/`STATUS_SHOOTOUT` → `penalties`; anything else ⇒ ""
+(ordinary live play). Carried as `Score.Phase`/`Match.LivePhase`. Two uses: the TUI
+shows **"HT"** instead of the stale stoppage clock (`45'+8'`) at halftime, and the
+phase is fed to BETanIA so the live line reacts to *the break*, not as if the ball
+is rolling. Other `name` values seen: `STATUS_SCHEDULED`, `STATUS_FIRST_HALF`,
+`STATUS_IN_PROGRESS`, `STATUS_FULL_TIME`/`STATUS_FINAL`.
 
 ### 2. Summary (per match) — `GET /summary?event={id}`
 

@@ -118,8 +118,15 @@ directly, with a fake clock, no terminal).
   mirroring `ai.sanitizeText` (whole-CSI strip + C0/C1 drop + length cap), since it
   reaches both terminals and the model. Capped at the most-recent `maxKeyEvents`; one
   extra ~350 KB GET per live match per poll, tolerated on failure. Fed into BETanIA's
-  live commentary so it can name the scorer (see below). **Full ESPN feed reference:
-  `docs/espn-api.md`** (endpoints, every field, what's used vs available, sanitizers).
+  live commentary so it can name the scorer (see below).
+  **Phase (halftime/ET/penalties):** the coarse `state` stays `in` at the interval,
+  so `decodeEvents` also reads `status.type.name` and maps it via `ParsePhase` to OUR
+  controlled label (`PhaseHalftime`/`PhaseExtraTime`/`PhasePenalties`; "" ⇒ ordinary
+  play — never raw feed text), carried as `Score.Phase`/`Match.LivePhase`. The TUI
+  shows **"HT"** instead of the stale stoppage clock (`45'+8'`) at halftime
+  (`liveScore`), and the phase is fed to BETanIA so the live line reacts to the break.
+  **Full ESPN feed reference: `docs/espn-api.md`** (endpoints, every field, what's
+  used vs available, sanitizers).
 - **Analytics (optional, `internal/analytics`).** A usage tracker behind the
   `service.AnalyticsSink` port (nil ⇒ disabled ⇒ behaviour identical to no
   analytics, mirroring the live feed). Enable with `BETHOVEN_ANALYTICS_ENABLED=true`
