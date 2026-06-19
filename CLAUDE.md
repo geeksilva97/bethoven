@@ -23,7 +23,8 @@ internal/auth       key fingerprint, admin allowlist, invite-code check
 internal/scoring    PURE Points(bet, match) — the heavily unit-tested core
 internal/live       OPTIONAL live feed: ESPN adapter + in-memory Cache + Poller. Behind the service.LiveStore port.
 internal/analytics  OPTIONAL usage tracking: own SQLite DB + async Recorder. Behind the service.AnalyticsSink port.
-internal/service    ALL business rules. Depends only on Store + Clock (+ optional LiveStore/AnalyticsSink). The integration-test seam.
+internal/ai         OPTIONAL AI player "BETanIA": Claude-API predictor + live Bettor + seeder + Monitor. Behind the service.AIMonitor port + a trigger seam. NEVER imports service (function seams).
+internal/service    ALL business rules. Depends only on Store + Clock (+ optional LiveStore/AnalyticsSink/AIMonitor). The integration-test seam.
 internal/server     thin wish SSH server -> resolves key to user -> launches TUI
 internal/tui        presentation only; every action calls a service method
 ```
@@ -114,6 +115,55 @@ directly, with a fake clock, no terminal).
   which would inflate counts). Admin reads via gated `Analytics*` service methods
   (`requireAdmin`); the **⚙ Admin: analytics** TUI screen shows KPIs, an
   accesses/day sparkline, per-player engagement, and a recent-activity feed.
+- **BETanIA — the AI player (optional, `internal/ai`).** An AI competitor
+  (display name **"BETanIA 🤖"**, reserved fingerprint `bethoven:ai-betania` — the
+  non-`SHA256:` prefix means it can never collide with a real SSH key, so it's a
+  pure system account with no login). It predicts regulation-90' scorelines via the
+  **Claude API** (`github.com/anthropics/anthropic-sdk-go`; model
+  `BETHOVEN_AI_MODEL`, default `claude-sonnet-4-6`; `ANTHROPIC_API_KEY` read by the
+  SDK) and competes on the **same leaderboard** as humans. Like `live`/`analytics`,
+  the package **never imports `service`** — the `Bettor` takes function seams
+  (`Deps{Fixtures, MyBets, PlaceBet, Now}`), mirroring `live.MatchesFunc`. Opt-in,
+  off by default (`BETHOVEN_AI_ENABLED`, inverted env test like analytics; nil
+  monitor/trigger ⇒ behaviour identical to no AI). **Two tracks, split by who runs
+  them so the server stays thin:**
+    - **Seed (one-time, the `bethoven ai-seed` CLI — `cmd/bethoven/ai_seed.go`).**
+      Creates the player and backfills **already-played** matches (`now >=
+      m.StartsAt`) with **web-search-OFF** predictions — pure pre-tournament
+      knowledge, unbiased since the 2026 results post-date the model's training
+      cutoff and there's no internet to look them up. Writes via **`store.UpsertBet`
+      directly** — the **one sanctioned kickoff-lock bypass** (sibling of the
+      `place-bet` escape hatch), justified because those games are already locked.
+      **Idempotent:** skips matches BETanIA already bet (no API cost on re-run).
+      User creation lives **here, in the CLI** — never in server startup.
+    - **Live worker (in-server, gated by `BETHOVEN_AI_ENABLED`).** `ai.Bettor` runs
+      on a timer (`BETHOVEN_AI_INTERVAL_SECONDS`, default 6h; fires once immediately)
+      and bets **upcoming** matches through **`service.PlaceBet`** — so the **kickoff
+      lock fully applies** (no exemption for the live path). Panic-recovered;
+      per-match `context` timeout; a mid-pass kickoff race is recorded as `locked`,
+      not an error. Uses the **basic** web-search tool (`web_search_20250305`, not
+      the slow dynamic-filtering `20260209`) capped by `maxWebSearches`.
+      **`BETHOVEN_AI_MAX_PER_RUN` caps bets per pass** (e.g. 4): since
+      `service.Fixtures()`→`store.ListMatches` is `ORDER BY starts_at`, the worker
+      bets the **N soonest unbet upcoming matches** soonest-first, so it picks "the
+      next few games" each pass rather than the whole fixture list — and never
+      misses an imminent one. The server only **resolves** BETanIA (`svc.Lookup`);
+      if it's not onboarded it logs "run `bethoven ai-seed` first" and stays off.
+  **Untrusted model output is sanitized** (`ai.sanitizeText`): the model's
+  rationale/confidence render into the admin terminal and `ai_bets.log`, the same
+  ANSI-injection boundary as display names — `sanitizeText` strips whole CSI escape
+  sequences + C0/C1 controls (strip-don't-reject, like `cleanClock`), applied at the
+  prediction source so log and TUI both get clean text. Scores are clamped 0–99
+  (`clampScore`, and again in `PlaceBet`). **Logging:** every pick (seed + live) is a
+  JSON line in `BETHOVEN_AI_LOG_PATH` (default `ai_bets.log`; **must** be under the
+  systemd `ReadWritePaths` dir in prod, i.e. `/opt/bethoven/data/ai_bets.log`) — not
+  the DB schema. **Admin observability:** gated `Analytics`-style methods behind the
+  `service.AIMonitor` port (`AIStatus`/`AIActivity`/`TriggerAI`, all `requireAdmin`);
+  the **⚙ Admin: BETanIA** TUI screen shows model/schedule/last+next run/totals + a
+  recent-picks feed with rationale, and **`r` triggers an immediate pass**
+  (`service.TriggerAI` → `Bettor.Trigger`, a non-blocking coalesced channel send).
+  Live bets emit the `bet_placed` analytics event; the seed (writing straight to the
+  store) does not.
 
 ## Onboarding & admin
 
@@ -136,6 +186,9 @@ directly, with a fake clock, no terminal).
 make run              # build + serve on :2222, invite code "letmein"
 make test             # go test -race ./...  (hermetic: temp DBs, ephemeral ports)
 make build-linux      # static linux/amd64 (cross-compiles cleanly — no cgo)
+
+# BETanIA onboarding (one-time, by hand; opens its own DB connection like place-bet):
+ANTHROPIC_API_KEY=… BETHOVEN_DB_PATH=… bethoven ai-seed   # create the player + backfill played games (web search OFF)
 ```
 Connect: `ssh -p 2222 localhost` (or set up a `~/.ssh/config` alias; see README).
 
@@ -187,9 +240,10 @@ Connect: `ssh -p 2222 localhost` (or set up a `~/.ssh/config` alias; see README)
 ## Backup (do this BEFORE risky ops)
 
 **Rule:** any operation that restarts the VM, changes the running model/binary, or
-mutates data (migrations, manual data edits, schema changes, restoring fixtures)
-**must be preceded by a database backup.** No exceptions — the DB is the only
-non-reproducible state (apostas + results); the binary and `fixtures.json` aren't.
+mutates data (migrations, manual data edits, schema changes, restoring fixtures,
+**`bethoven ai-seed`** — it inserts BETanIA's bets) **must be preceded by a
+database backup.** No exceptions — the DB is the only non-reproducible state
+(apostas + results); the binary and `fixtures.json` aren't.
 (The optional `analytics.db` is **out of scope** for this rule — it's a separate,
 non-critical file holding only usage history; back it up if you like with the same
 recipe, but it never gates a risky op.)

@@ -134,6 +134,12 @@ allowlist is the source of truth.
 | `BETHOVEN_LIVE_POLL_SECONDS` | `60` | seconds between live-feed polls |
 | `BETHOVEN_ANALYTICS_ENABLED` | `false` | record usage events (accesses, bets, screen views) to a separate DB; set `true` to enable |
 | `BETHOVEN_ANALYTICS_DB_PATH` | `analytics.db` | SQLite file for analytics events (separate from the domain DB) |
+| `BETHOVEN_AI_ENABLED` | `false` | run **BETanIA**, the AI player that researches and bets upcoming matches; set `true` to enable (needs `ANTHROPIC_API_KEY` + a one-time `ai-seed`) |
+| `BETHOVEN_AI_MODEL` | `claude-sonnet-4-6` | Claude model BETanIA uses |
+| `BETHOVEN_AI_INTERVAL_SECONDS` | `21600` | seconds between BETanIA's betting passes (default 6h) |
+| `BETHOVEN_AI_MAX_PER_RUN` | `0` | max matches BETanIA bets per pass (`0` = no cap); e.g. `4` bets the next 4 upcoming games each pass |
+| `BETHOVEN_AI_LOG_PATH` | `ai_bets.log` | JSON-lines log of every BETanIA pick (seed + live) with its rationale |
+| `ANTHROPIC_API_KEY` | — | required when `BETHOVEN_AI_ENABLED=true`; read by the Anthropic SDK |
 
 ## Live scores
 
@@ -152,6 +158,52 @@ Live data is held **in memory only** (never persisted): a restart re-fetches it
 within one poll cycle. The feed is unofficial and best-effort; the leaderboard
 falls back to admin-entered results whenever it's unavailable. Picks are never
 revealed for matches that haven't kicked off — only the live score is shown.
+
+## BETanIA 🤖 — the AI player
+
+Optional (off by default). **BETanIA** is an AI competitor that predicts
+scorelines with the Claude API and plays on the **same leaderboard** as everyone
+else — a normal player, not an admin. It earns its points the same way you do:
+exact score = 3, right result = 1, wrong = 0.
+
+It competes on **two tracks**:
+
+- **Past games (one-time seed).** When you onboard BETanIA it backfills the matches
+  that already kicked off, predicting each **from the model's own football knowledge
+  with web search turned off** — so it's not cheating with hindsight (the 2026
+  results came after the model's training cutoff, and with no internet it can't look
+  them up). This gives BETanIA a full-tournament score the moment it joins.
+
+- **Upcoming games (live, ongoing).** A background worker wakes on a timer, uses
+  **web search** to check form, injuries, and odds for the next few fixtures, and
+  places real bets through the normal path — so the **kickoff lock applies to
+  BETanIA exactly like a human**. It bets the soonest upcoming games first, a few
+  per pass, and never an already-started match.
+
+Every pick (with the reasoning behind it) is written to `ai_bets.log`. Picks stay
+hidden before kickoff just like everyone else's, so blind betting is preserved.
+
+**Enabling it** (admin, one-time):
+
+```sh
+# 1. Onboard: create the player and seed the already-played games.
+#    Run with the server up or down — it opens its own DB connection.
+#    BACK UP THE DB FIRST (this inserts bets — see Backup in CLAUDE.md).
+ANTHROPIC_API_KEY=sk-ant-… BETHOVEN_DB_PATH=/opt/bethoven/data/bethoven.db \
+  /opt/bethoven/bethoven ai-seed
+
+# 2. Turn on the live worker: set these in the service env and restart.
+#    ANTHROPIC_API_KEY=sk-ant-…
+#    BETHOVEN_AI_ENABLED=true
+#    BETHOVEN_AI_MAX_PER_RUN=4        # bet the next 4 upcoming games per pass
+sudo systemctl restart bethoven
+```
+
+The seed is **idempotent** — re-running it skips games BETanIA already bet (no API
+cost). Admins get a **⚙ Admin: BETanIA** screen showing BETanIA's status, schedule,
+last/next run, and recent picks with rationale; press **`r`** there to trigger a
+betting pass immediately. To pause BETanIA without losing its bets, set
+`BETHOVEN_AI_ENABLED=false` and restart.
 
 ## Fixtures
 
