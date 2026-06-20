@@ -169,9 +169,10 @@ func (w *CommentWorker) pass(ctx context.Context) {
 // this one" action) and upserts it into the cache, leaving every other player's
 // line untouched. Synchronous — the caller (service, via a tea.Cmd) supplies a
 // context with a timeout. Mirrors a normal pass (detect → write) but keeps only the
-// targeted player's line. Returns the new comment, or an error when there's no
-// history, the player is muted, or the model didn't produce a line for them.
-func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64) (Comment, error) {
+// targeted player's line. extra is optional one-off admin steering for this pass
+// only (empty ⇒ a plain regeneration). Returns the new comment, or an error when
+// there's no history, the player is muted, or the model didn't produce a line.
+func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64, extra string) (Comment, error) {
 	history, err := w.deps.History()
 	if err != nil {
 		return Comment{}, err
@@ -182,6 +183,7 @@ func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64) (Commen
 
 	cfg := w.deps.Config()
 	cfg.Self = w.self
+	cfg.Steering = extra
 
 	narratives, err := w.cmt.DetectNarratives(ctx, history)
 	if err != nil {

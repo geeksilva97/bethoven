@@ -38,6 +38,7 @@ const (
 	screenAITones         // admin-only: per-player comment tone
 	screenAIContext       // admin-only: rivalry + house-note context
 	screenAICommentDetail // admin-only: full text of a single BETanIA comment
+	screenAICommentRegen  // admin-only: optional steering prompt before regenerating one comment
 	screenAIPrompt        // admin-only: edit BETanIA's comment-prompt override
 )
 
@@ -211,6 +212,12 @@ type Model struct {
 	// Comments tab). promptInput edits the full instruction body (multi-line, since
 	// the override is a whole prompt); empty ⇒ default.
 	promptInput textarea.Model
+
+	// admin: optional one-off steering before regenerating a single player's
+	// comment (reached with 'r' on the comment detail screen). regenArea holds the
+	// (optional) extra prompt; regenPlayer is the targeted player's display name.
+	regenArea   textarea.Model
+	regenPlayer string
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -290,6 +297,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAIContext(msg)
 	case screenAICommentDetail:
 		return m.updateAICommentDetail(msg)
+	case screenAICommentRegen:
+		return m.updateAICommentRegen(msg)
 	case screenAIPrompt:
 		return m.updateAIPrompt(msg)
 	}
@@ -333,6 +342,8 @@ func (m Model) View() string {
 		return m.viewAIContext()
 	case screenAICommentDetail:
 		return m.viewAICommentDetail()
+	case screenAICommentRegen:
+		return m.viewAICommentRegen()
 	case screenAIPrompt:
 		return m.viewAIPrompt()
 	}

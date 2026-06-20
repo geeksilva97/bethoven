@@ -594,6 +594,48 @@ func (m Model) viewAIPrompt() string {
 	return out
 }
 
+// openCommentRegen opens the optional steering box for regenerating a single
+// player's comment ('r' on the comment detail screen). The admin can type extra
+// direction or leave it empty for a plain regeneration.
+func (m Model) openCommentRegen(player string) (Model, tea.Cmd) {
+	m.regenPlayer = player
+	m.regenArea = newCtxArea("optional: extra direction for this comment (leave empty for a plain regen)…", "")
+	m.status = ""
+	m.screen = screenAICommentRegen
+	return m, textarea.Blink
+}
+
+// updateAICommentRegen handles the steering box: ctrl+s regenerates with whatever
+// was typed (empty ⇒ a plain regen), esc cancels back to the comment detail.
+func (m Model) updateAICommentRegen(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if k, ok := msg.(tea.KeyMsg); ok {
+		switch k.Type {
+		case tea.KeyEsc:
+			m.screen = screenAICommentDetail
+			return m, nil
+		case tea.KeyCtrlS:
+			extra := strings.TrimSpace(m.regenArea.Value())
+			m.screen = screenAICommentDetail
+			m.setStatus("regenerando o comentário de "+m.regenPlayer+"… (aguarde ~10s)", false)
+			return m, m.regenCommentCmd(m.regenPlayer, extra)
+		}
+	}
+	var cmd tea.Cmd
+	m.regenArea, cmd = m.regenArea.Update(msg)
+	return m, cmd
+}
+
+// viewAICommentRegen renders the optional steering box.
+func (m Model) viewAICommentRegen() string {
+	out := titleStyle.Render("⚙  BETanIA: regenerate "+m.regenPlayer+"'s comment") + "\n\n"
+	out += helpStyle.Render("Optionally steer this one regeneration (e.g. \"lean savage\", \"mention their") + "\n"
+	out += helpStyle.Render("Brazil pick\"). It applies to this comment only and is never saved.") + "\n"
+	out += helpStyle.Render("Leave it empty to just regenerate as usual.") + "\n\n"
+	out += m.regenArea.View() + "\n\n"
+	out += statusLine(m) + helpStyle.Render("ctrl+s: regenerate · esc: cancel")
+	return out
+}
+
 // ---- small shared helpers ---------------------------------------------------
 
 // cursorRow renders a selectable list row with the shared cursor styling.

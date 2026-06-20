@@ -81,6 +81,12 @@ type CommentConfig struct {
 	// the untrusted-data trailer + standings JSON + the submit_comments line, and
 	// the submit_comments tool stays attached. Empty ⇒ the built-in prompt verbatim.
 	PromptOverride string
+	// Steering is optional one-off admin guidance for a SINGLE regeneration (the
+	// "regenerate this one" action). When non-empty it's appended to the stage-2
+	// prompt as extra direction for this pass only — it's never persisted and is
+	// empty on the scheduled worker passes. It's admin-trusted steering but framed
+	// in the prompt as guidance that never overrides the grounding rules.
+	Steering string
 }
 
 // toneFor returns the effective tone for a player: their override, or the default.

@@ -92,7 +92,7 @@ type Service struct {
 	aiCommentTrigger func() bool
 	// aiCommentRegen regenerates ONE player's comment synchronously (admin "regenerate
 	// this one"); nil when the comment worker isn't running.
-	aiCommentRegen func(ctx context.Context, userID int64) (ai.Comment, error)
+	aiCommentRegen func(ctx context.Context, userID int64, extra string) (ai.Comment, error)
 	// aiUsage is the optional persistent reader for BETanIA's Claude token usage and
 	// estimated cost (backed by the on-disk usage log); nil when BETanIA isn't running.
 	aiUsage AIUsageSource

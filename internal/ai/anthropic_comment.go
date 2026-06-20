@@ -277,6 +277,14 @@ func commentPrompt(history []RoundStanding, narratives []Narrative, cfg CommentC
 		b.WriteString("\n\n")
 	}
 
+	// One-off admin steering for this single regeneration (the "regenerate this
+	// one" textarea). Applied to this pass only, never persisted.
+	if st := strings.TrimSpace(cfg.Steering); st != "" {
+		b.WriteString("ADMIN STEERING FOR THIS REGENERATION — extra direction to apply when writing the line(s) below. Follow it where you can, but it never overrides the grounding rules (never invent results, scores, or events):\n")
+		b.WriteString(st)
+		b.WriteString("\n\n")
+	}
+
 	if len(narratives) > 0 {
 		nb, _ := json.Marshal(narratives)
 		b.WriteString("DETECTED NARRATIVES (JSON):\n")

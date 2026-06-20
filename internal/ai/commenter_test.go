@@ -210,7 +210,7 @@ func TestRegenerateOneUpsertsJustThatPlayer(t *testing.T) {
 		Now:    func() time.Time { return now },
 	}, fc, cache, NewCommentMonitor("t", time.Hour), "", time.Hour, "")
 
-	c, err := w.RegenerateOne(context.Background(), 1)
+	c, err := w.RegenerateOne(context.Background(), 1, "")
 	if err != nil {
 		t.Fatalf("RegenerateOne: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestRegenerateOneUpsertsJustThatPlayer(t *testing.T) {
 	}
 
 	// Unknown player -> error, cache unchanged.
-	if _, err := w.RegenerateOne(context.Background(), 99); err == nil {
+	if _, err := w.RegenerateOne(context.Background(), 99, ""); err == nil {
 		t.Error("expected error for a player with no comment")
 	}
 }

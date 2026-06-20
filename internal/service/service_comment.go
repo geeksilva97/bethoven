@@ -222,7 +222,7 @@ func (s *Service) TriggerAIComments(by *models.User) error {
 
 // SetCommentRegen attaches the worker's single-player regenerate hook. Optional —
 // when unset, RegenerateComment reports the worker is off.
-func (s *Service) SetCommentRegen(fn func(ctx context.Context, userID int64) (ai.Comment, error)) {
+func (s *Service) SetCommentRegen(fn func(ctx context.Context, userID int64, extra string) (ai.Comment, error)) {
 	s.aiCommentRegen = fn
 }
 
@@ -233,7 +233,8 @@ const regenCommentTimeout = 3 * time.Minute
 // "regenerate this one" action on the comment-detail screen) and returns the new
 // text. Synchronous — it makes the model calls inline, so callers should run it off
 // the UI thread (a tea.Cmd). Admin only. Other players' comments are untouched.
-func (s *Service) RegenerateComment(by *models.User, playerName string) (string, error) {
+// extra is optional one-off steering for this regeneration (empty ⇒ plain regen).
+func (s *Service) RegenerateComment(by *models.User, playerName, extra string) (string, error) {
 	if err := requireAdmin(by); err != nil {
 		return "", err
 	}
@@ -257,7 +258,7 @@ func (s *Service) RegenerateComment(by *models.User, playerName string) (string,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), regenCommentTimeout)
 	defer cancel()
-	c, err := s.aiCommentRegen(ctx, userID)
+	c, err := s.aiCommentRegen(ctx, userID, strings.TrimSpace(extra))
 	if err != nil {
 		return "", err
 	}

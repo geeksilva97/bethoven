@@ -126,18 +126,19 @@ type regenCommentMsg struct {
 }
 
 // regenCommentCmd regenerates one player's comment off the UI thread (the model
-// call takes seconds), delivering the result as a regenCommentMsg.
-func (m Model) regenCommentCmd(player string) tea.Cmd {
+// call takes seconds), delivering the result as a regenCommentMsg. extra is the
+// optional one-off steering prompt the admin typed (empty ⇒ a plain regen).
+func (m Model) regenCommentCmd(player, extra string) tea.Cmd {
 	svc, user := m.svc, m.user
 	return func() tea.Msg {
-		txt, err := svc.RegenerateComment(user, player)
+		txt, err := svc.RegenerateComment(user, player, extra)
 		return regenCommentMsg{player: player, text: txt, err: err}
 	}
 }
 
-// updateAICommentDetail handles the full-text comment view: "r" regenerates THIS
-// player's comment (async, leaving every other line untouched), "q" quits, any
-// other key returns to the BETanIA admin panel (Comments tab).
+// updateAICommentDetail handles the full-text comment view: "r" opens a steering
+// box before regenerating THIS player's comment (async, leaving every other line
+// untouched), "q" quits, any other key returns to the panel (Comments tab).
 func (m Model) updateAICommentDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case regenCommentMsg:
@@ -166,8 +167,7 @@ func (m Model) updateAICommentDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setStatus("nada pra regenerar aqui", true)
 				return m, nil
 			}
-			m.setStatus("regenerando o comentário de "+player+"… (aguarde ~10s)", false)
-			return m, m.regenCommentCmd(player)
+			return m.openCommentRegen(player)
 		default:
 			m.betaniaTab = tabComments
 			m.screen = screenBETanIA
@@ -481,7 +481,7 @@ func (m Model) viewAICommentDetail() string {
 		out += "  " + commentStyle.Render(ln) + "\n"
 	}
 	out += "\n" + statusLine(m)
-	out += helpStyle.Render("r: regenerate this comment · q: quit · other: back to Comments")
+	out += helpStyle.Render("r: regenerate (optional steering) · q: quit · other: back to Comments")
 	return out
 }
 
