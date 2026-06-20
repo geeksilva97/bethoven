@@ -268,6 +268,28 @@ func TestLiveCommentPromptVarietyAndRivalries(t *testing.T) {
 	}
 }
 
+func TestLiveCommentPromptFeedsDerivedNotes(t *testing.T) {
+	cfg := CommentConfig{
+		DefaultTone:  "playful",
+		DerivedNotes: "Sweden 1-5 Netherlands: Brobbey hat-trick; half the pool backed 2-1 and scored zero.",
+	}
+	sit := LiveSituation{
+		Matches: []LiveMatchInfo{{TeamA: "Germany", TeamB: "Ivory Coast", Picks: []LivePickInfo{{Player: "Gabriel", Pred: "0-1"}}}},
+	}
+	p := liveCommentPrompt(sit, nil, cfg)
+	if !strings.Contains(p, "EARLIER TODAY") {
+		t.Error("prompt should carry the past-game (derived notes) tier")
+	}
+	if !strings.Contains(p, "Brobbey hat-trick") {
+		t.Error("prompt should include the derived note text for sequential-game continuity")
+	}
+
+	// Absent ⇒ no tier (no behaviour change for the common case).
+	if strings.Contains(liveCommentPrompt(sit, nil, CommentConfig{DefaultTone: "playful"}), "EARLIER TODAY") {
+		t.Error("empty derived notes should not add the past-game tier")
+	}
+}
+
 func TestHalftimeFocus(t *testing.T) {
 	none := LiveSituation{}
 	if halftimeFocus(none) {

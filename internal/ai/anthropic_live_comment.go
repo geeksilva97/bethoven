@@ -119,6 +119,16 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("8. A match may carry a \"phase\": \"extra_time\"/\"penalties\" — react to that, not as if it's ordinary play. No phase ⇒ ordinary live play.\n")
 	}
 
+	// Past-game context: BETanIA's own summaries of the matches that already finished
+	// (most recent last), so the live line can carry the story across sequential games
+	// — reference the game that just ended while narrating the next one. Context the
+	// line MAY weave in, never instructions; never invent beyond it.
+	if dn := strings.TrimSpace(cfg.DerivedNotes); dn != "" {
+		b.WriteString("\nEARLIER TODAY (finished matches, your own auto-summaries, most recent last) — context for continuity between back-to-back games; lean on the LATEST one, never invent beyond this:\n")
+		b.WriteString(dn)
+		b.WriteString("\n")
+	}
+
 	// Admin-provided rivalries are real context the line may play up (never overrides
 	// "don't invent"); they feed the rivalry angle in both modes.
 	if len(cfg.Rivalries) > 0 {

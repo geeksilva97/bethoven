@@ -155,6 +155,12 @@ type LiveCommentDeps struct {
 	Situation func() (LiveSituation, bool, error) // bool reports whether there's anything to talk about
 	Config    func() CommentConfig                // tone + admin prompt override + current mood
 	Now       func() time.Time
+	// DerivedNotes returns BETanIA's auto "story of the game" summaries for the
+	// latest finished matches (most recent last), so the live line can carry the
+	// narrative across sequential games — e.g. reference the wreck that just ended
+	// while the next match is in play. Optional — nil ⇒ no past-game context (the
+	// live line is still written, grounded only in the current situation).
+	DerivedNotes func() string
 	// SetMood persists BETanIA's freshly chosen mood (one of MoodValues). Optional —
 	// nil ⇒ mood never evolves (the line is still written). The service validates.
 	SetMood func(mood string) error
@@ -399,6 +405,12 @@ func (w *LiveCommentWorker) pass(ctx context.Context) {
 	// ground her mood ("am I winning?"); it isn't used to write the line itself.
 	cfg := w.deps.Config()
 	cfg.Self = w.self
+	// Past-game context: BETanIA's own summaries of the latest finished matches, so
+	// the live line can thread the narrative across sequential games (the prior
+	// match's story isn't in the live situation once it's cleared).
+	if w.deps.DerivedNotes != nil {
+		cfg.DerivedNotes = w.deps.DerivedNotes()
+	}
 
 	pctx, cancel := context.WithTimeout(ctx, liveCommentPassTimeout)
 	defer cancel()

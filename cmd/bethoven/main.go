@@ -208,6 +208,7 @@ func main() {
 					Situation:    svc.LiveSituation,
 					Config:       svc.CommentConfig,
 					Now:          svc.Now,
+					DerivedNotes: svc.DerivedNotesText,
 					SetMood:      svc.SetCommentMood,
 					RegenComment: svc.RegenerateOneByName,
 				}, director, lcache, u.DisplayName, lhb, cfg.AICommentLogPath)
