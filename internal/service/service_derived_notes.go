@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -247,9 +248,19 @@ func (s *Service) ClearDerivedNotes(by *models.User) error {
 	return s.saveDerivedNotes(storedDerived{})
 }
 
-// CompactDerivedNotes collapses the per-game diary down to just the most recent
-// story, trimming the backlog the prompt carries while keeping Done intact (so
-// compacting never causes past games to be re-narrated). Admin only.
+// compactNotesTimeout bounds the single model call that fuses the diary.
+const compactNotesTimeout = 3 * time.Minute
+
+// CompactDerivedNotes fuses the whole per-game diary into ONE consolidated note via
+// BETanIA — a single narrative of the pool's dynamics that weights recent games most
+// (not a flat list, and not just the latest entry). Done is kept intact, so compacting
+// never causes past games to be re-narrated. The synthesized note carries no match id
+// (it spans several), so it never collides with the per-game dedupe. Synchronous (one
+// model call) — callers should run it off the UI thread. Admin only.
+//
+// Falls back to trimming the diary to its latest entry when the comment worker isn't
+// attached (nil compactor). On a model error the diary is left untouched and the error
+// is returned, so a transient failure never destroys the backlog.
 func (s *Service) CompactDerivedNotes(by *models.User) error {
 	if err := requireAdmin(by); err != nil {
 		return err
@@ -258,6 +269,25 @@ func (s *Service) CompactDerivedNotes(by *models.User) error {
 	if len(d.Notes) <= 1 {
 		return nil
 	}
-	d.Notes = d.Notes[len(d.Notes)-1:]
+	if s.aiNotesCompactor == nil {
+		// No worker: degrade to the old trim-to-latest behaviour.
+		d.Notes = d.Notes[len(d.Notes)-1:]
+		return s.saveDerivedNotes(d)
+	}
+
+	texts := make([]string, 0, len(d.Notes))
+	for _, n := range d.Notes {
+		texts = append(texts, n.Text)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), compactNotesTimeout)
+	defer cancel()
+	summary, err := s.aiNotesCompactor(ctx, texts)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(summary) == "" {
+		return errors.New("compaction produced no text")
+	}
+	d.Notes = []derivedNote{{Text: summary, At: s.Now().UTC().Format(time.RFC3339)}}
 	return s.saveDerivedNotes(d)
 }

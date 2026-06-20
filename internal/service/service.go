@@ -94,6 +94,10 @@ type Service struct {
 	// aiCommentRegen regenerates ONE player's comment synchronously (admin "regenerate
 	// this one"); nil when the comment worker isn't running.
 	aiCommentRegen func(ctx context.Context, userID int64, extra string) (ai.Comment, error)
+	// aiNotesCompactor fuses the derived-notes diary into one consolidated narrative
+	// (admin "compact derived"); nil when the comment worker isn't running, in which
+	// case CompactDerivedNotes falls back to keeping just the latest entry.
+	aiNotesCompactor func(ctx context.Context, notes []string) (string, error)
 	// aiUsage is the optional persistent reader for BETanIA's Claude token usage and
 	// estimated cost (backed by the on-disk usage log); nil when BETanIA isn't running.
 	aiUsage AIUsageSource

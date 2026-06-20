@@ -316,7 +316,14 @@ directly, with a fake clock, no terminal).
       **Worker seams** (`CommentDeps.PendingDigests`/`DerivedNotes`/`AddDerivedNote`); the
       `ai` package still never imports `service`. **Admin curation** on `screenAIContext`
       (gated `DerivedNotes`/`DeleteDerivedNote`/`CompactDerivedNotes`/`ClearDerivedNotes`):
-      `d` deletes the selected note, `c` compacts the diary to the latest story, `C`
+      `d` deletes the selected note, `c` **fuses** the whole diary into ONE
+      consolidated narrative via a single Claude call (`CommentWorker.CompactNotes`
+      → `AnthropicCommenter.CompactNotes`, usage category `digest`) that weights
+      recent games most — not a trim-to-latest; the synthesized note carries no match
+      id so it never collides with per-game dedupe, and `Done` is kept intact so
+      compacting never re-narrates past games. A model error leaves the diary
+      untouched. With no comment worker attached it degrades to trim-to-latest. The
+      call is slow, so the TUI runs it off-thread (`compactNotesCmd`). `C`
       clears it (and re-seeds, so no past-game burst).
     - **Full prompt override** (`s` → `screenAIPrompt`): the DB-backed
       `comment_prompt_override` setting (`CommentPromptOverride`/`SetCommentPromptOverride`,

@@ -184,6 +184,7 @@ func main() {
 				}, commenter, cache, cmon, u.DisplayName, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
 				svc.SetCommentRegen(cw.RegenerateOne)
+				svc.SetNotesCompactor(cw.CompactNotes)
 				go cw.Run(ctx)
 				log.Printf("BETanIA commentary enabled (model=%s, cadence=on-demand: results + director)", cfg.AIModel)
 

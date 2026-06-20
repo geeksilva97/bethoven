@@ -183,7 +183,30 @@ func (m Model) ctxTotal() int {
 	return len(m.ctxView.Rivalries) + len(m.ctxView.Notes) + len(m.ctxDerived)
 }
 
+// compactNotesMsg carries the result of an async derived-notes compaction (a model
+// call, so it runs off the UI thread).
+type compactNotesMsg struct{ err error }
+
+// compactNotesCmd fuses the derived-notes diary into one narrative off the UI thread
+// (the model call takes seconds), delivering the result as a compactNotesMsg.
+func (m Model) compactNotesCmd() tea.Cmd {
+	svc, user := m.svc, m.user
+	return func() tea.Msg {
+		return compactNotesMsg{err: svc.CompactDerivedNotes(user)}
+	}
+}
+
 func (m Model) updateAIContext(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cm, ok := msg.(compactNotesMsg); ok {
+		if cm.err != nil {
+			m.setStatus("compact failed: "+cm.err.Error(), true)
+			return m, nil
+		}
+		m.setStatus("derived notes fused into one narrative", false)
+		m.reloadCtx()
+		m.clampCtxCursor()
+		return m, nil
+	}
 	switch m.ctxMode {
 	case ctxModeNote, ctxModeRivalNote, ctxModeEdit:
 		return m.updateCtxInput(msg)
@@ -304,14 +327,10 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ctxMode, m.ctxPickCursor = ctxModePickA, 0
 		return m, nil
 	case "c":
-		// Compact BETanIA's derived "story" notes down to the most recent snapshot.
-		if err := m.svc.CompactDerivedNotes(m.user); err != nil {
-			m.setStatus(err.Error(), true)
-			return m, nil
-		}
-		m.setStatus("derived notes compacted to the latest snapshot", false)
-		m.reloadCtx()
-		m.clampCtxCursor()
+		// Fuse BETanIA's per-game derived "story" notes into ONE consolidated
+		// narrative. This is a model call, so run it off the UI thread.
+		m.setStatus("fusing derived notes…", false)
+		return m, m.compactNotesCmd()
 	case "C":
 		// Clear all derived notes (the next finished match regenerates one).
 		if err := m.svc.ClearDerivedNotes(m.user); err != nil {
@@ -502,7 +521,7 @@ func (m Model) viewCtxList() string {
 	}
 
 	out += "\n" + statusLine(m) +
-		helpStyle.Render("enter: read/edit · a: add rivalry · n: add note · d: delete · c: compact derived · C: clear derived · ↑/↓: move · esc: back")
+		helpStyle.Render("enter: read/edit · a: add rivalry · n: add note · d: delete · c: fuse derived · C: clear derived · ↑/↓: move · esc: back")
 	return out
 }
 

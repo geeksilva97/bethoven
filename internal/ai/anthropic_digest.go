@@ -72,3 +72,67 @@ func digestTool() anthropic.ToolParam {
 		},
 	}
 }
+
+// CompactNotes implements Commenter: one grounded Claude call that fuses the whole
+// per-game derived-notes diary into a SINGLE consolidated narrative — the "story so
+// far" — capturing the pool's playing dynamics while weighting the most recent games
+// more heavily. No web search; recorded under the "digest" usage category, same as
+// the per-game notes it replaces. Returns "" when there's nothing to compact.
+func (p *AnthropicCommenter) CompactNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error) {
+	if len(notes) == 0 {
+		return "", nil
+	}
+	raw, err := p.runTool(ctx, "digest", compactPrompt(notes, cfg), compactTool(),
+		"Call submit_compact now with the consolidated narrative.")
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return "", fmt.Errorf("parse compact: %w", err)
+	}
+	return strings.TrimSpace(out.Summary), nil
+}
+
+func compactPrompt(notes []string, cfg CommentConfig) string {
+	var b strings.Builder
+	b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool. Below is your running diary: ")
+	b.WriteString("one short \"house notes\" entry per finished match, oldest first, newest last. ")
+	b.WriteString("Fuse the WHOLE diary into a SINGLE consolidated narrative — the story of the pool so far.\n\n")
+	if normalizeTone(cfg.DefaultTone) == "savage" {
+		b.WriteString("TONE: savage — sharp, comedy-roast energy, but still factual.\n")
+	} else {
+		b.WriteString("TONE: playful — warm, witty, lightly teasing.\n")
+	}
+	b.WriteString("\nRULES:\n")
+	b.WriteString("1. Ground every claim ONLY in the diary entries below. Never invent a result, a name, or a pick — if it isn't in the notes, it didn't happen.\n")
+	b.WriteString("2. Capture the playing DYNAMICS: who keeps nailing scorelines, who keeps whiffing, ongoing rivalries, streaks, climbs and collapses across the tournament — not a flat list of games.\n")
+	b.WriteString("3. WEIGHT RECENT EVENTS MORE: the latest entries describe the current state of the pool and matter most; older entries are background. Lead with where things stand now.\n")
+	b.WriteString("4. Condense hard — 4-8 sentences total, no matter how many entries there are. Keep the names and the standout moments; drop the rest.\n")
+	b.WriteString("5. This is a shared situational snapshot for the pool, not a message to one person. No emojis, no markdown, no headings — just the sentences.\n\n")
+	b.WriteString(untrustedDataNote)
+	b.WriteString("THE DIARY (one entry per finished match, oldest first):\n")
+	for i, n := range notes {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, n)
+	}
+	b.WriteString("\nCall submit_compact with the single consolidated narrative.")
+	return b.String()
+}
+
+func compactTool() anthropic.ToolParam {
+	return anthropic.ToolParam{
+		Name:        "submit_compact",
+		Description: anthropic.String("Submit BETanIA's single consolidated narrative fusing the whole derived-notes diary."),
+		InputSchema: anthropic.ToolInputSchemaParam{
+			Properties: map[string]any{
+				"summary": map[string]any{
+					"type":        "string",
+					"description": "One consolidated narrative (4-8 sentences) of the pool's dynamics so far, weighting recent games most. No emojis or line breaks.",
+				},
+			},
+			ExtraFields: map[string]any{"required": []string{"summary"}},
+		},
+	}
+}

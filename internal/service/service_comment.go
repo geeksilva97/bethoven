@@ -261,6 +261,12 @@ func (s *Service) SetCommentRegen(fn func(ctx context.Context, userID int64, ext
 	s.aiCommentRegen = fn
 }
 
+// SetNotesCompactor attaches the worker's diary-compaction hook. Optional — when
+// unset, CompactDerivedNotes falls back to trimming the diary to its latest entry.
+func (s *Service) SetNotesCompactor(fn func(ctx context.Context, notes []string) (string, error)) {
+	s.aiNotesCompactor = fn
+}
+
 // RegenerateOneByName regenerates a single player's leaderboard roast by display
 // name. WORKER seam for the director ("she decides, per player, when a roast is
 // stale") — ungated, since the director, not a user, is the caller. No-op when the

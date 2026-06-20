@@ -263,3 +263,19 @@ func (w *CommentWorker) refreshDerivedNotes(ctx context.Context, cfg CommentConf
 	}
 	return combined
 }
+
+// CompactNotes fuses the per-game derived-notes diary into ONE consolidated
+// narrative (weighting recent games most), sanitized for terminal output. The
+// service seam for the admin "compact derived" action — it owns reading the diary
+// and storing the result; the worker only runs the model call. Returns "" (no
+// change) when there's fewer than two entries or the call fails.
+func (w *CommentWorker) CompactNotes(ctx context.Context, notes []string) (string, error) {
+	if w.cmt == nil || len(notes) < 2 {
+		return "", nil
+	}
+	text, err := w.cmt.CompactNotes(ctx, notes, w.deps.Config())
+	if err != nil {
+		return "", err
+	}
+	return sanitizeText(text), nil
+}

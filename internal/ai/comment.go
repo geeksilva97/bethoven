@@ -117,6 +117,10 @@ type Commenter interface {
 	// fared into a short "house notes" snapshot (the extra summary call). Returns
 	// "" when there's nothing settled to summarize.
 	DigestResults(ctx context.Context, data ResultsDigestData, cfg CommentConfig) (string, error)
+	// CompactNotes fuses the whole per-game derived-notes diary into ONE
+	// consolidated narrative, weighting recent games most (the admin "compact"
+	// action). Returns "" when there's nothing to compact.
+	CompactNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error)
 }
 
 // DigestPick is one player's pick on a finished match, for the results snapshot.

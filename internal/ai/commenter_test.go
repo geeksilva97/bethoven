@@ -18,6 +18,11 @@ type fakeCommenter struct {
 	digestErr   error
 	digestCalls int
 	lastDigest  ResultsDigestData
+
+	compact      string
+	compactErr   error
+	compactCalls int
+	lastCompact  []string
 }
 
 func (f *fakeCommenter) DetectNarratives(ctx context.Context, h []RoundStanding) ([]Narrative, error) {
@@ -34,6 +39,12 @@ func (f *fakeCommenter) DigestResults(ctx context.Context, data ResultsDigestDat
 	f.digestCalls++
 	f.lastDigest = data
 	return f.digest, f.digestErr
+}
+
+func (f *fakeCommenter) CompactNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error) {
+	f.compactCalls++
+	f.lastCompact = notes
+	return f.compact, f.compactErr
 }
 
 func oneRound() []RoundStanding {
