@@ -171,6 +171,9 @@ func main() {
 				svc.SetCommentMonitor(cmon)
 				cache := ai.NewCommentCache()
 				svc.SetCommentSource(cache)
+				// Restore persisted comments so Run skips the boot regeneration when
+				// nothing changed while we were down (no token re-spend per deploy).
+				cache.Replace(svc.LoadComments())
 				// The service recovers a finished match's live "story" from the
 				// comment log, so it needs the path.
 				svc.SetAICommentLogPath(cfg.AICommentLogPath)
@@ -183,6 +186,8 @@ func main() {
 					AddDerivedNote:   svc.AddDerivedNote,
 					AutoRivalries:    svc.AutoRivalries,
 					SetAutoRivalries: svc.SetAutoRivalries,
+					SaveComments:     svc.SaveComments,
+					SaveComment:      svc.SaveComment,
 				}, commenter, cache, cmon, u.DisplayName, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
 				svc.SetCommentRegen(cw.RegenerateOne)

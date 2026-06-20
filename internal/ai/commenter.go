@@ -33,6 +33,11 @@ type CommentDeps struct {
 	// in any pinned ones and dedups against admin rivalries. Optional — nil (or a nil
 	// AutoRivalries) ⇒ the self-managed rivalry tier is disabled entirely.
 	SetAutoRivalries func(rivals []Rivalry) error
+	// SaveComments persists the full per-player comment set after a pass (write-through
+	// to the DB so they survive a restart). SaveComment persists a single regenerated
+	// comment. Both optional — nil ⇒ comments stay in-memory only (prior behaviour).
+	SaveComments func(comments []Comment) error
+	SaveComment  func(comment Comment) error
 }
 
 // CommentWorker is BETanIA's per-player commentary worker. It has NO timer of its
@@ -84,7 +89,16 @@ func (w *CommentWorker) Trigger() bool {
 // the board, then ONLY when a Trigger lands — there is no periodic pass. The cadence
 // is owned by the director (per-player regens) and match settlements (full passes).
 func (w *CommentWorker) Run(ctx context.Context) {
-	w.pass(ctx)
+	// Only regenerate at boot if there's nothing to show. When persisted comments
+	// were restored into the cache before Run (a normal restart/deploy), skip the
+	// pass entirely — no match settled while we were down, so the comments aren't
+	// stale, and regenerating would just re-spend tokens. Fresh state (empty cache)
+	// still fills the board once.
+	if w.cache == nil || w.cache.Empty() {
+		w.pass(ctx)
+	} else {
+		w.logger.Printf("ai: persisted comments restored — skipping boot regeneration")
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -171,6 +185,13 @@ func (w *CommentWorker) pass(ctx context.Context) {
 		w.mon.record(CommentAction{At: now, Player: c.Player, Text: c.Text, Outcome: "written"})
 	}
 	w.cache.Replace(stamped)
+	// Write through to the DB so the set survives a restart (best-effort — a persist
+	// fault must never blank the leaderboard the cache just got right).
+	if w.deps.SaveComments != nil {
+		if err := w.deps.SaveComments(stamped); err != nil {
+			w.logger.Printf("ai: persist comments: %v", err)
+		}
+	}
 	w.logger.Printf("ai: wrote %d comments (default tone=%s, %d narratives)", len(stamped), normalizeTone(cfg.DefaultTone), len(narratives))
 }
 
@@ -219,6 +240,11 @@ func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64, extra s
 		c.At = now
 		c.ExpiresAt = time.Time{} // never expires on a clock — replaced by the next pass
 		w.cache.Upsert(c)
+		if w.deps.SaveComment != nil {
+			if err := w.deps.SaveComment(c); err != nil {
+				w.logger.Printf("ai: persist regenerated comment for %s: %v", c.Player, err)
+			}
+		}
 		if err := appendCommentLog(w.logPath, cfg.toneFor(c.Player), now, c); err != nil {
 			w.logger.Printf("ai: log regenerated comment for %s: %v", c.Player, err)
 		}

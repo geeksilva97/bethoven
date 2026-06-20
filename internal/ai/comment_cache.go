@@ -12,8 +12,9 @@ const commentGrace = time.Hour
 
 // CommentCache holds BETanIA's current per-player comments in memory. The comment
 // worker writes it; the service's CommentSource port reads it for the leaderboard.
-// Nothing is persisted — a restart starts empty and the first pass refills it,
-// mirroring live.Cache. Concurrency-safe.
+// It is the hot read path; the comments are also written through to the DB (via the
+// worker's Save seams) so a restart restores them instead of regenerating from
+// scratch. Concurrency-safe.
 type CommentCache struct {
 	mu sync.RWMutex
 	m  map[int64]Comment
@@ -45,6 +46,15 @@ func (c *CommentCache) Upsert(cm Comment) {
 		c.m = make(map[int64]Comment)
 	}
 	c.m[cm.UserID] = cm
+}
+
+// Empty reports whether the cache holds no comments — used at boot to decide
+// whether the worker must regenerate (empty ⇒ first fill) or can skip the pass
+// because persisted comments were already restored.
+func (c *CommentCache) Empty() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.m) == 0
 }
 
 // All returns the current comments keyed by user id (implements

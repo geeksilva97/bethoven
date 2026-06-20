@@ -104,3 +104,15 @@ type Bet struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+// LeaderboardComment is BETanIA's persisted one-line take on a player's standing —
+// the durable backing store for the in-memory comment cache (one row per user, the
+// latest comment). Player is the display name the comment is about; ExpiresAt is the
+// zero time for per-player comments (they never expire on a clock).
+type LeaderboardComment struct {
+	UserID    int64
+	Player    string
+	Text      string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}

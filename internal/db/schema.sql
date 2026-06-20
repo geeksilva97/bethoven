@@ -47,6 +47,18 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+-- BETanIA's per-player leaderboard comments, persisted so they survive restarts.
+-- The in-memory ai.CommentCache is the hot read path; this is its durable backing
+-- store, so a deploy doesn't regenerate every comment from scratch. One row per
+-- user holds their latest comment.
+CREATE TABLE IF NOT EXISTS leaderboard_comments (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id),
+    player     TEXT    NOT NULL,
+    text       TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    expires_at TEXT    NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_matches_tournament ON matches(tournament_id);
 CREATE INDEX IF NOT EXISTS idx_bets_match ON bets(match_id);
 CREATE INDEX IF NOT EXISTS idx_bets_user ON bets(user_id);

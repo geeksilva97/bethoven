@@ -240,12 +240,26 @@ directly, with a fake clock, no terminal).
     given her display name (`self`, from the resolved AI user) and the prompt flips
     that one line. Like the rest of `ai`, it takes function seams
     (`CommentDeps{History, Tone, Now}`) and **never imports `service`**.
-    - **No new persistence — scores/positions are never stored.**
+    - **No new persistence for scores/positions — those are never stored.**
       `service.StandingsHistory` reconstructs the per-matchday standings series
       (positions + `Movement`/`PointsGained` deltas) by folding FINISHED matches by
       UTC kickoff date — the same pure computation `Leaderboard` already does live,
-      just per round. Comments live only in the in-memory `ai.CommentCache` (TTL +
-      grace); a restart starts empty and the first pass refills it, like the live feed.
+      just per round.
+    - **Comments ARE persisted (the `leaderboard_comments` table).** The in-memory
+      `ai.CommentCache` stays the hot read path, but it's a **write-through** cache:
+      `pass()` mirrors the full set to the DB via the `CommentDeps.SaveComments` seam
+      (`service.SaveComments` → `store.ReplaceLeaderboardComments`, a one-tx delete+insert
+      so a dropped player leaves no stale row), and `RegenerateOne` upserts one row via
+      `SaveComment`. At boot `main` calls `cache.Replace(svc.LoadComments())`, and
+      `CommentWorker.Run` **skips the initial regeneration pass when the cache is
+      non-empty** (`cache.Empty()`) — so a restart/deploy no longer re-spends tokens
+      recreating unchanged comments (no match settles while the process is down, so they
+      aren't stale). Fresh state (empty table) still fills the board once; the next
+      `onMatchSettled` trigger and admin regen still regenerate + re-persist. Best-effort:
+      a persist fault logs and never blanks the cache. One row per user holds the latest
+      comment; `ExpiresAt` is zero (per-player comments never expire on a clock), stored
+      as empty text. This is a SEPARATE concern from the volatile live-commentary KV
+      (`live_comment_state`) — that one is intentionally left as-is.
     - **Visibility** in `service.LeaderboardComments`: with the cycle off, **everyone
       sees only their own** comment (under their own leaderboard row). The full set is
       exposed by **`service.AllLeaderboardComments`** — **NOT gated**: comments are a

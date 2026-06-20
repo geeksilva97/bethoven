@@ -132,6 +132,48 @@ func TestCommentWorkerRefreshesAutoRivalries(t *testing.T) {
 	}
 }
 
+func TestCommentWorkerPassPersistsComments(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{{UserID: 1, Player: "Joao", Text: "you \x1b[31mfell\x1b[0m"}}}
+	var saved []Comment
+	w := NewCommentWorker(CommentDeps{
+		History:      func() ([]RoundStanding, error) { return oneRound(), nil },
+		Config:       func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
+		Now:          func() time.Time { return now },
+		SaveComments: func(cs []Comment) error { saved = cs; return nil },
+	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", "")
+
+	w.pass(context.Background())
+
+	if len(saved) != 1 || saved[0].Text != "you fell" {
+		t.Fatalf("SaveComments should get the sanitized set, got %+v", saved)
+	}
+}
+
+func TestCommentWorkerRunSkipsBootPassWhenCacheFilled(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{{UserID: 1, Player: "Joao", Text: "regenerated"}}}
+	cache := NewCommentCache()
+	// Simulate persisted comments restored before Run.
+	cache.Replace([]Comment{{UserID: 1, Player: "Joao", Text: "restored"}})
+	w := NewCommentWorker(CommentDeps{
+		History: func() ([]RoundStanding, error) { return oneRound(), nil },
+		Config:  func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
+		Now:     func() time.Time { return now },
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Run returns after the (skipped) boot pass without entering the loop
+	w.Run(ctx)
+
+	if fc.calls != 0 {
+		t.Fatalf("boot pass must be skipped when cache is filled (WriteComments calls=%d)", fc.calls)
+	}
+	if got := cache.All(now)[1].Text; got != "restored" {
+		t.Fatalf("restored comment should be untouched, got %q", got)
+	}
+}
+
 func TestCommentWorkerSkipsEmptyHistory(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	fc := &fakeCommenter{}

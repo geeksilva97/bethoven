@@ -95,6 +95,45 @@ type CommentSource interface {
 // SetCommentSource attaches the comment cache. Optional — unset ⇒ no comments.
 func (s *Service) SetCommentSource(src CommentSource) { s.comments = src }
 
+// SaveComments persists the full per-player comment set (the worker's write-through
+// after a pass), replacing the stored set so a dropped player leaves no stale row.
+// WORKER seam (not admin-gated — the worker is the caller, like SaveLiveCommentState).
+func (s *Service) SaveComments(comments []ai.Comment) error {
+	rows := make([]models.LeaderboardComment, 0, len(comments))
+	for _, c := range comments {
+		rows = append(rows, toStoredComment(c))
+	}
+	return s.store.ReplaceLeaderboardComments(rows)
+}
+
+// SaveComment persists one regenerated comment (the admin "regenerate this one"
+// path). WORKER seam.
+func (s *Service) SaveComment(c ai.Comment) error {
+	return s.store.UpsertLeaderboardComment(toStoredComment(c))
+}
+
+// LoadComments returns the persisted comments for the cache to restore at boot, so a
+// restart doesn't regenerate everything. Empty when none are stored or on error.
+func (s *Service) LoadComments() []ai.Comment {
+	rows, err := s.store.LeaderboardComments()
+	if err != nil {
+		return nil
+	}
+	out := make([]ai.Comment, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ai.Comment{
+			UserID: r.UserID, Player: r.Player, Text: r.Text, At: r.CreatedAt, ExpiresAt: r.ExpiresAt,
+		})
+	}
+	return out
+}
+
+func toStoredComment(c ai.Comment) models.LeaderboardComment {
+	return models.LeaderboardComment{
+		UserID: c.UserID, Player: c.Player, Text: c.Text, CreatedAt: c.At, ExpiresAt: c.ExpiresAt,
+	}
+}
+
 // LeaderboardComments returns the BETanIA comment to show on the leaderboard,
 // keyed by user id. Scoped server-side: EVERYONE — players and admins alike — sees
 // ONLY their own comment. Admins review the full set in the BETanIA admin panel
