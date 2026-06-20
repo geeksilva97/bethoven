@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"bethoven/internal/ai"
@@ -216,4 +218,48 @@ func (s *Service) TriggerAIComments(by *models.User) error {
 		return ErrAIBusy
 	}
 	return nil
+}
+
+// SetCommentRegen attaches the worker's single-player regenerate hook. Optional —
+// when unset, RegenerateComment reports the worker is off.
+func (s *Service) SetCommentRegen(fn func(ctx context.Context, userID int64) (ai.Comment, error)) {
+	s.aiCommentRegen = fn
+}
+
+// regenCommentTimeout bounds one single-comment regeneration (two model calls).
+const regenCommentTimeout = 3 * time.Minute
+
+// RegenerateComment rewrites just ONE player's leaderboard comment (the admin
+// "regenerate this one" action on the comment-detail screen) and returns the new
+// text. Synchronous — it makes the model calls inline, so callers should run it off
+// the UI thread (a tea.Cmd). Admin only. Other players' comments are untouched.
+func (s *Service) RegenerateComment(by *models.User, playerName string) (string, error) {
+	if err := requireAdmin(by); err != nil {
+		return "", err
+	}
+	if s.aiCommentRegen == nil {
+		return "", ErrAIOff
+	}
+	playerName = strings.TrimSpace(playerName)
+	users, err := s.store.AllUsers()
+	if err != nil {
+		return "", err
+	}
+	var userID int64
+	for _, u := range users {
+		if strings.EqualFold(u.DisplayName, playerName) {
+			userID = u.ID
+			break
+		}
+	}
+	if userID == 0 {
+		return "", fmt.Errorf("no player named %q", playerName)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), regenCommentTimeout)
+	defer cancel()
+	c, err := s.aiCommentRegen(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	return c.Text, nil
 }

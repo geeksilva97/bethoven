@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 )
@@ -162,6 +163,59 @@ func (w *CommentWorker) pass(ctx context.Context) {
 	}
 	w.cache.Replace(stamped)
 	w.logger.Printf("ai: wrote %d comments (default tone=%s, %d narratives)", len(stamped), normalizeTone(cfg.DefaultTone), len(narratives))
+}
+
+// RegenerateOne rewrites a SINGLE player's comment on demand (the admin "regenerate
+// this one" action) and upserts it into the cache, leaving every other player's
+// line untouched. Synchronous — the caller (service, via a tea.Cmd) supplies a
+// context with a timeout. Mirrors a normal pass (detect → write) but keeps only the
+// targeted player's line. Returns the new comment, or an error when there's no
+// history, the player is muted, or the model didn't produce a line for them.
+func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64) (Comment, error) {
+	history, err := w.deps.History()
+	if err != nil {
+		return Comment{}, err
+	}
+	if len(history) == 0 {
+		return Comment{}, fmt.Errorf("no finished matches yet")
+	}
+
+	cfg := w.deps.Config()
+	cfg.Self = w.self
+
+	narratives, err := w.cmt.DetectNarratives(ctx, history)
+	if err != nil {
+		return Comment{}, err
+	}
+	comments, err := w.cmt.WriteComments(ctx, history, narratives, cfg)
+	if err != nil {
+		return Comment{}, err
+	}
+
+	for _, c := range comments {
+		if c.UserID != userID {
+			continue
+		}
+		c.Text = sanitizeText(c.Text)
+		c.Player = sanitizeText(c.Player)
+		if c.Text == "" {
+			return Comment{}, fmt.Errorf("model produced no comment for that player")
+		}
+		if cfg.toneFor(c.Player) == "mute" {
+			return Comment{}, fmt.Errorf("%s is muted", c.Player)
+		}
+		now := w.deps.Now()
+		c.At = now
+		c.ExpiresAt = now.Add(w.ttl)
+		w.cache.Upsert(c)
+		if err := appendCommentLog(w.logPath, cfg.toneFor(c.Player), now, c); err != nil {
+			w.logger.Printf("ai: log regenerated comment for %s: %v", c.Player, err)
+		}
+		w.mon.record(CommentAction{At: now, Player: c.Player, Text: c.Text, Outcome: "written"})
+		w.logger.Printf("ai: regenerated comment for %s", c.Player)
+		return c, nil
+	}
+	return Comment{}, fmt.Errorf("model didn't write a comment for that player")
 }
 
 // refreshDerivedNotes returns the combined derived-notes text to feed the comment

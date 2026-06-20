@@ -36,6 +36,17 @@ func (c *CommentCache) Replace(comments []Comment) {
 	c.mu.Unlock()
 }
 
+// Upsert replaces a single player's comment in place, leaving the rest untouched —
+// used by the admin "regenerate this one" action so only the targeted line changes.
+func (c *CommentCache) Upsert(cm Comment) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = make(map[int64]Comment)
+	}
+	c.m[cm.UserID] = cm
+}
+
 // All returns the current comments keyed by user id (implements
 // service.CommentSource). Entries past ExpiresAt+grace are omitted so a dead
 // worker eventually shows nothing rather than ancient roasts. now is supplied by

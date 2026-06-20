@@ -5,12 +5,14 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"bethoven/internal/ai"
 	"bethoven/internal/auth"
 	"bethoven/internal/clock"
 	"bethoven/internal/db"
@@ -88,6 +90,9 @@ type Service struct {
 	// and "run now" hooks; nil when it isn't running (admin reads return ErrAIOff).
 	aiComments       AICommentMonitor
 	aiCommentTrigger func() bool
+	// aiCommentRegen regenerates ONE player's comment synchronously (admin "regenerate
+	// this one"); nil when the comment worker isn't running.
+	aiCommentRegen func(ctx context.Context, userID int64) (ai.Comment, error)
 	// aiUsage is the optional persistent reader for BETanIA's Claude token usage and
 	// estimated cost (backed by the on-disk usage log); nil when BETanIA isn't running.
 	aiUsage AIUsageSource

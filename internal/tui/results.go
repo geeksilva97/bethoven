@@ -104,6 +104,33 @@ func (m Model) stopCycle() Model {
 	return m
 }
 
+// cycleNext steps the comment cycle to the NEXT player in standings order,
+// rotating from the last back to the first (the manual "space" control). It turns
+// the cycle on if it was off, refreshes the comment set, and bumps the epoch so the
+// auto-advance clock restarts from this manual step (no immediate random override).
+// No-op for muted viewers or when comments are hidden.
+func (m Model) cycleNext() (Model, tea.Cmd) {
+	if m.selfMuted || m.hideComments {
+		return m, nil
+	}
+	m.cycleAll = m.svc.AllLeaderboardComments()
+	cands := m.cycleCandidates()
+	if len(cands) == 0 {
+		return m, nil
+	}
+	idx := -1
+	for i, id := range cands {
+		if id == m.cycleCurrentID {
+			idx = i
+			break
+		}
+	}
+	m.cycleComments = true
+	m.cycleCurrentID = cands[(idx+1)%len(cands)]
+	m.cycleEpoch++
+	return m, cycleTick(m.cycleEpoch)
+}
+
 // onCycleTick advances to the next player's comment and reschedules — but only
 // while the leaderboard is active, the cycle is on, and the tick is current.
 func (m Model) onCycleTick(msg cycleTickMsg) (tea.Model, tea.Cmd) {
@@ -159,6 +186,11 @@ func (m Model) updateLeaderboard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "q":
 		return m, tea.Quit
+	case " ":
+		// Manually step the comment cycle to the NEXT player in the list (rotating
+		// last→first). Turns the cycle on if it was off; resets the auto-advance
+		// clock so a manual tap isn't immediately overridden.
+		return m.cycleNext()
 	case "p":
 		m.revealLivePicks = !m.revealLivePicks
 		if m.revealLivePicks {
@@ -503,7 +535,7 @@ func (m Model) viewLeaderboard() string {
 		} else {
 			hints = append(hints, "c: cycle comments")
 		}
-		hints = append(hints, "h: hide comments")
+		hints = append(hints, "space: next comment", "h: hide comments")
 	}
 	hints = append(hints, "other: back", "q: quit")
 	out += helpStyle.Render(strings.Join(hints, " · "))

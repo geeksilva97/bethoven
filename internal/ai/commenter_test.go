@@ -190,3 +190,43 @@ func TestCommentPromptOverride(t *testing.T) {
 		t.Error("override prompt missing the standings JSON block")
 	}
 }
+
+func TestRegenerateOneUpsertsJustThatPlayer(t *testing.T) {
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{
+		{UserID: 1, Player: "Joao", Text: "fresh joao line"},
+		{UserID: 2, Player: "Ana", Text: "fresh ana line"},
+	}}
+	cache := NewCommentCache()
+	cache.Replace([]Comment{
+		{UserID: 1, Player: "Joao", Text: "OLD joao", ExpiresAt: now.Add(time.Hour)},
+		{UserID: 2, Player: "Ana", Text: "OLD ana", ExpiresAt: now.Add(time.Hour)},
+	})
+	w := NewCommentWorker(CommentDeps{
+		History: func() ([]RoundStanding, error) {
+			return []RoundStanding{{Label: "d", Ranks: []PlayerStanding{{UserID: 1, Name: "Joao"}, {UserID: 2, Name: "Ana"}}}}, nil
+		},
+		Config: func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
+		Now:    func() time.Time { return now },
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", time.Hour, "")
+
+	c, err := w.RegenerateOne(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("RegenerateOne: %v", err)
+	}
+	if c.Text != "fresh joao line" {
+		t.Errorf("returned text = %q", c.Text)
+	}
+	got := cache.All(now)
+	if got[1].Text != "fresh joao line" {
+		t.Errorf("player 1 not upserted: %q", got[1].Text)
+	}
+	if got[2].Text != "OLD ana" {
+		t.Errorf("player 2 should be untouched, got %q", got[2].Text)
+	}
+
+	// Unknown player -> error, cache unchanged.
+	if _, err := w.RegenerateOne(context.Background(), 99); err == nil {
+		t.Error("expected error for a player with no comment")
+	}
+}

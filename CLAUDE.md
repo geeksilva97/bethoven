@@ -264,8 +264,12 @@ directly, with a fake clock, no terminal).
       `cycleTickMsg` loop (own `cycleEpoch`, self-stops on leave/toggle-off/superseded
       epoch, mirroring `leaderTick`). It pulls the full non-muted set from
       `AllLeaderboardComments`. **`c`** toggles it off → the board falls back to the
-      viewer's own comment. **Muted players are the sole exception** (`service.IsMuted`,
-      cached as `selfMuted` on entry): no comment of their own and no cycle at all.
+      viewer's own comment. **`space`** (`cycleNext`) steps MANUALLY to the **next**
+      player in standings order, rotating last→first; it turns the cycle on if it was
+      off and bumps `cycleEpoch` so the 12s auto-advance restarts from the manual step
+      (a tap isn't instantly overridden). **Muted players are the sole exception**
+      (`service.IsMuted`, cached as `selfMuted` on entry): no comment of their own and
+      no cycle at all (space/`c` are no-ops for them, and when comments are hidden).
     - **Tone** is the DB-backed `comment_tone` setting (default `playful`, or
       `savage`; absent ⇒ playful), like `scoring_mode`. Toggled with **`t`** on the
       admin panel (`SetCommentTone`). **Per-player override:** each player can be
@@ -334,9 +338,15 @@ directly, with a fake clock, no terminal).
       Usage; see the BETanIA bullet above). On the **Comments** tab the recent-comments feed
       is a **selectable list** (`↑↓`/`jk` move, `enter` opens `screenAICommentDetail`
       with the full untruncated text), and **`c` regenerates ALL comments at once** (one
-      worker pass → full cache rewrite, coalesced). **Logging:** each comment is a JSON line in
-      `BETHOVEN_AI_COMMENT_LOG_PATH` (default `ai_comments.log`; **must** be under the
-      systemd `ReadWritePaths` dir in prod, like `ai_bets.log`).
+      worker pass → full cache rewrite, coalesced). On `screenAICommentDetail`, **`r`
+      regenerates just THAT player's comment** — `service.RegenerateComment(by, name)`
+      (admin) resolves the name→user and calls the `CommentWorker.RegenerateOne(ctx,
+      userID)` seam (`SetCommentRegen`), which runs a detect→write pass but `Upsert`s
+      ONLY that player into the cache (every other line untouched). It's synchronous
+      (two model calls), so the TUI runs it off-thread via a `tea.Cmd`
+      (`regenCommentMsg`) and updates the open detail view in place. **Logging:** each
+      comment is a JSON line in `BETHOVEN_AI_COMMENT_LOG_PATH` (default `ai_comments.log`;
+      **must** be under the systemd `ReadWritePaths` dir in prod, like `ai_bets.log`).
     - **Live top-of-board commentary (`ai.LiveCommentWorker`).** A THIRD worker
       (gated by `AICommentsEnabled`, alongside the per-player one) writes a single
       general line about the **in-play slate** — who's nailing the scoreline, who's

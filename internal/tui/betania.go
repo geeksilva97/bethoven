@@ -118,15 +118,61 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// updateAICommentDetail handles the full-text comment view: any key returns to
-// the BETanIA admin panel (Comments tab).
+// regenCommentMsg carries the result of an async single-comment regeneration.
+type regenCommentMsg struct {
+	player string
+	text   string
+	err    error
+}
+
+// regenCommentCmd regenerates one player's comment off the UI thread (the model
+// call takes seconds), delivering the result as a regenCommentMsg.
+func (m Model) regenCommentCmd(player string) tea.Cmd {
+	svc, user := m.svc, m.user
+	return func() tea.Msg {
+		txt, err := svc.RegenerateComment(user, player)
+		return regenCommentMsg{player: player, text: txt, err: err}
+	}
+}
+
+// updateAICommentDetail handles the full-text comment view: "r" regenerates THIS
+// player's comment (async, leaving every other line untouched), "q" quits, any
+// other key returns to the BETanIA admin panel (Comments tab).
 func (m Model) updateAICommentDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if k, ok := msg.(tea.KeyMsg); ok {
-		if k.String() == "q" {
-			return m, tea.Quit
+	switch msg := msg.(type) {
+	case regenCommentMsg:
+		if msg.err != nil {
+			m.setStatus("regen falhou: "+msg.err.Error(), true)
+			return m, nil
 		}
-		m.betaniaTab = tabComments
-		m.screen = screenBETanIA
+		// Reflect the fresh text in the open detail view (and the feed entry behind it).
+		if m.aiCommentCursor >= 0 && m.aiCommentCursor < len(m.aiCommentActivity) {
+			m.aiCommentActivity[m.aiCommentCursor].Text = msg.text
+			m.aiCommentActivity[m.aiCommentCursor].At = m.svc.Now()
+			m.aiCommentActivity[m.aiCommentCursor].Outcome = "written"
+		}
+		m.setStatus("comentário de "+msg.player+" regenerado", false)
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q":
+			return m, tea.Quit
+		case "r":
+			if m.aiCommentCursor < 0 || m.aiCommentCursor >= len(m.aiCommentActivity) {
+				return m, nil
+			}
+			player := m.aiCommentActivity[m.aiCommentCursor].Player
+			if player == "" {
+				m.setStatus("nada pra regenerar aqui", true)
+				return m, nil
+			}
+			m.setStatus("regenerando o comentário de "+player+"… (aguarde ~10s)", false)
+			return m, m.regenCommentCmd(player)
+		default:
+			m.betaniaTab = tabComments
+			m.screen = screenBETanIA
+			return m, nil
+		}
 	}
 	return m, nil
 }
@@ -434,7 +480,8 @@ func (m Model) viewAICommentDetail() string {
 	for _, ln := range wrapText(text, width) {
 		out += "  " + commentStyle.Render(ln) + "\n"
 	}
-	out += "\n" + helpStyle.Render("any key: back to Comments · q: quit")
+	out += "\n" + statusLine(m)
+	out += helpStyle.Render("r: regenerate this comment · q: quit · other: back to Comments")
 	return out
 }
 

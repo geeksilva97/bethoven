@@ -181,6 +181,7 @@ func main() {
 					AddDerivedNote: svc.AddDerivedNote,
 				}, commenter, cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
+				svc.SetCommentRegen(cw.RegenerateOne)
 				go cw.Run(ctx)
 				log.Printf("BETanIA commentary enabled (model=%s, every %ds)", cfg.AIModel, cfg.AICommentIntervalSec)
 
