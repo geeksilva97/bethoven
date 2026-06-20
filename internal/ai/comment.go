@@ -92,6 +92,12 @@ type CommentConfig struct {
 	// It's grounding fed into every line she writes so her voice drifts with how the
 	// tournament is going for her. The director updates it; the service persists it.
 	Mood string
+	// LiveFocus is a transient, per-pass directive for the LIVE director only: the
+	// single pool dynamic this line must cover (title race, a backmarker, a rivalry,
+	// a climber/faller, who nailed/whiffed). The worker rotates it every line so the
+	// commentary can't fixate on one hot player. Empty ⇒ no forced angle (the model
+	// picks freely). Set by LiveCommentWorker.pass; never persisted.
+	LiveFocus string
 }
 
 // toneFor returns the effective tone for a player: their override, or the default.

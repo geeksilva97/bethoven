@@ -290,6 +290,74 @@ func TestLiveCommentPromptFeedsDerivedNotes(t *testing.T) {
 	}
 }
 
+func TestPickFocusRotatesAndSkips(t *testing.T) {
+	// Full data (standings, movers, a live match) but NO rivalries: the rivalry
+	// angle must be skipped and the rest must rotate without repeating.
+	sit := LiveSituation{
+		Matches:   []LiveMatchInfo{{TeamA: "A", TeamB: "B", Picks: []LivePickInfo{{Player: "x", Pred: "1-0"}}}},
+		Movers:    []LiveMover{{Player: "x"}},
+		Standings: []LiveStanding{{Player: "a", Position: 1}, {Player: "b", Position: 2}, {Player: "c", Position: 3}},
+	}
+	cfg := CommentConfig{} // no rivalries
+
+	w := &LiveCommentWorker{}
+	seen := map[string]bool{}
+	for i := 0; i < 4; i++ { // 5 angles minus rivalry = 4 available
+		text, next := w.pickFocus(sit, cfg)
+		if text == "" {
+			t.Fatalf("pass %d: expected a focus angle, got empty", i)
+		}
+		if strings.Contains(text, "RIVALRY") {
+			t.Errorf("pass %d: rivalry angle should be skipped when none configured", i)
+		}
+		if seen[text] {
+			t.Errorf("pass %d: focus repeated before exhausting the rotation: %q", i, text)
+		}
+		seen[text] = true
+		w.focusIdx = next // commit, as pass() does on a non-empty line
+	}
+
+	// With rivalries present, the rivalry angle becomes reachable.
+	cfgR := CommentConfig{Rivalries: []Rivalry{{A: "a", B: "b", Note: "derby"}}}
+	wR := &LiveCommentWorker{}
+	foundRivalry := false
+	for i := 0; i < len(liveFocusRotation); i++ {
+		text, next := wR.pickFocus(sit, cfgR)
+		if strings.Contains(text, "RIVALRY") {
+			foundRivalry = true
+		}
+		wR.focusIdx = next
+	}
+	if !foundRivalry {
+		t.Error("rivalry angle should appear in the rotation when rivalries are configured")
+	}
+
+	// No standings, no movers, no live match ⇒ nothing to anchor a focus.
+	if text, _ := (&LiveCommentWorker{}).pickFocus(LiveSituation{}, CommentConfig{}); text != "" {
+		t.Errorf("empty situation should yield no focus, got %q", text)
+	}
+}
+
+func TestLiveCommentPromptFocusDirective(t *testing.T) {
+	sit := LiveSituation{
+		Matches:   []LiveMatchInfo{{TeamA: "A", TeamB: "B"}},
+		Standings: []LiveStanding{{Player: "a", Position: 1}, {Player: "b", Position: 2}},
+	}
+	// In-play with a focus set ⇒ the hard directive appears.
+	p := liveCommentPrompt(sit, nil, CommentConfig{DefaultTone: "playful", LiveFocus: "the TITLE RACE at the top"})
+	if !strings.Contains(p, "FOCUS THIS LINE ON: the TITLE RACE at the top") {
+		t.Error("prompt should carry the forced focus directive when LiveFocus is set")
+	}
+	// No focus ⇒ no directive.
+	if strings.Contains(liveCommentPrompt(sit, nil, CommentConfig{DefaultTone: "playful"}), "FOCUS THIS LINE ON") {
+		t.Error("no LiveFocus should mean no focus directive")
+	}
+	// Admin override keeps full control — focus directive suppressed.
+	if strings.Contains(liveCommentPrompt(sit, nil, CommentConfig{LiveFocus: "a RIVALRY", PromptOverride: "Talk like a pirate."}), "FOCUS THIS LINE ON") {
+		t.Error("an admin prompt override should suppress the focus directive")
+	}
+}
+
 func TestHalftimeFocus(t *testing.T) {
 	none := LiveSituation{}
 	if halftimeFocus(none) {

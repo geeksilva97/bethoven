@@ -322,6 +322,42 @@ type LiveCommentWorker struct {
 	// director's request, to enforce commentRegenFloor. Only the Run goroutine
 	// touches it (pass is sequential), so no lock is needed.
 	lastRegen map[string]time.Time
+	// focusIdx rotates the forced focus angle so consecutive live lines cover
+	// DIFFERENT pool dynamics instead of fixating on one hot player. Only the Run
+	// goroutine touches it (pass is sequential), so no lock is needed.
+	focusIdx int
+}
+
+// liveFocus is one angle in the director's rotation: the directive text fed to the
+// prompt, and a guard reporting whether the situation has the data to back it.
+type liveFocus struct {
+	text string
+	has  func(sit LiveSituation, cfg CommentConfig) bool
+}
+
+// liveFocusRotation forces intercalation: each generated live line is assigned the
+// NEXT angle whose data exists, so a dominant story (a hot streak) can't monopolise
+// the headline. The model still writes the line freely within the chosen angle.
+var liveFocusRotation = []liveFocus{
+	{"the TITLE RACE at the top — who leads and who's closing the gap (ground any gap in \"standings\" totals)", func(s LiveSituation, _ CommentConfig) bool { return len(s.Standings) >= 2 }},
+	{"someone FAR FROM THE LEAD — a player near the BOTTOM of \"standings\", or stuck on zero live points; give the strugglers a moment", func(s LiveSituation, _ CommentConfig) bool { return len(s.Standings) >= 3 }},
+	{"a RIVALRY from the rivalries list — how the two are faring against each other right now", func(_ LiveSituation, c CommentConfig) bool { return len(c.Rivalries) > 0 }},
+	{"a CLIMBER or FALLER on live points (\"movers\") — someone whose position is swinging", func(s LiveSituation, _ CommentConfig) bool { return len(s.Movers) > 0 }},
+	{"who NAILED or WHIFFED a live scoreline (\"picks\") — pick a player you have NOT featured recently", func(s LiveSituation, _ CommentConfig) bool { return len(s.Matches) > 0 }},
+}
+
+// pickFocus returns the next focus directive whose data is present, starting from
+// focusIdx, plus the index to commit AFTER a non-empty line is produced (so a
+// silent pass doesn't burn an angle). Returns "" if nothing has data.
+func (w *LiveCommentWorker) pickFocus(sit LiveSituation, cfg CommentConfig) (string, int) {
+	n := len(liveFocusRotation)
+	for i := 0; i < n; i++ {
+		idx := (w.focusIdx + i) % n
+		if liveFocusRotation[idx].has(sit, cfg) {
+			return liveFocusRotation[idx].text, (idx + 1) % n
+		}
+	}
+	return "", w.focusIdx
 }
 
 // NewLiveCommentWorker wires the director. self is BETanIA's display name (so she
@@ -411,6 +447,11 @@ func (w *LiveCommentWorker) pass(ctx context.Context) {
 	if w.deps.DerivedNotes != nil {
 		cfg.DerivedNotes = w.deps.DerivedNotes()
 	}
+	// Forced focus angle for THIS line — rotated so the commentary can't fixate on
+	// one player. Committed (focusIdx advanced) only after a non-empty line, so a
+	// silent pass doesn't waste an angle.
+	focus, focusNext := w.pickFocus(sit, cfg)
+	cfg.LiveFocus = focus
 
 	pctx, cancel := context.WithTimeout(ctx, liveCommentPassTimeout)
 	defer cancel()
@@ -447,6 +488,7 @@ func (w *LiveCommentWorker) pass(ctx context.Context) {
 		return
 	}
 	w.cache.set(text, sig, now.Add(w.ttl))
+	w.focusIdx = focusNext // she spoke — advance the rotation so the next line shifts angle
 	if err := appendLiveCommentLog(w.logPath, now, text); err != nil {
 		w.logger.Printf("ai: log live comment: %v", err)
 	}

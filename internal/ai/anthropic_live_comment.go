@@ -119,6 +119,13 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("8. A match may carry a \"phase\": \"extra_time\"/\"penalties\" — react to that, not as if it's ordinary play. No phase ⇒ ordinary live play.\n")
 	}
 
+	// Forced focus angle (LIVE director only): the worker rotates this every line so
+	// the commentary can't fixate on one hot player. Applies to in-play + halftime;
+	// the admin override and the pregame slate keep their own framing.
+	if f := strings.TrimSpace(cfg.LiveFocus); f != "" && !pregame && strings.TrimSpace(cfg.PromptOverride) == "" {
+		fmt.Fprintf(&b, "\nFOCUS THIS LINE ON: %s.\nThis focus ROTATES every line on purpose — even if one player's streak is the juiciest thing in the data, cover THIS angle this time instead of spotlighting them yet again. If this angle genuinely has nothing to say, pick a DIFFERENT angle and a player you have NOT featured in your recent lines.\n", f)
+	}
+
 	// Past-game context: BETanIA's own summaries of the matches that already finished
 	// (most recent last), so the live line can carry the story across sequential games
 	// — reference the game that just ended while narrating the next one. Context the
@@ -139,7 +146,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 	}
 
 	if len(recent) > 0 {
-		b.WriteString("\nYOUR RECENT LINES (most recent last) — say something NEW, a DIFFERENT angle/player, do not repeat these:\n")
+		b.WriteString("\nYOUR RECENT LINES (most recent last) — say something NEW: a DIFFERENT player and angle. Do NOT feature the player(s) named in these lines again; move on to someone else:\n")
 		for _, r := range recent {
 			fmt.Fprintf(&b, "- %s\n", r)
 		}
