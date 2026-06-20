@@ -97,6 +97,16 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openAITones(), nil
 	case k.String() == "x":
 		return m.openAIContext(), nil
+	case m.betaniaTab == tabBetting && (k.String() == "up" || k.String() == "k"):
+		if m.aiBetsCursor > 0 {
+			m.aiBetsCursor--
+		}
+		return m, nil
+	case m.betaniaTab == tabBetting && (k.String() == "down" || k.String() == "j"):
+		if m.aiBetsCursor < len(m.aiBets)-1 {
+			m.aiBetsCursor++
+		}
+		return m, nil
 	case m.betaniaTab == tabComments && k.String() == "s":
 		return m.openAIPrompt(), nil
 	case m.betaniaTab == tabComments && (k.String() == "up" || k.String() == "k"):
@@ -238,7 +248,7 @@ func (m Model) viewBETanIA() string {
 	out += m.betaniaBettingTab()
 	out += "\n" + helpStyle.Render("picks → "+aiLogHint()+" — `tail -f` to watch") + "\n"
 	out += statusLine(m) +
-		helpStyle.Render("r: run a betting pass now") + "\n" +
+		helpStyle.Render("↑↓/jk: scroll · r: run a betting pass now") + "\n" +
 		helpStyle.Render("tab: comments · any other key: back · q: quit")
 	return out
 }
@@ -367,7 +377,8 @@ func (m Model) betaniaBettingTab() string {
 	for _, a := range m.aiActivity {
 		rationale[a.Match] = a
 	}
-	for _, ab := range m.aiBets {
+	rows := make([]string, len(m.aiBets))
+	for i, ab := range m.aiBets {
 		match := ab.Match.TeamA + " vs " + ab.Match.TeamB
 		pick := ab.Bet // address a local copy for fmtPick
 		var mark, tail string
@@ -382,11 +393,15 @@ func (m Model) betaniaBettingTab() string {
 			mark = okStyle.Render("·")
 			tail = helpStyle.Render("upcoming")
 		}
-		out += fmt.Sprintf("  %-7s %s %-22s %-5s ",
-			relativeAgo(now, ab.Bet.UpdatedAt), mark, truncate(match, 22), fmtPick(&pick)) + tail + "\n"
+		row := fmt.Sprintf("  %-7s %s %-22s %-5s ",
+			relativeAgo(now, ab.Bet.UpdatedAt), mark, truncate(match, 22), fmtPick(&pick)) + tail
 		if a, ok := rationale[match]; ok && a.Rationale != "" {
-			out += helpStyle.Render("      "+truncate(a.Rationale, 78)) + "\n"
+			row += "\n" + helpStyle.Render("      "+truncate(a.Rationale, 78))
 		}
+		rows[i] = row
+	}
+	for _, r := range windowRows(rows, m.aiBetsCursor, m.bettingFeedCapacity()) {
+		out += r + "\n"
 	}
 	return out
 }
@@ -440,6 +455,20 @@ func (m Model) betaniaCommentsTab() string {
 }
 
 // commentFeedCapacity is how many comment blocks fit on the Comments tab given the
+// bettingFeedCapacity is how many pick rows fit on the Betting tab. Chrome is
+// title (2) + tab bar (2) + status block (9 KPIs + label + blank = 11) + picks
+// label (1) + footer (3) ≈ 19 lines. Floors at 3; falls back to 8 before resize.
+func (m Model) bettingFeedCapacity() int {
+	if m.height <= 0 {
+		return 8
+	}
+	const bettingChrome = 19
+	if n := m.height - bettingChrome; n >= 3 {
+		return n
+	}
+	return 3
+}
+
 // terminal height. Each block is up to two lines (header + preview), and the tab's
 // fixed chrome (title, tab bar, status block, labels, footer) is ~19 lines. Floors
 // at 3 so the feed is always usable; falls back to 8 before the first size message.

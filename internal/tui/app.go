@@ -172,8 +172,10 @@ type Model struct {
 	aiActivity []ai.Action
 	// aiBets is BETanIA's picks on record, sourced from the DB (survives a restart,
 	// unlike aiActivity's in-memory ring). betaniaTab selects which panel tab shows.
-	aiBets     []service.AIBet
-	betaniaTab int
+	// aiBetsCursor is the scroll cursor for the Betting tab picks feed.
+	aiBets        []service.AIBet
+	aiBetsCursor  int
+	betaniaTab    int
 	// aiUsage is BETanIA's cumulative token usage + estimated cost, read from the
 	// durable on-disk usage log (survives restarts). Shown on the Usage tab.
 	aiUsage ai.UsageReport
