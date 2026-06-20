@@ -13,29 +13,47 @@ import (
 )
 
 // settingDerivedNotes is the KV key for BETanIA's auto-derived "house notes": a
-// JSON list of snapshot entries plus the results signature the latest one was
-// built from. A SEPARATE tier from the admin's comment_context.Notes — never mixed.
+// JSON diary with ONE entry per finished match (its story), plus the set of match
+// ids already noted. A SEPARATE tier from the admin's comment_context.Notes.
 const settingDerivedNotes = "comment_derived_notes"
 
-// derivedDigestMatchCap bounds how many recently finished matches feed one digest.
-const derivedDigestMatchCap = 6
+// derivedPendingCap bounds how many per-match notes one pass will generate, a
+// backstop against a burst if several matches finished between passes (normally
+// 0-1 new per finish). Excess matches are picked up on the next pass.
+const derivedPendingCap = 4
 
 // derivedNoteFeedCap bounds how many stored notes are fed to the comment prompt at
 // once, so the running diary can't balloon the prompt; the admin compacts the rest.
 const derivedNoteFeedCap = 8
 
 // derivedLiveStoryCap bounds how many live-commentary lines are pulled into one
-// digest as the game's "story".
+// match's digest as its "story".
 const derivedLiveStoryCap = 30
 
 type derivedNote struct {
-	Text string `json:"text"`
-	At   string `json:"at"` // RFC3339
+	MatchID int64  `json:"match_id,omitempty"`
+	Text    string `json:"text"`
+	At      string `json:"at"` // RFC3339
 }
 
+// storedDerived is the diary: one note per finished match, plus Done (the match ids
+// already noted) so each game is summarized exactly once. Seeded marks that the
+// first encounter has adopted the already-finished matches as done — so enabling
+// the feature mid-tournament doesn't backfill every past game, only narrates games
+// finishing from here on.
 type storedDerived struct {
-	Sig   string        `json:"sig"`
-	Notes []derivedNote `json:"notes"`
+	Seeded bool          `json:"seeded"`
+	Done   []int64       `json:"done"`
+	Notes  []derivedNote `json:"notes"`
+}
+
+func (d storedDerived) isDone(id int64) bool {
+	for _, x := range d.Done {
+		if x == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) loadDerivedNotes() storedDerived {
@@ -61,13 +79,15 @@ func (s *Service) SetAICommentLogPath(p string) { s.aiCommentLogPath = p }
 
 // --- worker seams (not admin-gated: the worker is the caller) ---
 
-// ResultsDigestData builds the input for BETanIA's derived-notes snapshot: the
-// most recently finished matches (newest first), every player's pick + points on
-// them, and the live-commentary lines that played while those games were on.
-func (s *Service) ResultsDigestData() (ai.ResultsDigestData, error) {
+// PendingDigests returns one digest input per finished match that doesn't have a
+// derived note yet (oldest first, capped) — so the worker writes ONE note per game.
+// On the very first encounter it adopts all already-finished matches as "done"
+// without generating anything (no backfill), then narrates only games that finish
+// from then on. Worker seam.
+func (s *Service) PendingDigests() ([]ai.ResultsDigestData, error) {
 	matches, err := s.store.ListMatches(s.tournamentID)
 	if err != nil {
-		return ai.ResultsDigestData{}, err
+		return nil, err
 	}
 	finished := make([]models.Match, 0, len(matches))
 	for _, m := range matches {
@@ -75,61 +95,69 @@ func (s *Service) ResultsDigestData() (ai.ResultsDigestData, error) {
 			finished = append(finished, m)
 		}
 	}
-	if len(finished) == 0 {
-		return ai.ResultsDigestData{}, nil
-	}
-	// Newest first, capped.
-	sort.Slice(finished, func(i, j int) bool { return finished[i].StartsAt.After(finished[j].StartsAt) })
-	if len(finished) > derivedDigestMatchCap {
-		finished = finished[:derivedDigestMatchCap]
+	// Chronological, so the diary appends in the order games actually ended.
+	sort.Slice(finished, func(i, j int) bool { return finished[i].StartsAt.Before(finished[j].StartsAt) })
+
+	d := s.loadDerivedNotes()
+	if !d.Seeded {
+		// First run: adopt the current slate as already-noted, generate nothing.
+		d.Seeded = true
+		d.Done = d.Done[:0]
+		for _, m := range finished {
+			d.Done = append(d.Done, m.ID)
+		}
+		if err := s.saveDerivedNotes(d); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	}
 
 	sc, err := s.newScorer()
 	if err != nil {
-		return ai.ResultsDigestData{}, err
+		return nil, err
 	}
-
-	out := ai.ResultsDigestData{}
-	earliest := finished[0].StartsAt
+	var out []ai.ResultsDigestData
 	for _, m := range finished {
-		if m.StartsAt.Before(earliest) {
-			earliest = m.StartsAt
+		if d.isDone(m.ID) {
+			continue
 		}
-		fm := ai.FinishedMatchDigest{
-			TeamA: m.TeamA,
-			TeamB: m.TeamB,
-			Score: fmt.Sprintf("%d-%d", *m.ScoreA, *m.ScoreB),
-			Stage: stageLabel(m),
+		out = append(out, s.matchDigestData(m, sc))
+		if len(out) >= derivedPendingCap {
+			break
 		}
-		bets, err := s.store.BetsForMatch(m.ID)
-		if err != nil {
-			return ai.ResultsDigestData{}, err
-		}
-		if len(bets) > 0 {
-			ids := make([]int64, 0, len(bets))
-			for _, b := range bets {
-				ids = append(ids, b.UserID)
-			}
-			users, err := s.store.UsersByIDs(ids)
-			if err != nil {
-				return ai.ResultsDigestData{}, err
-			}
-			for _, b := range bets {
-				fm.Picks = append(fm.Picks, ai.DigestPick{
-					Player: users[b.UserID].DisplayName,
-					Pred:   fmt.Sprintf("%d-%d", b.PredA, b.PredB),
-					Points: sc.points(b, m),
-				})
-			}
-		}
-		out.Matches = append(out.Matches, fm)
-	}
-
-	// The live "story": commentary lines logged while these games were on.
-	if s.aiCommentLogPath != "" {
-		out.LiveStory = ai.RecentLiveComments(s.aiCommentLogPath, earliest, derivedLiveStoryCap)
 	}
 	return out, nil
+}
+
+// matchDigestData builds the digest input for ONE finished match: its result, every
+// player's pick + points, and the live-commentary "story" logged while it was on.
+func (s *Service) matchDigestData(m models.Match, sc scorer) ai.ResultsDigestData {
+	fm := ai.FinishedMatchDigest{
+		TeamA: m.TeamA,
+		TeamB: m.TeamB,
+		Score: fmt.Sprintf("%d-%d", *m.ScoreA, *m.ScoreB),
+		Stage: stageLabel(m),
+	}
+	if bets, err := s.store.BetsForMatch(m.ID); err == nil && len(bets) > 0 {
+		ids := make([]int64, 0, len(bets))
+		for _, b := range bets {
+			ids = append(ids, b.UserID)
+		}
+		users, _ := s.store.UsersByIDs(ids)
+		for _, b := range bets {
+			fm.Picks = append(fm.Picks, ai.DigestPick{
+				Player: users[b.UserID].DisplayName,
+				Pred:   fmt.Sprintf("%d-%d", b.PredA, b.PredB),
+				Points: sc.points(b, m),
+			})
+		}
+	}
+	data := ai.ResultsDigestData{MatchID: m.ID, Matches: []ai.FinishedMatchDigest{fm}}
+	// The live "story" of THIS game: lines logged from its kickoff onward.
+	if s.aiCommentLogPath != "" {
+		data.LiveStory = ai.RecentLiveComments(s.aiCommentLogPath, m.StartsAt, derivedLiveStoryCap)
+	}
+	return data
 }
 
 // stageLabel renders a short stage/round label for the digest.
@@ -141,9 +169,8 @@ func stageLabel(m models.Match) string {
 }
 
 // DerivedNotesText returns the combined derived-notes text to feed the comment
-// prompt (the last derivedNoteFeedCap notes, oldest first) plus the results
-// signature the latest note was built from. Worker seam.
-func (s *Service) DerivedNotesText() (string, string) {
+// prompt (the last derivedNoteFeedCap game stories, oldest first). Worker seam.
+func (s *Service) DerivedNotesText() string {
 	d := s.loadDerivedNotes()
 	notes := d.Notes
 	if len(notes) > derivedNoteFeedCap {
@@ -153,19 +180,22 @@ func (s *Service) DerivedNotesText() (string, string) {
 	for _, n := range notes {
 		texts = append(texts, n.Text)
 	}
-	return strings.Join(texts, "\n"), d.Sig
+	return strings.Join(texts, "\n")
 }
 
-// AddDerivedNote appends a freshly generated snapshot + the signature it was built
-// from. Worker seam. The text is already sanitized by the worker.
-func (s *Service) AddDerivedNote(text, sig string) error {
+// AddDerivedNote appends one finished match's story and marks that match done, so
+// it's narrated exactly once. Worker seam. The text is already sanitized by the
+// worker. A zero matchID (defensive) still stores the note but can't dedupe.
+func (s *Service) AddDerivedNote(matchID int64, text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
 	}
 	d := s.loadDerivedNotes()
-	d.Notes = append(d.Notes, derivedNote{Text: text, At: s.Now().UTC().Format(time.RFC3339)})
-	d.Sig = sig
+	d.Notes = append(d.Notes, derivedNote{MatchID: matchID, Text: text, At: s.Now().UTC().Format(time.RFC3339)})
+	if matchID != 0 && !d.isDone(matchID) {
+		d.Done = append(d.Done, matchID)
+	}
 	return s.saveDerivedNotes(d)
 }
 
@@ -206,8 +236,10 @@ func (s *Service) DeleteDerivedNote(by *models.User, idx int) error {
 	return s.saveDerivedNotes(d)
 }
 
-// ClearDerivedNotes drops all derived notes (the next finish regenerates one).
-// The signature is reset too, so the next pass always rebuilds. Admin only.
+// ClearDerivedNotes wipes the diary entirely. It resets Seeded/Done too, so the
+// next pass re-adopts the current finished slate as "done" (no backfill) and only
+// narrates games finishing afterwards — clearing never triggers a regeneration
+// burst over past games. Admin only.
 func (s *Service) ClearDerivedNotes(by *models.User) error {
 	if err := requireAdmin(by); err != nil {
 		return err
@@ -215,10 +247,9 @@ func (s *Service) ClearDerivedNotes(by *models.User) error {
 	return s.saveDerivedNotes(storedDerived{})
 }
 
-// CompactDerivedNotes collapses the running diary down to just the most recent
-// snapshot, keeping the freshest "story" while trimming the backlog the prompt
-// carries. Admin only. (The signature is preserved so a compact doesn't force a
-// needless regeneration on the next pass.)
+// CompactDerivedNotes collapses the per-game diary down to just the most recent
+// story, trimming the backlog the prompt carries while keeping Done intact (so
+// compacting never causes past games to be re-narrated). Admin only.
 func (s *Service) CompactDerivedNotes(by *models.User) error {
 	if err := requireAdmin(by); err != nil {
 		return err

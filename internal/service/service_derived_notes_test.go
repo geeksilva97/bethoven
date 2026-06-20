@@ -46,16 +46,29 @@ func TestMatchSettleTriggersComments(t *testing.T) {
 	_ = fc
 }
 
-func TestResultsDigestData(t *testing.T) {
+func TestPendingDigestsOneNotePerGameGoingForward(t *testing.T) {
 	svc, store, _ := newTestService(t)
 	alice, _ := svc.Register("SHA256:a", testInvite, "Alice")
 	bob, _ := svc.Register("SHA256:b", testInvite, "Bob")
 
-	played := addMatch(t, store, svc.tournamentID, base.Add(-2*time.Hour))
-	upcoming := addMatch(t, store, svc.tournamentID, base.Add(48*time.Hour))
+	// A game already finished BEFORE the feature's first encounter.
+	old := addMatch(t, store, svc.tournamentID, base.Add(-3*time.Hour))
+	if err := store.SetResult(old, 1, 0); err != nil {
+		t.Fatal(err)
+	}
 
-	// Bets on the played match (before its kickoff, so the lock allows them — the
-	// fake clock is at base; played started 2h ago, so place via the store).
+	// First call seeds: adopts the already-finished game as done, returns nothing
+	// (no backfill of past games).
+	pending, err := svc.PendingDigests()
+	if err != nil {
+		t.Fatalf("PendingDigests: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("first call should backfill nothing, got %d", len(pending))
+	}
+
+	// Now a new game finishes — it becomes pending exactly once.
+	played := addMatch(t, store, svc.tournamentID, base.Add(-2*time.Hour))
 	if err := store.UpsertBet(models.Bet{UserID: alice.ID, MatchID: played, PredA: 2, PredB: 1}, base); err != nil {
 		t.Fatal(err)
 	}
@@ -66,29 +79,36 @@ func TestResultsDigestData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := svc.ResultsDigestData()
+	pending, err = svc.PendingDigests()
 	if err != nil {
-		t.Fatalf("ResultsDigestData: %v", err)
+		t.Fatalf("PendingDigests: %v", err)
 	}
-	if len(data.Matches) != 1 {
-		t.Fatalf("want only the finished match, got %d", len(data.Matches))
+	if len(pending) != 1 {
+		t.Fatalf("want one pending game, got %d", len(pending))
 	}
-	fm := data.Matches[0]
-	if fm.Score != "2-1" {
-		t.Errorf("score = %q, want 2-1", fm.Score)
+	data := pending[0]
+	if data.MatchID != played {
+		t.Errorf("pending MatchID = %d, want %d", data.MatchID, played)
 	}
-	if len(fm.Picks) != 2 {
-		t.Fatalf("want 2 picks, got %d", len(fm.Picks))
+	if len(data.Matches) != 1 || data.Matches[0].Score != "2-1" {
+		t.Fatalf("pending match = %+v", data.Matches)
 	}
-	// Alice nailed it (Classic: exact = 3); Bob missed.
 	byName := map[string]int{}
-	for _, p := range fm.Picks {
+	for _, p := range data.Matches[0].Picks {
 		byName[p.Player] = p.Points
 	}
-	if byName["Alice"] != 3 {
+	if byName["Alice"] != 3 { // Classic: exact = 3
 		t.Errorf("Alice points = %d, want 3", byName["Alice"])
 	}
-	_ = upcoming
+
+	// Once noted, it's no longer pending (one note per game).
+	if err := svc.AddDerivedNote(data.MatchID, "Alice nailed the 2-1."); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ = svc.PendingDigests()
+	if len(pending) != 0 {
+		t.Fatalf("noted game should not be pending again, got %d", len(pending))
+	}
 }
 
 func TestDerivedNotesCurate(t *testing.T) {
@@ -104,9 +124,9 @@ func TestDerivedNotesCurate(t *testing.T) {
 		t.Fatalf("player DeleteDerivedNote: want ErrForbidden, got %v", err)
 	}
 
-	// Worker appends three notes.
-	for _, txt := range []string{"story one", "story two", "story three"} {
-		if err := svc.AddDerivedNote(txt, "sig-"+txt); err != nil {
+	// Worker appends three per-game notes (one per match id).
+	for i, txt := range []string{"story one", "story two", "story three"} {
+		if err := svc.AddDerivedNote(int64(i+1), txt); err != nil {
 			t.Fatalf("AddDerivedNote: %v", err)
 		}
 	}
@@ -118,10 +138,10 @@ func TestDerivedNotesCurate(t *testing.T) {
 		t.Fatalf("notes = %+v", notes)
 	}
 
-	// Combined feed carries all three, newest sig.
-	combined, sig := svc.DerivedNotesText()
-	if combined == "" || sig != "sig-story three" {
-		t.Fatalf("combined=%q sig=%q", combined, sig)
+	// Combined feed carries all three.
+	combined := svc.DerivedNotesText()
+	if combined == "" {
+		t.Fatalf("combined empty")
 	}
 
 	// Delete the middle one.

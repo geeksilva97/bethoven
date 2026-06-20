@@ -119,13 +119,15 @@ type FinishedMatchDigest struct {
 	Picks []DigestPick `json:"picks"`
 }
 
-// ResultsDigestData is the input to DigestResults: the most recently finished
-// matches (newest first), every player's pick on them, and the live-commentary
-// lines that played while those games were on — so the snapshot can tell the
-// STORY of the game, not just the final numbers.
+// ResultsDigestData is the input to DigestResults for ONE finished match: its
+// result, every player's pick on it, and the live-commentary lines that played
+// while it was on — so the note tells the STORY of that game, not just the score.
+// (Matches is a one-element slice for the per-game note; the field is plural for
+// JSON stability.) MatchID identifies the game so the service notes it exactly once.
 type ResultsDigestData struct {
+	MatchID int64                 `json:"-"`
 	Matches []FinishedMatchDigest `json:"matches"`
-	// LiveStory is BETanIA's own play-by-play from during the matches (recovered
+	// LiveStory is BETanIA's own play-by-play from during the match (recovered
 	// from the comment log; oldest first). Optional grounding for the narrative.
 	LiveStory []string `json:"live_story,omitempty"`
 }

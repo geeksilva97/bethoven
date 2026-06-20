@@ -3,24 +3,10 @@ package ai
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 	"time"
 )
-
-// digestSignature is a stable fingerprint of the finished-match set a derived note
-// was built from. The worker regenerates the snapshot only when this changes, so a
-// routine 6h tick (or an admin "regenerate comments") with no new results doesn't
-// spend another digest call. Includes each match's teams + score + pick count, so a
-// late-arriving pick or a corrected score also counts as "new".
-func digestSignature(data ResultsDigestData) string {
-	var b strings.Builder
-	for _, m := range data.Matches {
-		fmt.Fprintf(&b, "%s|%s|%s|%d;", m.TeamA, m.TeamB, m.Score, len(m.Picks))
-	}
-	return b.String()
-}
 
 // RecentLiveComments reads BETanIA's live-commentary lines back from the comment
 // log — the durable record — returning those logged at or after `since`, oldest

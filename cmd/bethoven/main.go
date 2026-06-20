@@ -176,7 +176,7 @@ func main() {
 					History:        svc.StandingsHistory,
 					Config:         svc.CommentConfig,
 					Now:            svc.Now,
-					Results:        svc.ResultsDigestData,
+					PendingDigests: svc.PendingDigests,
 					DerivedNotes:   svc.DerivedNotesText,
 					AddDerivedNote: svc.AddDerivedNote,
 				}, commenter, cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)

@@ -290,26 +290,30 @@ directly, with a fake clock, no terminal).
       rivalry's two players stay; only the note text changes) and `d` deletes.
       Derived notes are read-only there (auto-generated — delete/compact instead).
     - **Derived notes — BETanIA's auto "story of the game" tier (`comment_derived_notes`).**
-      A SEPARATE tier from the admin's house `Notes`, never mixed. When a match
-      **settles** — `EnterResult` (admin) or `FinalizeFromFeed` (feed, only on the
-      poll that actually transitions it) — `service.onMatchSettled` fires the comment
-      trigger (the same coalesced send as the admin "regenerate" key, so a cluster of
-      finishes collapses into ~one pass). That pass calls the worker's
-      `refreshDerivedNotes`: if the finished-match set's signature changed
-      (`digestSignature`), it makes ONE extra Claude call (`AnthropicCommenter.DigestResults`,
-      usage category **`digest`**) to condense the **result + every player's pick + the
-      live-commentary "story"** into a snapshot, then **appends** it to the persisted
-      list. The combined notes (last `derivedNoteFeedCap`) feed the per-player prompt
+      A SEPARATE tier from the admin's house `Notes`, never mixed. **One note per
+      finished match** — a per-game diary. When a match **settles** — `EnterResult`
+      (admin) or `FinalizeFromFeed` (feed, only on the poll that actually transitions
+      it) — `service.onMatchSettled` fires the comment trigger (coalesced, like the
+      admin "regenerate" key). That pass calls the worker's `refreshDerivedNotes`,
+      which asks `service.PendingDigests` for finished matches **with no note yet** and
+      makes ONE Claude call **per such game** (`AnthropicCommenter.DigestResults`, usage
+      category **`digest`**, capped `derivedPendingCap`/pass as a burst backstop) to
+      condense **that game's result + every player's pick + its live-commentary "story"**,
+      then stores it via `AddDerivedNote(matchID, text)`. **Each game is noted exactly
+      once** (`storedDerived.Done` tracks match ids). **No backfill:** the first pass
+      (`Seeded`) adopts the already-finished slate as done and narrates only games
+      finishing afterwards — so enabling/`Clear`ing mid-tournament never re-narrates the
+      past. The combined stories (last `derivedNoteFeedCap`) feed the per-player prompt
       as a distinct tier (always appended, even under a prompt override). **The live
       story survives the game:** the live worker discards its in-memory lines the moment
-      a match ends, so `service.ResultsDigestData` recovers them from the comment log
-      (`ai.RecentLiveComments` reads `source:"live_comment"` lines logged since the
-      earliest finished match — `service.SetAICommentLogPath` gives it the path).
-      **Worker seams** (`CommentDeps.Results`/`DerivedNotes`/`AddDerivedNote`); the `ai`
-      package still never imports `service`. **Admin curation** on `screenAIContext`
+      a match ends, so `matchDigestData` recovers them from the comment log
+      (`ai.RecentLiveComments` reads `source:"live_comment"` lines logged since that
+      match's kickoff — `service.SetAICommentLogPath` gives it the path).
+      **Worker seams** (`CommentDeps.PendingDigests`/`DerivedNotes`/`AddDerivedNote`); the
+      `ai` package still never imports `service`. **Admin curation** on `screenAIContext`
       (gated `DerivedNotes`/`DeleteDerivedNote`/`CompactDerivedNotes`/`ClearDerivedNotes`):
-      `d` deletes the selected note, `c` compacts the diary to the latest snapshot, `C`
-      clears it (the next finish regenerates one).
+      `d` deletes the selected note, `c` compacts the diary to the latest story, `C`
+      clears it (and re-seeds, so no past-game burst).
     - **Full prompt override** (`s` → `screenAIPrompt`): the DB-backed
       `comment_prompt_override` setting (`CommentPromptOverride`/`SetCommentPromptOverride`,
       admin only) lets an admin **replace BETanIA's entire instruction body**. Empty ⇒

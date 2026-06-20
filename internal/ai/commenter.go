@@ -16,17 +16,15 @@ type CommentDeps struct {
 	History func() ([]RoundStanding, error)
 	Config  func() CommentConfig // default tone + per-player tones + rivalry/house context
 	Now     func() time.Time
-	// Results returns the recently finished matches + the pool's picks + the live
-	// story, for the derived-notes snapshot. Optional — nil ⇒ no snapshot.
-	Results func() (ResultsDigestData, error)
-	// DerivedNotes returns the persisted derived-notes tier: the combined note text
-	// to feed the prompt, plus the results signature the most recent note was built
-	// from (so the worker regenerates only when results actually change). Optional —
-	// nil ⇒ no derived-notes tier at all.
-	DerivedNotes func() (combined string, sig string)
-	// AddDerivedNote appends a freshly generated snapshot note + the signature it
-	// was built from. Optional — nil ⇒ snapshots are never persisted/appended.
-	AddDerivedNote func(text, sig string) error
+	// PendingDigests returns one digest input per finished match that has no derived
+	// note yet (one note per game). Optional — nil ⇒ no derived-notes tier.
+	PendingDigests func() ([]ResultsDigestData, error)
+	// DerivedNotes returns the combined per-game stories to feed the comment prompt.
+	// Optional — nil ⇒ no derived-notes tier at all.
+	DerivedNotes func() string
+	// AddDerivedNote stores one finished match's story (keyed by its match id so it's
+	// narrated once). Optional — nil ⇒ stories are never persisted.
+	AddDerivedNote func(matchID int64, text string) error
 }
 
 // CommentWorker is BETanIA's commentary worker: on a timer it reconstructs the
@@ -176,32 +174,39 @@ func (w *CommentWorker) refreshDerivedNotes(ctx context.Context, cfg CommentConf
 	if w.deps.DerivedNotes == nil {
 		return ""
 	}
-	combined, lastSig := w.deps.DerivedNotes()
-	if w.deps.Results == nil || w.deps.AddDerivedNote == nil || w.cmt == nil {
+	combined := w.deps.DerivedNotes()
+	if w.deps.PendingDigests == nil || w.deps.AddDerivedNote == nil || w.cmt == nil {
 		return combined
 	}
-	data, err := w.deps.Results()
+	pending, err := w.deps.PendingDigests()
 	if err != nil {
-		w.logger.Printf("ai: derived-notes results: %v", err)
+		w.logger.Printf("ai: pending digests: %v", err)
 		return combined
 	}
-	sig := digestSignature(data)
-	if len(data.Matches) == 0 || sig == lastSig {
-		return combined // nothing new to summarize
+	// One note per finished game (the seam returns the games still missing a note).
+	wrote := false
+	for _, data := range pending {
+		if len(data.Matches) == 0 {
+			continue
+		}
+		text, err := w.cmt.DigestResults(ctx, data, cfg)
+		if err != nil {
+			w.logger.Printf("ai: derived-note digest (match %d): %v", data.MatchID, err)
+			continue
+		}
+		text = sanitizeText(text)
+		if text == "" {
+			continue
+		}
+		if err := w.deps.AddDerivedNote(data.MatchID, text); err != nil {
+			w.logger.Printf("ai: save derived note (match %d): %v", data.MatchID, err)
+			continue
+		}
+		wrote = true
 	}
-	text, err := w.cmt.DigestResults(ctx, data, cfg)
-	if err != nil {
-		w.logger.Printf("ai: derived-notes digest: %v", err)
-		return combined
+	if wrote {
+		// Re-read so the prompt sees the freshly appended stories.
+		combined = w.deps.DerivedNotes()
 	}
-	text = sanitizeText(text)
-	if text == "" {
-		return combined
-	}
-	if err := w.deps.AddDerivedNote(text, sig); err != nil {
-		w.logger.Printf("ai: save derived note: %v", err)
-	}
-	// Re-read so the prompt sees the freshly appended note alongside the prior ones.
-	combined, _ = w.deps.DerivedNotes()
 	return combined
 }

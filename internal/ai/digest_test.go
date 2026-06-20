@@ -8,32 +8,28 @@ import (
 	"time"
 )
 
-func TestDigestSignatureChangesWithResults(t *testing.T) {
-	a := ResultsDigestData{Matches: []FinishedMatchDigest{{TeamA: "X", TeamB: "Y", Score: "1-0", Picks: []DigestPick{{}}}}}
-	b := ResultsDigestData{Matches: []FinishedMatchDigest{{TeamA: "X", TeamB: "Y", Score: "1-1", Picks: []DigestPick{{}}}}}
-	c := ResultsDigestData{Matches: []FinishedMatchDigest{{TeamA: "X", TeamB: "Y", Score: "1-0", Picks: []DigestPick{{}, {}}}}}
-	if digestSignature(a) == digestSignature(b) {
-		t.Error("score change should change the signature")
-	}
-	if digestSignature(a) == digestSignature(c) {
-		t.Error("a new pick should change the signature")
-	}
-	if digestSignature(a) != digestSignature(a) {
-		t.Error("signature must be stable")
-	}
-}
-
-// memDigestStore is a tiny in-memory stand-in for the persisted derived-notes
-// tier, so the worker's append/feed/sig logic can be tested without the service.
+// memDigestStore is a tiny in-memory stand-in for the per-game derived-notes tier,
+// so the worker's one-note-per-game loop can be tested without the service. pending
+// is the queue of games still missing a note; add() drains the matching entry.
 type memDigestStore struct {
-	notes []string
-	sig   string
+	notes   []string
+	pending []ResultsDigestData
 }
 
-func (d *memDigestStore) load() (string, string) { return joinNotes(d.notes), d.sig }
-func (d *memDigestStore) add(text, sig string) error {
+func (d *memDigestStore) load() string { return joinNotes(d.notes) }
+func (d *memDigestStore) pendingFn() ([]ResultsDigestData, error) {
+	return append([]ResultsDigestData(nil), d.pending...), nil
+}
+func (d *memDigestStore) add(matchID int64, text string) error {
 	d.notes = append(d.notes, text)
-	d.sig = sig
+	// Mark that match done by dropping it from pending.
+	kept := d.pending[:0]
+	for _, p := range d.pending {
+		if p.MatchID != matchID {
+			kept = append(kept, p)
+		}
+	}
+	d.pending = kept
 	return nil
 }
 
@@ -48,10 +44,11 @@ func joinNotes(ns []string) string {
 	return out
 }
 
-func TestCommentWorkerDerivesNotesAndFeedsThem(t *testing.T) {
+func TestCommentWorkerWritesOneNotePerGame(t *testing.T) {
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
-	store := &memDigestStore{}
-	results := ResultsDigestData{Matches: []FinishedMatchDigest{{TeamA: "Brazil", TeamB: "Spain", Score: "2-1"}}}
+	store := &memDigestStore{pending: []ResultsDigestData{
+		{MatchID: 1, Matches: []FinishedMatchDigest{{TeamA: "Brazil", TeamB: "Spain", Score: "2-1"}}},
+	}}
 
 	fc := &fakeCommenter{
 		comments: []Comment{{UserID: 1, Player: "Joao", Text: "nice call"}},
@@ -61,12 +58,12 @@ func TestCommentWorkerDerivesNotesAndFeedsThem(t *testing.T) {
 		History:        func() ([]RoundStanding, error) { return oneRound(), nil },
 		Config:         func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
 		Now:            func() time.Time { return now },
-		Results:        func() (ResultsDigestData, error) { return results, nil },
+		PendingDigests: store.pendingFn,
 		DerivedNotes:   store.load,
 		AddDerivedNote: store.add,
 	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", time.Hour, "")
 
-	// First pass: new results ⇒ one digest call, note appended + fed to the writer.
+	// First pass: one pending game ⇒ one digest call, note stored + fed to the writer.
 	w.pass(context.Background())
 	if fc.digestCalls != 1 {
 		t.Fatalf("digest calls = %d, want 1", fc.digestCalls)
@@ -78,21 +75,21 @@ func TestCommentWorkerDerivesNotesAndFeedsThem(t *testing.T) {
 		t.Fatalf("derived notes not fed to writer: %q", fc.lastCfg.DerivedNotes)
 	}
 
-	// Second pass with the SAME results ⇒ no new digest call (sig unchanged).
+	// Second pass with nothing pending ⇒ no new digest call (each game noted once).
 	w.pass(context.Background())
 	if fc.digestCalls != 1 {
-		t.Fatalf("digest re-called for unchanged results: %d", fc.digestCalls)
+		t.Fatalf("digest re-called with nothing pending: %d", fc.digestCalls)
 	}
 
-	// New result ⇒ a fresh digest + a second note.
-	results.Matches = append(results.Matches, FinishedMatchDigest{TeamA: "Argentina", TeamB: "France", Score: "0-0"})
+	// A new finished game enters the queue ⇒ exactly one more note.
+	store.pending = append(store.pending, ResultsDigestData{MatchID: 2, Matches: []FinishedMatchDigest{{TeamA: "Argentina", TeamB: "France", Score: "0-0"}}})
 	fc.digest = "Argentina and France played out a goalless draw."
 	w.pass(context.Background())
 	if fc.digestCalls != 2 {
-		t.Fatalf("digest calls after new result = %d, want 2", fc.digestCalls)
+		t.Fatalf("digest calls after new game = %d, want 2", fc.digestCalls)
 	}
 	if len(store.notes) != 2 {
-		t.Fatalf("notes after new result = %d, want 2", len(store.notes))
+		t.Fatalf("notes after new game = %d, want 2", len(store.notes))
 	}
 }
 
