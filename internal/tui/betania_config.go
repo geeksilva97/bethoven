@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"bethoven/internal/service"
@@ -244,10 +243,8 @@ func (m Model) updateCtxDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.ctxMode = ctxModeEdit
-		m.ctxInput = newCtxInput("edit the text…")
-		m.ctxInput.SetValue(m.ctxDetailFull)
-		m.ctxInput.CursorEnd()
-		return m, textinput.Blink
+		m.ctxArea = newCtxArea("edit the text…", m.ctxDetailFull)
+		return m, textarea.Blink
 	case "d":
 		var err error
 		switch m.ctxDetailKind {
@@ -297,8 +294,8 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.openCtxDetail(), nil
 	case "n":
 		m.ctxMode = ctxModeNote
-		m.ctxInput = newCtxInput("a house note about the pool…")
-		return m, textinput.Blink
+		m.ctxArea = newCtxArea("a house note about the pool…", "")
+		return m, textarea.Blink
 	case "a":
 		if len(m.tonePlayers) < 2 {
 			m.setStatus("need at least two players for a rivalry", true)
@@ -360,8 +357,8 @@ func (m Model) updateCtxInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEsc:
 			m.ctxMode = ctxModeList
 			return m, nil
-		case tea.KeyEnter:
-			text := strings.TrimSpace(m.ctxInput.Value())
+		case tea.KeyCtrlS:
+			text := strings.TrimSpace(m.ctxArea.Value())
 			if text == "" {
 				m.setStatus("type something first (esc to cancel)", true)
 				return m, nil
@@ -387,7 +384,7 @@ func (m Model) updateCtxInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	var cmd tea.Cmd
-	m.ctxInput, cmd = m.ctxInput.Update(msg)
+	m.ctxArea, cmd = m.ctxArea.Update(msg)
 	return m, cmd
 }
 
@@ -423,8 +420,8 @@ func (m Model) updateCtxPick(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.ctxRivalB = sel.ID
 		m.ctxMode = ctxModeRivalNote
-		m.ctxInput = newCtxInput(fmt.Sprintf("why are %s and %s rivals?…", m.ctxRivalAName, sel.DisplayName))
-		return m, textinput.Blink
+		m.ctxArea = newCtxArea(fmt.Sprintf("why are %s and %s rivals?…", m.ctxRivalAName, sel.DisplayName), "")
+		return m, textarea.Blink
 	}
 	return m, nil
 }
@@ -433,19 +430,19 @@ func (m Model) viewAIContext() string {
 	switch m.ctxMode {
 	case ctxModeNote:
 		return titleStyle.Render("⚙  BETanIA: add house note") + "\n\n" +
-			m.ctxInput.View() + "\n\n" + helpStyle.Render("enter: save · esc: cancel")
+			m.ctxArea.View() + "\n\n" + helpStyle.Render("ctrl+s: save · enter: new line · esc: cancel")
 	case ctxModeRivalNote:
 		head := fmt.Sprintf("%s  vs  %s", m.ctxRivalAName, nameByID(m.tonePlayers, m.ctxRivalB))
 		return titleStyle.Render("⚙  BETanIA: rivalry note") + "\n\n" +
-			labelStyle.Render(head) + "\n\n" + m.ctxInput.View() + "\n\n" +
-			helpStyle.Render("enter: save · esc: cancel")
+			labelStyle.Render(head) + "\n\n" + m.ctxArea.View() + "\n\n" +
+			helpStyle.Render("ctrl+s: save · enter: new line · esc: cancel")
 	case ctxModePickA, ctxModePickB:
 		return m.viewCtxPick()
 	case ctxModeDetail:
 		return m.viewCtxDetail()
 	case ctxModeEdit:
 		return titleStyle.Render("⚙  BETanIA: edit "+m.ctxDetailTitle) + "\n\n" +
-			m.ctxInput.View() + "\n\n" + helpStyle.Render("enter: save · esc: cancel")
+			m.ctxArea.View() + "\n\n" + helpStyle.Render("ctrl+s: save · enter: new line · esc: cancel")
 	default:
 		return m.viewCtxList()
 	}
@@ -616,11 +613,19 @@ func nameByID(pts []service.PlayerTone, id int64) string {
 	return "?"
 }
 
-func newCtxInput(placeholder string) textinput.Model {
-	ti := textinput.New()
-	ti.Placeholder = placeholder
-	ti.CharLimit = 200
-	ti.Width = 60
-	ti.Focus()
-	return ti
+// newCtxArea builds a focused multi-line editor for a rivalry/house note, prefilled
+// with value (empty for a new note). Multi-line so long notes are comfortable to
+// edit; ctrl+s saves, enter inserts a newline (see updateCtxInput).
+func newCtxArea(placeholder, value string) textarea.Model {
+	ta := textarea.New()
+	ta.Placeholder = placeholder
+	ta.CharLimit = 1000
+	ta.SetWidth(72)
+	ta.SetHeight(6)
+	if value != "" {
+		ta.SetValue(value)
+		ta.CursorEnd()
+	}
+	ta.Focus()
+	return ta
 }

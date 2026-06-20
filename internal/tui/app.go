@@ -196,7 +196,7 @@ type Model struct {
 	ctxDerived    []service.DerivedNoteView // BETanIA's auto-derived "story" notes
 	ctxCursor     int                       // over rivalries, then notes, then derived notes
 	ctxMode       int
-	ctxInput      textinput.Model
+	ctxArea       textarea.Model // multi-line editor for rivalry/house notes (long text)
 	ctxPickCursor int
 	ctxRivalA     int64
 	ctxRivalAName string
