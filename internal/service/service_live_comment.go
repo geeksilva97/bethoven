@@ -124,7 +124,8 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 	}
 
 	// Overall standings (rank-sorted) so the line can talk about the title race and
-	// shrinking gaps, not just whoever nailed the live scoreline.
+	// shrinking gaps, not just whoever nailed the live scoreline. Always populated;
+	// at halftime the prompt leans on it entirely (halftimeFocus in the ai package).
 	standings := make([]ai.LiveStanding, 0, len(board))
 	for i, st := range board {
 		standings = append(standings, ai.LiveStanding{

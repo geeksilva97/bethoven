@@ -80,11 +80,31 @@ type LiveStanding struct {
 // LiveSituation is the snapshot the live commenter reasons over: the matches in
 // play (score, clock, odds, who picked what), the notable leaderboard movers, and
 // the overall standings so the line can riff on the title race / shrinking gaps
-// instead of fixating on the one standout pick.
+// instead of fixating on the one standout pick. At halftime the prompt pivots
+// entirely to those pool dynamics (see halftimeFocus).
 type LiveSituation struct {
 	Matches   []LiveMatchInfo `json:"matches"`
 	Movers    []LiveMover     `json:"movers,omitempty"`
 	Standings []LiveStanding  `json:"standings,omitempty"`
+}
+
+// phaseHalftime is OUR controlled label for the interval (mirrors live.PhaseHalftime);
+// compared as a literal so this package needn't import internal/live.
+const phaseHalftime = "halftime"
+
+// halftimeFocus reports whether the commentary should pivot to leaderboard dynamics:
+// there is at least one live match and every live match is at the interval. During
+// open play (or ET/penalties) it's false and the normal play-by-play prompt is used.
+func halftimeFocus(sit LiveSituation) bool {
+	if len(sit.Matches) == 0 {
+		return false
+	}
+	for _, m := range sit.Matches {
+		if m.Phase != phaseHalftime {
+			return false
+		}
+	}
+	return true
 }
 
 // LiveCommentDeps are the service seams the live-comment worker needs. Functions,
