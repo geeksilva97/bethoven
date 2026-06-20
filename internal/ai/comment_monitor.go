@@ -76,6 +76,29 @@ func (mo *CommentMonitor) Activity(limit int) []CommentAction {
 	return out
 }
 
+// Seed backfills the monitor from comments restored at boot (the persisted set
+// loaded into the cache), so the admin panel shows them — count, last run, and the
+// recent-comments feed — instead of looking empty until the next pass. Without this
+// a skip-regen restart would leave the admin view blank even though the comments are
+// live on the leaderboard. Each entry is recorded as "written"; lastRun is advanced
+// to the newest entry's time. Call once at startup, before the worker runs.
+func (mo *CommentMonitor) Seed(comments []CommentAction, lastRun time.Time) {
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
+	for _, a := range comments {
+		mo.recent = append(mo.recent, a)
+		if a.Outcome == "written" {
+			mo.written++
+		}
+	}
+	if len(mo.recent) > monitorRing {
+		mo.recent = mo.recent[len(mo.recent)-monitorRing:]
+	}
+	if lastRun.After(mo.lastRun) {
+		mo.lastRun = lastRun
+	}
+}
+
 // markRun stamps the start of a pass so NextRun can be derived.
 func (mo *CommentMonitor) markRun(now time.Time) {
 	mo.mu.Lock()

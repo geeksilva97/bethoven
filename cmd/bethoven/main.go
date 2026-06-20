@@ -173,7 +173,22 @@ func main() {
 				svc.SetCommentSource(cache)
 				// Restore persisted comments so Run skips the boot regeneration when
 				// nothing changed while we were down (no token re-spend per deploy).
-				cache.Replace(svc.LoadComments())
+				restored := svc.LoadComments()
+				cache.Replace(restored)
+				// Seed the monitor from the restored set too, so the admin panel shows
+				// them (count, last run, recent feed) instead of looking empty after a
+				// skip-regen boot — the leaderboard already shows them.
+				if len(restored) > 0 {
+					acts := make([]ai.CommentAction, 0, len(restored))
+					var last time.Time
+					for _, c := range restored {
+						acts = append(acts, ai.CommentAction{At: c.At, Player: c.Player, Text: c.Text, Outcome: "written"})
+						if c.At.After(last) {
+							last = c.At
+						}
+					}
+					cmon.Seed(acts, last)
+				}
 				// The service recovers a finished match's live "story" from the
 				// comment log, so it needs the path.
 				svc.SetAICommentLogPath(cfg.AICommentLogPath)
