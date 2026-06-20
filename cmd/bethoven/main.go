@@ -175,12 +175,14 @@ func main() {
 				// comment log, so it needs the path.
 				svc.SetAICommentLogPath(cfg.AICommentLogPath)
 				cw := ai.NewCommentWorker(ai.CommentDeps{
-					History:        svc.StandingsHistory,
-					Config:         svc.CommentConfig,
-					Now:            svc.Now,
-					PendingDigests: svc.PendingDigests,
-					DerivedNotes:   svc.DerivedNotesText,
-					AddDerivedNote: svc.AddDerivedNote,
+					History:          svc.StandingsHistory,
+					Config:           svc.CommentConfig,
+					Now:              svc.Now,
+					PendingDigests:   svc.PendingDigests,
+					DerivedNotes:     svc.DerivedNotesText,
+					AddDerivedNote:   svc.AddDerivedNote,
+					AutoRivalries:    svc.AutoRivalries,
+					SetAutoRivalries: svc.SetAutoRivalries,
 				}, commenter, cache, cmon, u.DisplayName, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
 				svc.SetCommentRegen(cw.RegenerateOne)

@@ -23,6 +23,11 @@ type fakeCommenter struct {
 	compactErr   error
 	compactCalls int
 	lastCompact  []string
+
+	rivalries    []Rivalry
+	rivalriesErr error
+	rivalryCalls int
+	lastRivExist []Rivalry
 }
 
 func (f *fakeCommenter) DetectNarratives(ctx context.Context, h []RoundStanding) ([]Narrative, error) {
@@ -45,6 +50,12 @@ func (f *fakeCommenter) CompactNotes(ctx context.Context, notes []string, cfg Co
 	f.compactCalls++
 	f.lastCompact = notes
 	return f.compact, f.compactErr
+}
+
+func (f *fakeCommenter) UpdateRivalries(ctx context.Context, h []RoundStanding, dn string, existing []Rivalry, cfg CommentConfig) ([]Rivalry, error) {
+	f.rivalryCalls++
+	f.lastRivExist = existing
+	return f.rivalries, f.rivalriesErr
 }
 
 func oneRound() []RoundStanding {
@@ -84,6 +95,40 @@ func TestCommentWorkerPassCachesSanitized(t *testing.T) {
 	}
 	if w := mon.Status().Written; w != 1 {
 		t.Fatalf("Written = %d, want 1", w)
+	}
+}
+
+func TestCommentWorkerRefreshesAutoRivalries(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{
+		comments:  []Comment{{UserID: 1, Player: "Joao", Text: "hi"}},
+		rivalries: []Rivalry{{A: "Joao", B: "Ana", Note: "tied at the \x1b[31mtop\x1b[0m"}},
+	}
+	var saved []Rivalry
+	w := NewCommentWorker(CommentDeps{
+		History:       func() ([]RoundStanding, error) { return oneRound(), nil },
+		Config:        func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
+		Now:           func() time.Time { return now },
+		AutoRivalries: func() []Rivalry { return []Rivalry{{A: "Joao", B: "Ana", Note: "old"}} },
+		SetAutoRivalries: func(r []Rivalry) error {
+			saved = r
+			return nil
+		},
+	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", "")
+
+	w.pass(context.Background())
+
+	if fc.rivalryCalls != 1 {
+		t.Fatalf("UpdateRivalries calls = %d, want 1", fc.rivalryCalls)
+	}
+	if len(fc.lastRivExist) != 1 || fc.lastRivExist[0].Note != "old" {
+		t.Fatalf("existing rivalries not passed through: %+v", fc.lastRivExist)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("saved %d rivalries, want 1", len(saved))
+	}
+	if saved[0].Note != "tied at the top" {
+		t.Fatalf("note not sanitized: %q", saved[0].Note)
 	}
 }
 

@@ -26,6 +26,13 @@ type CommentDeps struct {
 	// AddDerivedNote stores one finished match's story (keyed by its match id so it's
 	// narrated once). Optional — nil ⇒ stories are never persisted.
 	AddDerivedNote func(matchID int64, text string) error
+	// AutoRivalries returns BETanIA's CURRENT self-managed rivalries (resolved to
+	// names), so the detector keeps stable ones rather than churning. Optional.
+	AutoRivalries func() []Rivalry
+	// SetAutoRivalries persists BETanIA's desired auto-rivalry set. The service merges
+	// in any pinned ones and dedups against admin rivalries. Optional — nil (or a nil
+	// AutoRivalries) ⇒ the self-managed rivalry tier is disabled entirely.
+	SetAutoRivalries func(rivals []Rivalry) error
 }
 
 // CommentWorker is BETanIA's per-player commentary worker. It has NO timer of its
@@ -122,6 +129,11 @@ func (w *CommentWorker) pass(ctx context.Context) {
 	// the per-player prompt as context. Best-effort — a digest fault never blocks the
 	// comments themselves.
 	cfg.DerivedNotes = w.refreshDerivedNotes(pctx, cfg)
+
+	// Self-managed rivalries: from the standings + the story so far, BETanIA decides
+	// which rivalries to track (add/update/drop), persists them, and we re-read the
+	// merged set so THIS pass's per-player lines already weave them in. Best-effort.
+	cfg.Rivalries = w.refreshAutoRivalries(pctx, cfg, history)
 
 	narratives, err := w.cmt.DetectNarratives(pctx, history)
 	if err != nil {
@@ -262,6 +274,38 @@ func (w *CommentWorker) refreshDerivedNotes(ctx context.Context, cfg CommentConf
 		combined = w.deps.DerivedNotes()
 	}
 	return combined
+}
+
+// refreshAutoRivalries asks BETanIA to update her self-managed rivalry set from the
+// current standings + the story so far, persists it, and returns the merged rivalry
+// set (admin + auto + pinned) for THIS pass to use. Best-effort: any fault logs and
+// falls back to the rivalries cfg already carries (admin + whatever was stored). A
+// no-op when the seams aren't wired.
+func (w *CommentWorker) refreshAutoRivalries(ctx context.Context, cfg CommentConfig, history []RoundStanding) []Rivalry {
+	if w.cmt == nil || w.deps.AutoRivalries == nil || w.deps.SetAutoRivalries == nil || w.deps.Config == nil {
+		return cfg.Rivalries
+	}
+	desired, err := w.cmt.UpdateRivalries(ctx, history, cfg.DerivedNotes, w.deps.AutoRivalries(), cfg)
+	if err != nil {
+		w.logger.Printf("ai: update rivalries: %v", err)
+		return cfg.Rivalries
+	}
+	clean := make([]Rivalry, 0, len(desired))
+	for _, r := range desired {
+		// Notes are untrusted model output rendered into terminals — same boundary as
+		// comments. Names are matched to real users service-side; drop blanks here.
+		note := sanitizeText(r.Note)
+		if r.A == "" || r.B == "" {
+			continue
+		}
+		clean = append(clean, Rivalry{A: r.A, B: r.B, Note: note})
+	}
+	if err := w.deps.SetAutoRivalries(clean); err != nil {
+		w.logger.Printf("ai: save auto rivalries: %v", err)
+		return cfg.Rivalries
+	}
+	// Re-read so the merged set (admin + pinned + freshly stored auto) feeds this pass.
+	return w.deps.Config().Rivalries
 }
 
 // CompactNotes fuses the per-game derived-notes diary into ONE consolidated

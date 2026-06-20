@@ -293,6 +293,29 @@ directly, with a fake clock, no terminal).
       wrapped) where **`e`** edits it in place (`EditRivalry`/`EditCommentNote` — a
       rivalry's two players stay; only the note text changes) and `d` deletes.
       Derived notes are read-only there (auto-generated — delete/compact instead).
+    - **Auto-rivalries — BETanIA's self-managed rivalry tier (`comment_context.auto_rivalries`).**
+      A SEPARATE tier inside the same `comment_context` blob, which the **admin tier
+      never touches** and vice-versa. After a match **settles**, the same comment pass
+      that refreshes the derived notes also runs `CommentWorker.refreshAutoRivalries`
+      → `AnthropicCommenter.UpdateRivalries` (one no-web-search Claude call, usage
+      category `digest`): it reads the standings (positions/movement/points from
+      `StandingsHistory`) + the derived-note story + her CURRENT auto-rivalries, and
+      returns the **full desired set** (declarative — add/update/delete all fall out of
+      replacing it). The worker sanitizes notes (`sanitizeText`) and persists via the
+      `CommentDeps.SetAutoRivalries` seam, then **re-reads `Config()`** so THIS pass's
+      per-player lines already weave the new set in. `service.SetAutoRivalries` resolves
+      names→ids (drops unknown players — "never invent"), keeps **pinned** entries
+      verbatim, dedups unordered pairs against pinned + **admin** pairs (admin always
+      wins), and caps the stored set. `service.CommentConfig` merges admin + auto into
+      `cfg.Rivalries` (admin first), so **no comment-prompt change is needed** — the
+      existing "riff on rivalries" instruction picks them up in both per-player comments
+      and live commentary. Always-on once `AICommentsEnabled`; nil seams ⇒ tier off.
+      **Admin CRUD on `screenAIContext`** (gated `AutoRivalriesView`/`EditAutoRivalry`/
+      `DeleteAutoRivalry`/`PinAutoRivalry`/`ClearAutoRivalries`): `enter`→detail, `e`
+      edits the note **and pins** (so the edit sticks), `p` toggles **pin** (a pinned
+      rivalry is kept verbatim — BETanIA never drops/rewrites it; 📌 in the list), `d`
+      deletes (a non-pinned pair may reappear next pass — pin to make removal stick),
+      `R` clears the whole auto tier.
     - **Derived notes — BETanIA's auto "story of the game" tier (`comment_derived_notes`).**
       A SEPARATE tier from the admin's house `Notes`, never mixed. **One note per
       finished match** — a per-game diary. When a match **settles** — `EnterResult`

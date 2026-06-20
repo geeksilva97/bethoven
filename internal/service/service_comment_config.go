@@ -114,9 +114,21 @@ type storedRivalry struct {
 	Note string `json:"note"`
 }
 
+// autoRivalry is one of BETanIA's self-managed rivalries: the same pair+note as a
+// storedRivalry, plus Pinned — a pinned one is kept verbatim across regeneration
+// passes (BETanIA never drops or rewrites it). A SEPARATE tier from the admin's
+// Rivalries, which BETanIA never touches.
+type autoRivalry struct {
+	A      int64  `json:"a"`
+	B      int64  `json:"b"`
+	Note   string `json:"note"`
+	Pinned bool   `json:"pinned,omitempty"`
+}
+
 type storedContext struct {
-	Rivalries []storedRivalry `json:"rivalries"`
-	Notes     []string        `json:"notes"`
+	Rivalries     []storedRivalry `json:"rivalries"`
+	Notes         []string        `json:"notes"`
+	AutoRivalries []autoRivalry   `json:"auto_rivalries,omitempty"` // BETanIA-managed
 }
 
 func (s *Service) loadStoredContext() storedContext {
@@ -287,12 +299,24 @@ func (s *Service) CommentConfig() ai.CommentConfig {
 	}
 	c := s.loadStoredContext()
 	var rivalries []ai.Rivalry
+	seen := map[string]bool{} // unordered pairs already fed; admin wins over auto
 	for _, r := range c.Rivalries {
 		a, b := names[r.A], names[r.B]
 		if a == "" || b == "" {
 			continue // a participant no longer exists — skip
 		}
 		rivalries = append(rivalries, ai.Rivalry{A: a, B: b, Note: r.Note})
+		seen[pairKey(r.A, r.B)] = true
+	}
+	// BETanIA's self-managed rivalries, merged after the admin's. An admin pair always
+	// wins (we skip a duplicate), so the admin's curation is never overridden.
+	for _, r := range c.AutoRivalries {
+		a, b := names[r.A], names[r.B]
+		if a == "" || b == "" || seen[pairKey(r.A, r.B)] {
+			continue
+		}
+		rivalries = append(rivalries, ai.Rivalry{A: a, B: b, Note: r.Note})
+		seen[pairKey(r.A, r.B)] = true
 	}
 	override, _ := s.CommentPromptOverride()
 	mood, _ := s.CommentMood()
@@ -312,4 +336,171 @@ func (s *Service) CommentConfig() ai.CommentConfig {
 // a blank box. Not gated: it's the same non-secret prompt the worker already uses.
 func (s *Service) DefaultCommentPrompt() string {
 	return ai.DefaultCommentPrompt(s.CommentConfig())
+}
+
+// --- BETanIA's self-managed rivalries (auto tier) ----------------------------
+
+// pairKey is an order-independent key for a player pair, so {A,B} and {B,A} dedupe.
+func pairKey(a, b int64) string {
+	if a > b {
+		a, b = b, a
+	}
+	return fmt.Sprintf("%d:%d", a, b)
+}
+
+// nameToID returns a case-insensitive display-name → user-id lookup (current users).
+func (s *Service) nameToID() map[string]int64 {
+	m := map[string]int64{}
+	users, err := s.store.AllUsers()
+	if err != nil {
+		return m
+	}
+	for _, u := range users {
+		m[strings.ToLower(u.DisplayName)] = u.ID
+	}
+	return m
+}
+
+// AutoRivalries returns BETanIA's current self-managed rivalries resolved to names
+// (pinned + non-pinned), so the detector keeps stable ones. WORKER seam (not gated).
+func (s *Service) AutoRivalries() []ai.Rivalry {
+	c := s.loadStoredContext()
+	names := s.userNameMap()
+	out := make([]ai.Rivalry, 0, len(c.AutoRivalries))
+	for _, r := range c.AutoRivalries {
+		a, b := names[r.A], names[r.B]
+		if a == "" || b == "" {
+			continue
+		}
+		out = append(out, ai.Rivalry{A: a, B: b, Note: r.Note})
+	}
+	return out
+}
+
+// SetAutoRivalries persists BETanIA's desired auto-rivalry set (the declarative
+// replace from one detection pass). PINNED existing entries are kept verbatim; the
+// desired set fills the rest, deduped by unordered pair against pinned pairs and the
+// ADMIN rivalries (admin always wins), capped. Unknown player names are dropped
+// ("never invent"). WORKER seam (not gated — the worker is the caller).
+func (s *Service) SetAutoRivalries(desired []ai.Rivalry) error {
+	c := s.loadStoredContext()
+	byName := s.nameToID()
+
+	taken := map[string]bool{}
+	for _, r := range c.Rivalries { // admin pairs are off-limits
+		taken[pairKey(r.A, r.B)] = true
+	}
+	kept := make([]autoRivalry, 0, len(c.AutoRivalries))
+	for _, r := range c.AutoRivalries { // pinned ones survive verbatim
+		if r.Pinned {
+			kept = append(kept, r)
+			taken[pairKey(r.A, r.B)] = true
+		}
+	}
+	for _, r := range desired {
+		if len(kept) >= maxAutoRivalriesStored {
+			break
+		}
+		aID, aok := byName[strings.ToLower(strings.TrimSpace(r.A))]
+		bID, bok := byName[strings.ToLower(strings.TrimSpace(r.B))]
+		if !aok || !bok || aID == bID {
+			continue
+		}
+		k := pairKey(aID, bID)
+		if taken[k] {
+			continue
+		}
+		taken[k] = true
+		kept = append(kept, autoRivalry{A: aID, B: bID, Note: strings.TrimSpace(r.Note)})
+	}
+	c.AutoRivalries = kept
+	return s.saveStoredContext(c)
+}
+
+// maxAutoRivalriesStored caps the persisted auto tier (incl. pinned), a backstop on
+// top of the model's own per-pass cap.
+const maxAutoRivalriesStored = 6
+
+// AutoRivalryView is one self-managed rivalry resolved to names, for the admin editor.
+type AutoRivalryView struct {
+	AID, BID int64
+	A, B     string
+	Note     string
+	Pinned   bool
+}
+
+// AutoRivalriesView returns BETanIA's self-managed rivalries (resolved to names) for
+// the admin context screen. Admin only.
+func (s *Service) AutoRivalriesView(by *models.User) ([]AutoRivalryView, error) {
+	if err := requireAdmin(by); err != nil {
+		return nil, err
+	}
+	c := s.loadStoredContext()
+	names := s.userNameMap()
+	out := make([]AutoRivalryView, 0, len(c.AutoRivalries))
+	for _, r := range c.AutoRivalries {
+		out = append(out, AutoRivalryView{
+			AID: r.A, BID: r.B, A: names[r.A], B: names[r.B], Note: r.Note, Pinned: r.Pinned,
+		})
+	}
+	return out, nil
+}
+
+// EditAutoRivalry replaces the note of the auto-rivalry at idx and PINS it, so the
+// admin's edit sticks (BETanIA won't rewrite or drop a pinned entry). Admin only.
+func (s *Service) EditAutoRivalry(by *models.User, idx int, note string) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return errors.New("a rivalry note is required")
+	}
+	c := s.loadStoredContext()
+	if idx < 0 || idx >= len(c.AutoRivalries) {
+		return errors.New("no such rivalry")
+	}
+	c.AutoRivalries[idx].Note = note
+	c.AutoRivalries[idx].Pinned = true
+	return s.saveStoredContext(c)
+}
+
+// DeleteAutoRivalry removes the auto-rivalry at idx. A non-pinned pair may reappear on
+// a later pass if it still holds — pin it to make removal stick. Admin only.
+func (s *Service) DeleteAutoRivalry(by *models.User, idx int) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	c := s.loadStoredContext()
+	if idx < 0 || idx >= len(c.AutoRivalries) {
+		return errors.New("no such rivalry")
+	}
+	c.AutoRivalries = append(c.AutoRivalries[:idx], c.AutoRivalries[idx+1:]...)
+	return s.saveStoredContext(c)
+}
+
+// PinAutoRivalry sets/clears the pin on the auto-rivalry at idx. A pinned rivalry is
+// kept verbatim across regeneration passes; unpinning lets BETanIA manage it again.
+// Admin only.
+func (s *Service) PinAutoRivalry(by *models.User, idx int, pinned bool) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	c := s.loadStoredContext()
+	if idx < 0 || idx >= len(c.AutoRivalries) {
+		return errors.New("no such rivalry")
+	}
+	c.AutoRivalries[idx].Pinned = pinned
+	return s.saveStoredContext(c)
+}
+
+// ClearAutoRivalries wipes BETanIA's self-managed rivalries (pinned included). The
+// next settle pass may repopulate them. Admin only.
+func (s *Service) ClearAutoRivalries(by *models.User) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	c := s.loadStoredContext()
+	c.AutoRivalries = nil
+	return s.saveStoredContext(c)
 }

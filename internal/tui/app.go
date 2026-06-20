@@ -203,8 +203,9 @@ type Model struct {
 	// admin: BETanIA rivalry/house-note context editor (reached with 'x').
 	// ctxMode drives a small wizard: list → add-note / pick-A → pick-B → rivalry-note.
 	ctxView       service.CommentContextView
+	ctxAuto       []service.AutoRivalryView // BETanIA's self-managed rivalries
 	ctxDerived    []service.DerivedNoteView // BETanIA's auto-derived "story" notes
-	ctxCursor     int                       // over rivalries, then notes, then derived notes
+	ctxCursor     int                       // over admin rivalries, auto rivalries, notes, then derived notes
 	ctxMode       int
 	ctxArea       textarea.Model // multi-line editor for rivalry/house notes (long text)
 	ctxPickCursor int

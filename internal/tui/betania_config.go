@@ -27,6 +27,7 @@ const (
 	ctxKindRivalry = iota
 	ctxKindNote
 	ctxKindDerived
+	ctxKindAuto // BETanIA's self-managed rivalries
 )
 
 // openBETanIA (re)loads the admin panel — used when returning from a sub-editor.
@@ -164,6 +165,7 @@ func (m Model) openAIContext() Model {
 		return m
 	}
 	m.ctxView, m.tonePlayers = v, pts
+	m.ctxAuto, _ = m.svc.AutoRivalriesView(m.user)
 	m.ctxDerived, _ = m.svc.DerivedNotes(m.user)
 	m.ctxMode, m.ctxCursor = ctxModeList, 0
 	m.screen = screenAIContext
@@ -174,13 +176,32 @@ func (m *Model) reloadCtx() {
 	if v, err := m.svc.CommentContextView(m.user); err == nil {
 		m.ctxView = v
 	}
+	m.ctxAuto, _ = m.svc.AutoRivalriesView(m.user)
 	m.ctxDerived, _ = m.svc.DerivedNotes(m.user)
 }
 
-// ctxTotal is the number of selectable rows: rivalries, then house notes, then
-// derived notes.
+// ctxTotal is the number of selectable rows: admin rivalries, auto rivalries, house
+// notes, then derived notes.
 func (m Model) ctxTotal() int {
-	return len(m.ctxView.Rivalries) + len(m.ctxView.Notes) + len(m.ctxDerived)
+	return len(m.ctxView.Rivalries) + len(m.ctxAuto) + len(m.ctxView.Notes) + len(m.ctxDerived)
+}
+
+// ctxRowAt maps a list cursor to its tier and the local index within that tier.
+// Order matches viewCtxList: admin rivalries, auto rivalries, house notes, derived.
+func (m Model) ctxRowAt(cursor int) (kind, idx int) {
+	nRiv := len(m.ctxView.Rivalries)
+	nAuto := len(m.ctxAuto)
+	nNote := len(m.ctxView.Notes)
+	switch {
+	case cursor < nRiv:
+		return ctxKindRivalry, cursor
+	case cursor < nRiv+nAuto:
+		return ctxKindAuto, cursor - nRiv
+	case cursor < nRiv+nAuto+nNote:
+		return ctxKindNote, cursor - nRiv - nAuto
+	default:
+		return ctxKindDerived, cursor - nRiv - nAuto - nNote
+	}
 }
 
 // compactNotesMsg carries the result of an async derived-notes compaction (a model
@@ -222,24 +243,27 @@ func (m Model) updateAIContext(msg tea.Msg) (tea.Model, tea.Cmd) {
 // openCtxDetail loads the selected row (rivalry, house note, or derived note) into
 // the read-full view.
 func (m Model) openCtxDetail() Model {
-	nRiv, nNote := len(m.ctxView.Rivalries), len(m.ctxView.Notes)
-	switch {
-	case m.ctxCursor < nRiv:
-		r := m.ctxView.Rivalries[m.ctxCursor]
-		m.ctxDetailKind, m.ctxDetailIdx = ctxKindRivalry, m.ctxCursor
+	kind, i := m.ctxRowAt(m.ctxCursor)
+	m.ctxDetailKind, m.ctxDetailIdx = kind, i
+	switch kind {
+	case ctxKindRivalry:
+		r := m.ctxView.Rivalries[i]
 		m.ctxDetailTitle = fmt.Sprintf("%s vs %s", r.A, r.B)
 		m.ctxDetailFull = r.Note
-	case m.ctxCursor < nRiv+nNote:
-		i := m.ctxCursor - nRiv
-		m.ctxDetailKind, m.ctxDetailIdx = ctxKindNote, i
+	case ctxKindAuto:
+		if i < 0 || i >= len(m.ctxAuto) {
+			return m
+		}
+		r := m.ctxAuto[i]
+		m.ctxDetailTitle = fmt.Sprintf("%s vs %s (auto)", r.A, r.B)
+		m.ctxDetailFull = r.Note
+	case ctxKindNote:
 		m.ctxDetailTitle = "House note"
 		m.ctxDetailFull = m.ctxView.Notes[i]
 	default:
-		i := m.ctxCursor - nRiv - nNote
 		if i < 0 || i >= len(m.ctxDerived) {
 			return m
 		}
-		m.ctxDetailKind, m.ctxDetailIdx = ctxKindDerived, i
 		m.ctxDetailTitle = "Derived note (auto)"
 		m.ctxDetailFull = m.ctxDerived[i].Text
 	}
@@ -268,11 +292,26 @@ func (m Model) updateCtxDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ctxMode = ctxModeEdit
 		m.ctxArea = newCtxArea("edit the text…", m.ctxDetailFull)
 		return m, textarea.Blink
+	case "p":
+		// Pin/unpin a self-managed rivalry: pinned ⇒ BETanIA keeps it verbatim.
+		if m.ctxDetailKind != ctxKindAuto || m.ctxDetailIdx >= len(m.ctxAuto) {
+			return m, nil
+		}
+		pin := !m.ctxAuto[m.ctxDetailIdx].Pinned
+		if err := m.svc.PinAutoRivalry(m.user, m.ctxDetailIdx, pin); err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.reloadCtx()
+		m.setStatus(map[bool]string{true: "rivalry pinned", false: "rivalry unpinned"}[pin], false)
+		return m, nil
 	case "d":
 		var err error
 		switch m.ctxDetailKind {
 		case ctxKindRivalry:
 			err = m.svc.DeleteRivalry(m.user, m.ctxDetailIdx)
+		case ctxKindAuto:
+			err = m.svc.DeleteAutoRivalry(m.user, m.ctxDetailIdx)
 		case ctxKindNote:
 			err = m.svc.DeleteCommentNote(m.user, m.ctxDetailIdx)
 		default:
@@ -296,7 +335,6 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	total := m.ctxTotal()
-	nRiv, nNote := len(m.ctxView.Rivalries), len(m.ctxView.Notes)
 	switch k.String() {
 	case "q":
 		return m, tea.Quit
@@ -340,18 +378,43 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus("derived notes cleared", false)
 		m.reloadCtx()
 		m.clampCtxCursor()
+	case "R":
+		// Clear BETanIA's self-managed rivalries (the next settle pass may repopulate).
+		if err := m.svc.ClearAutoRivalries(m.user); err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.setStatus("auto-rivalries cleared", false)
+		m.reloadCtx()
+		m.clampCtxCursor()
+	case "p":
+		// Pin/unpin the selected auto-rivalry (no-op on other tiers).
+		kind, i := m.ctxRowAt(m.ctxCursor)
+		if kind != ctxKindAuto || i >= len(m.ctxAuto) {
+			return m, nil
+		}
+		pin := !m.ctxAuto[i].Pinned
+		if err := m.svc.PinAutoRivalry(m.user, i, pin); err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.reloadCtx()
+		m.setStatus(map[bool]string{true: "rivalry pinned", false: "rivalry unpinned"}[pin], false)
 	case "d":
 		if total == 0 {
 			return m, nil
 		}
+		kind, i := m.ctxRowAt(m.ctxCursor)
 		var err error
-		switch {
-		case m.ctxCursor < nRiv:
-			err = m.svc.DeleteRivalry(m.user, m.ctxCursor)
-		case m.ctxCursor < nRiv+nNote:
-			err = m.svc.DeleteCommentNote(m.user, m.ctxCursor-nRiv)
+		switch kind {
+		case ctxKindRivalry:
+			err = m.svc.DeleteRivalry(m.user, i)
+		case ctxKindAuto:
+			err = m.svc.DeleteAutoRivalry(m.user, i)
+		case ctxKindNote:
+			err = m.svc.DeleteCommentNote(m.user, i)
 		default:
-			err = m.svc.DeleteDerivedNote(m.user, m.ctxCursor-nRiv-nNote)
+			err = m.svc.DeleteDerivedNote(m.user, i)
 		}
 		if err != nil {
 			m.setStatus(err.Error(), true)
@@ -386,6 +449,8 @@ func (m Model) updateCtxInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case m.ctxMode == ctxModeEdit && m.ctxDetailKind == ctxKindRivalry:
 				err = m.svc.EditRivalry(m.user, m.ctxDetailIdx, text)
+			case m.ctxMode == ctxModeEdit && m.ctxDetailKind == ctxKindAuto:
+				err = m.svc.EditAutoRivalry(m.user, m.ctxDetailIdx, text)
 			case m.ctxMode == ctxModeEdit:
 				err = m.svc.EditCommentNote(m.user, m.ctxDetailIdx, text)
 			case m.ctxMode == ctxModeRivalNote:
@@ -478,9 +543,16 @@ func (m Model) viewCtxDetail() string {
 		out += line + "\n"
 	}
 	out += "\n" + statusLine(m)
-	if m.ctxDetailKind == ctxKindDerived {
+	switch m.ctxDetailKind {
+	case ctxKindDerived:
 		out += helpStyle.Render("d: delete · esc: back · q: quit")
-	} else {
+	case ctxKindAuto:
+		pin := "p: pin"
+		if m.ctxDetailIdx < len(m.ctxAuto) && m.ctxAuto[m.ctxDetailIdx].Pinned {
+			pin = "p: unpin"
+		}
+		out += helpStyle.Render("e: edit (pins) · " + pin + " · d: delete · esc: back · q: quit")
+	default:
 		out += helpStyle.Render("e: edit · d: delete · esc: back · q: quit")
 	}
 	return out
@@ -498,6 +570,20 @@ func (m Model) viewCtxList() string {
 		out += cursorRow(idx == m.ctxCursor, truncate(fmt.Sprintf("%s vs %s — %s", r.A, r.B, r.Note), w)) + "\n"
 		idx++
 	}
+
+	out += "\n" + labelStyle.Render("Auto-rivalries (BETanIA's own — updated as games finish)") + "\n"
+	if len(m.ctxAuto) == 0 {
+		out += helpStyle.Render("  none yet — BETanIA adds these from the standings") + "\n"
+	}
+	for _, r := range m.ctxAuto {
+		pin := ""
+		if r.Pinned {
+			pin = "📌 "
+		}
+		out += cursorRow(idx == m.ctxCursor, truncate(fmt.Sprintf("%s%s vs %s — %s", pin, r.A, r.B, r.Note), w)) + "\n"
+		idx++
+	}
+
 	out += "\n" + labelStyle.Render("House notes") + "\n"
 	if len(m.ctxView.Notes) == 0 {
 		out += helpStyle.Render("  none yet") + "\n"
@@ -521,7 +607,7 @@ func (m Model) viewCtxList() string {
 	}
 
 	out += "\n" + statusLine(m) +
-		helpStyle.Render("enter: read/edit · a: add rivalry · n: add note · d: delete · c: fuse derived · C: clear derived · ↑/↓: move · esc: back")
+		helpStyle.Render("enter: read/edit · a: add rivalry · n: add note · p: pin auto · d: delete · c: fuse derived · C: clear derived · R: clear auto · ↑/↓: move · esc: back")
 	return out
 }
 

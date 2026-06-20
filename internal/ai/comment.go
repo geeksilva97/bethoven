@@ -121,6 +121,12 @@ type Commenter interface {
 	// consolidated narrative, weighting recent games most (the admin "compact"
 	// action). Returns "" when there's nothing to compact.
 	CompactNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error)
+	// UpdateRivalries inspects the standings (positions/movement/points) plus the
+	// derived-note story and BETanIA's CURRENT auto-rivalries, and returns the full
+	// desired set of auto-rivalries — declarative, so add/update/delete all fall out
+	// of replacing the set. Grounded only in the data; nil/empty ⇒ no rivalries worth
+	// tracking right now.
+	UpdateRivalries(ctx context.Context, history []RoundStanding, derivedNotes string, existing []Rivalry, cfg CommentConfig) ([]Rivalry, error)
 }
 
 // DigestPick is one player's pick on a finished match, for the results snapshot.
