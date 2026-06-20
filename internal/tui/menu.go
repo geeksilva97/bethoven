@@ -204,6 +204,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		m.aiActivity, _ = m.svc.AIActivity(m.user, betaniaActivityLimit)
 		m.aiBets, _ = m.svc.AIBets(m.user, betaniaBetsLimit)
 		m.aiBetsCursor = 0
+		m.aiUsageOffset = 0
 		m.aiUsage, _ = m.svc.AIUsage(m.user)
 		m.loadBETanIAComments()
 		m.screen = screenBETanIA

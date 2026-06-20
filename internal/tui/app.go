@@ -178,7 +178,9 @@ type Model struct {
 	betaniaTab    int
 	// aiUsage is BETanIA's cumulative token usage + estimated cost, read from the
 	// durable on-disk usage log (survives restarts). Shown on the Usage tab.
-	aiUsage ai.UsageReport
+	// aiUsageOffset is the line scroll offset for the Usage tab.
+	aiUsage       ai.UsageReport
+	aiUsageOffset int
 	// admin: BETanIA comment worker. aiCommentsDisabled is set when the comment
 	// worker isn't running; commentTone is the active tone (toggled with 't').
 	aiCommentsDisabled bool

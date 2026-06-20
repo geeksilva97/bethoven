@@ -107,6 +107,14 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.aiBetsCursor++
 		}
 		return m, nil
+	case m.betaniaTab == tabUsage && (k.String() == "up" || k.String() == "k"):
+		if m.aiUsageOffset > 0 {
+			m.aiUsageOffset--
+		}
+		return m, nil
+	case m.betaniaTab == tabUsage && (k.String() == "down" || k.String() == "j"):
+		m.aiUsageOffset++
+		return m, nil
 	case m.betaniaTab == tabComments && k.String() == "s":
 		return m.openAIPrompt(), nil
 	case m.betaniaTab == tabComments && (k.String() == "up" || k.String() == "k"):
@@ -241,7 +249,7 @@ func (m Model) viewBETanIA() string {
 		out += m.betaniaUsageTab()
 		out += "\n" + helpStyle.Render("usage → ai_usage.log — the durable cost record (survives restarts)") + "\n"
 		out += statusLine(m) +
-			helpStyle.Render("tab: betting · any other key: back · q: quit")
+			helpStyle.Render("↑↓/jk: scroll · tab: betting · any other key: back · q: quit")
 		return out
 	}
 
@@ -262,6 +270,19 @@ func (m Model) betaniaTabBar() string {
 		return helpStyle.Render(" " + label + " ")
 	}
 	return tab("Betting", tabBetting) + " " + tab("Comments", tabComments) + " " + tab("Usage", tabUsage) + "\n\n"
+}
+
+// usageViewCapacity is how many lines fit in the Usage tab body. Chrome is
+// title (2) + tab bar (2) + log hint (1) + status (1) + help (1) ≈ 7 lines.
+func (m Model) usageViewCapacity() int {
+	if m.height <= 0 {
+		return 20
+	}
+	const usageChrome = 7
+	if n := m.height - usageChrome; n >= 5 {
+		return n
+	}
+	return 5
 }
 
 // betaniaUsageTab renders BETanIA's Claude token usage and estimated cost, broken
@@ -294,21 +315,41 @@ func (m Model) betaniaUsageTab() string {
 		return s
 	}
 
-	out := ""
+	full := ""
 	for _, c := range rep.Categories {
-		out += section(usageCategoryLabel(c.Category), c) + "\n"
+		full += section(usageCategoryLabel(c.Category), c) + "\n"
 	}
 
 	// Grand total — the headline numbers.
-	out += labelStyle.Render("Total") + "\n"
-	out += kpi("Estimated cost", okStyle.Render(fmt.Sprintf("$%.2f", rep.Total.EstCostUSD)))
-	out += kpi("Tokens (in + out)", commaInt(rep.Total.InputTokens+rep.Total.OutputTokens))
-	out += kpi("Calls", commaInt(rep.Total.Calls))
-	out += "\n"
-
-	out += helpStyle.Render("  Estimated from the on-disk usage log; persists across restarts. Prices are approximate.") + "\n"
+	full += labelStyle.Render("Total") + "\n"
+	full += kpi("Estimated cost", okStyle.Render(fmt.Sprintf("$%.2f", rep.Total.EstCostUSD)))
+	full += kpi("Tokens (in + out)", commaInt(rep.Total.InputTokens+rep.Total.OutputTokens))
+	full += kpi("Calls", commaInt(rep.Total.Calls))
+	full += "\n"
+	full += helpStyle.Render("  Estimated from the on-disk usage log; persists across restarts. Prices are approximate.")
 	if len(rep.UnknownModels) > 0 {
-		out += helpStyle.Render("  Cost under-counts unknown model(s): "+strings.Join(rep.UnknownModels, ", ")) + "\n"
+		full += "\n" + helpStyle.Render("  Cost under-counts unknown model(s): "+strings.Join(rep.UnknownModels, ", "))
+	}
+
+	lines := strings.Split(full, "\n")
+	cap := m.usageViewCapacity()
+	off := m.aiUsageOffset
+	if off > len(lines)-cap {
+		off = len(lines) - cap
+	}
+	if off < 0 {
+		off = 0
+	}
+	end := off + cap
+	if end > len(lines) {
+		end = len(lines)
+	}
+	out := strings.Join(lines[off:end], "\n") + "\n"
+	if off > 0 {
+		out = helpStyle.Render(fmt.Sprintf("  ↑ %d more", off)) + "\n" + out
+	}
+	if end < len(lines) {
+		out += helpStyle.Render(fmt.Sprintf("  ↓ %d more", len(lines)-end)) + "\n"
 	}
 	return out
 }
