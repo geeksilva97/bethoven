@@ -26,6 +26,32 @@ func (f fakeCommentMonitor) Activity(limit int) []ai.CommentAction {
 	return f.acts
 }
 
+// TestCommentMood covers the self-evolving mood setting: default, validation,
+// persistence, and the unchanged-value no-op (director writes it every pass).
+func TestCommentMood(t *testing.T) {
+	svc, _, _ := newTestService(t)
+
+	if m, _ := svc.CommentMood(); m != "neutral" {
+		t.Fatalf("default mood = %q, want neutral", m)
+	}
+	if err := svc.SetCommentMood("nope"); err == nil {
+		t.Fatal("invalid mood should be rejected")
+	}
+	if err := svc.SetCommentMood("Cocky"); err != nil { // case-insensitive
+		t.Fatalf("SetCommentMood: %v", err)
+	}
+	if m, _ := svc.CommentMood(); m != "cocky" {
+		t.Fatalf("mood = %q, want cocky", m)
+	}
+	// Unchanged value is a no-op (must not error), and the mood reaches CommentConfig.
+	if err := svc.SetCommentMood("cocky"); err != nil {
+		t.Fatalf("re-setting the same mood should be a no-op, got %v", err)
+	}
+	if cfg := svc.CommentConfig(); cfg.Mood != "cocky" {
+		t.Fatalf("CommentConfig.Mood = %q, want cocky", cfg.Mood)
+	}
+}
+
 // TestAICommentActivityHidesMuted checks a muted player's lingering pre-mute entry
 // is dropped from the admin feed at read time, while errors (no player) survive.
 func TestAICommentActivityHidesMuted(t *testing.T) {

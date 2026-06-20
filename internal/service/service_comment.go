@@ -50,6 +50,41 @@ func (s *Service) SetCommentTone(by *models.User, tone string) error {
 	return nil
 }
 
+// settingCommentMood is the KV key for BETanIA's self-evolving mood. Stored as one
+// of ai.MoodValues (default "neutral" when absent/invalid). The director updates it
+// each pass; it's fed into every line she writes. Read/written like comment_tone.
+const settingCommentMood = "comment_mood"
+
+// CommentMood reports BETanIA's current mood, defaulting to "neutral".
+func (s *Service) CommentMood() (string, error) {
+	v, err := s.store.GetSetting(settingCommentMood)
+	if errors.Is(err, db.ErrNotFound) {
+		return "neutral", nil
+	}
+	if err != nil {
+		return "neutral", err
+	}
+	if m := ai.NormalizeMood(v); m != "" {
+		return m, nil
+	}
+	return "neutral", nil
+}
+
+// SetCommentMood persists BETanIA's mood. WORKER seam — not admin-gated, since the
+// director (not a user) is the caller (mirrors CommentConfig / SaveLiveCommentState).
+// Invalid values are rejected; an unchanged value is a no-op (avoids a needless DB
+// write every director pass during a live match).
+func (s *Service) SetCommentMood(mood string) error {
+	m := ai.NormalizeMood(mood)
+	if m == "" {
+		return fmt.Errorf("invalid mood %q", mood)
+	}
+	if cur, _ := s.CommentMood(); cur == m {
+		return nil
+	}
+	return s.store.SetSetting(settingCommentMood, m)
+}
+
 // CommentSource exposes BETanIA's current per-player comments (the in-memory
 // cache). nil is valid and means the comment worker isn't running, in which case
 // the leaderboard shows no comments. Mirrors the LiveStore / AIMonitor ports.
@@ -224,6 +259,28 @@ func (s *Service) TriggerAIComments(by *models.User) error {
 // when unset, RegenerateComment reports the worker is off.
 func (s *Service) SetCommentRegen(fn func(ctx context.Context, userID int64, extra string) (ai.Comment, error)) {
 	s.aiCommentRegen = fn
+}
+
+// RegenerateOneByName regenerates a single player's leaderboard roast by display
+// name. WORKER seam for the director ("she decides, per player, when a roast is
+// stale") — ungated, since the director, not a user, is the caller. No-op when the
+// comment worker isn't attached or the name doesn't resolve.
+func (s *Service) RegenerateOneByName(ctx context.Context, name string) error {
+	if s.aiCommentRegen == nil {
+		return ErrAIOff
+	}
+	name = strings.TrimSpace(name)
+	users, err := s.store.AllUsers()
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		if strings.EqualFold(u.DisplayName, name) {
+			_, err := s.aiCommentRegen(ctx, u.ID, "")
+			return err
+		}
+	}
+	return fmt.Errorf("no player named %q", name)
 }
 
 // regenCommentTimeout bounds one single-comment regeneration (two model calls).

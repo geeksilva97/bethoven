@@ -344,6 +344,9 @@ func builtinCommentBody(cfg CommentConfig) string {
 	if cfg.Self != "" {
 		fmt.Fprintf(&b, "The player named %q is YOU (BETanIA): write that line in the FIRST person (\"I\"/\"my\"), talking about yourself.\n", cfg.Self)
 	}
+	if ml := MoodLine(cfg.Mood); ml != "" {
+		b.WriteString(ml)
+	}
 
 	b.WriteString("\nRULES:\n")
 	b.WriteString("1. Ground every line ONLY in the standings, narratives, and context provided. Never invent facts, scores, or events.\n")

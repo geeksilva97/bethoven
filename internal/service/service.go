@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -102,6 +103,25 @@ type Service struct {
 	// forms holds each team's pre-tournament recent-form baseline (oldest→newest),
 	// seeded from fixtures.json. Optional; nil when no baseline is configured.
 	forms map[string][]models.FormOutcome
+
+	// liveLookahead bounds how soon a match must kick off before the director will
+	// hype it ("a game about to start"). Set once at startup; 0 ⇒ default window.
+	liveLookahead time.Duration
+
+	// mu guards recentSettled (the only mutable in-memory field touched from both
+	// session/poller goroutines and the director). The DB handles its own locking.
+	mu sync.Mutex
+	// recentSettled tracks matches that JUST finished so the director can react to a
+	// fresh result for a short window. In-memory + throwaway (like the live cache):
+	// appended by onMatchSettled, read by LiveSituation, pruned by age.
+	recentSettled []recentSettle
+}
+
+// recentSettle is one just-finished match, remembered for the director's
+// just-finished reaction window (settledWindow).
+type recentSettle struct {
+	matchID int64
+	at      time.Time
 }
 
 // New builds a Service bound to the active tournament.
@@ -118,6 +138,10 @@ func New(store *db.Store, clk clock.Clock, inviteCode string, admins []string, t
 // SetLiveStore attaches a live snapshot source (the poller's cache). Optional —
 // when unset, the leaderboard and fixtures behave as if nothing is in play.
 func (s *Service) SetLiveStore(ls LiveStore) { s.live = ls }
+
+// SetLiveLookahead sets the director's "about to kick off" window. Optional —
+// when unset (0), LiveSituation uses defaultLiveLookahead.
+func (s *Service) SetLiveLookahead(d time.Duration) { s.liveLookahead = d }
 
 // SetAnalyticsSink attaches the usage tracker. Optional — when unset, every emit
 // site is a no-op and the service behaves exactly as if analytics didn't exist.

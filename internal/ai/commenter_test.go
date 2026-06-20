@@ -54,7 +54,7 @@ func TestCommentWorkerPassCachesSanitized(t *testing.T) {
 		History: func() ([]RoundStanding, error) { return oneRound(), nil },
 		Config:  func() CommentConfig { return CommentConfig{DefaultTone: "savage"} },
 		Now:     func() time.Time { return now },
-	}, fc, cache, mon, "", time.Hour, "")
+	}, fc, cache, mon, "", "")
 
 	w.pass(context.Background())
 
@@ -66,8 +66,10 @@ func TestCommentWorkerPassCachesSanitized(t *testing.T) {
 	if c.Text != "you fell hard" {
 		t.Fatalf("expected ANSI stripped, got %q", c.Text)
 	}
-	if !c.ExpiresAt.Equal(now.Add(time.Hour)) {
-		t.Fatalf("ExpiresAt = %v, want %v", c.ExpiresAt, now.Add(time.Hour))
+	// The director owns the cadence now: per-player comments never expire on a clock
+	// (they persist until the next pass replaces them), so ExpiresAt is the zero time.
+	if !c.ExpiresAt.IsZero() {
+		t.Fatalf("ExpiresAt = %v, want zero (never expires)", c.ExpiresAt)
 	}
 	if w := mon.Status().Written; w != 1 {
 		t.Fatalf("Written = %d, want 1", w)
@@ -81,7 +83,7 @@ func TestCommentWorkerSkipsEmptyHistory(t *testing.T) {
 		History: func() ([]RoundStanding, error) { return nil, nil },
 		Config:  func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
 		Now:     func() time.Time { return now },
-	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", time.Hour, "")
+	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", "")
 
 	w.pass(context.Background())
 
@@ -134,7 +136,7 @@ func TestCommentWorkerDropsMuted(t *testing.T) {
 			return CommentConfig{DefaultTone: "playful", ToneByName: map[string]string{"Maria": "mute"}}
 		},
 		Now: func() time.Time { return now },
-	}, fc, cache, NewCommentMonitor("t", time.Hour), "", time.Hour, "")
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", "")
 
 	w.pass(context.Background())
 
@@ -149,7 +151,7 @@ func TestCommentWorkerDropsMuted(t *testing.T) {
 
 func TestCommentWorkerTriggerCoalesces(t *testing.T) {
 	w := NewCommentWorker(CommentDeps{}, &fakeCommenter{}, NewCommentCache(),
-		NewCommentMonitor("t", time.Hour), "", time.Hour, "")
+		NewCommentMonitor("t", time.Hour), "", "")
 	if !w.Trigger() {
 		t.Fatal("first Trigger should succeed")
 	}
@@ -208,7 +210,7 @@ func TestRegenerateOneUpsertsJustThatPlayer(t *testing.T) {
 		},
 		Config: func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
 		Now:    func() time.Time { return now },
-	}, fc, cache, NewCommentMonitor("t", time.Hour), "", time.Hour, "")
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", "")
 
 	c, err := w.RegenerateOne(context.Background(), 1, "")
 	if err != nil {

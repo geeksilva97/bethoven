@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"bethoven/internal/ai"
@@ -10,6 +11,14 @@ import (
 // livePicksTop caps how many picks per live match we hand the commenter — the
 // closest few are plenty of grounding for one line, and keeps the prompt small.
 const livePicksTop = 6
+
+// settledWindow is how long a just-finished match stays in the director's
+// "react to a fresh result" buffer (see recentSettled / onMatchSettled).
+const settledWindow = 10 * time.Minute
+
+// defaultLiveLookahead is the fallback "about to kick off" window when the service
+// wasn't configured with one (SetLiveLookahead).
+const defaultLiveLookahead = 30 * time.Minute
 
 // LiveCommentSource exposes BETanIA's current live-commentary line (the in-memory
 // cache the live-comment worker writes). nil is valid and means the worker isn't
@@ -56,18 +65,16 @@ func (s *Service) LoadLiveCommentState() string {
 	return v
 }
 
-// LiveSituation builds the snapshot the live-comment worker reasons over: the
-// in-play matches (score, clock, odds, and the closest picks) plus the players
-// whose standing is shifting on the provisional points. The bool reports whether
-// anything is live (false ⇒ the worker clears its cache). Worker seam, ungated —
-// the worker, not a user, is the caller (mirrors CommentConfig / StandingsHistory).
+// LiveSituation builds the snapshot the director reasons over: the in-play matches
+// (score, clock, odds, closest picks), the matches about to kick off, the matches
+// that just finished (with how the pool bet them), and the standings/movers. The
+// bool reports whether there's ANYTHING to talk about — in play, upcoming, or just
+// finished (false ⇒ the worker clears its cache). Worker seam, ungated — the worker,
+// not a user, is the caller (mirrors CommentConfig / StandingsHistory).
 func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 	picks, err := s.LivePicks()
 	if err != nil {
 		return ai.LiveSituation{}, false, err
-	}
-	if len(picks) == 0 {
-		return ai.LiveSituation{}, false, nil // nothing in play
 	}
 
 	matches := make([]ai.LiveMatchInfo, 0, len(picks))
@@ -106,6 +113,40 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 		matches = append(matches, info)
 	}
 
+	// Upcoming: matches kicking off within the lookahead window — "a game about to
+	// start". Skip anything already live (it's in `matches`) or finished.
+	now := s.Now()
+	lookahead := s.liveLookahead
+	if lookahead <= 0 {
+		lookahead = defaultLiveLookahead
+	}
+	horizon := now.Add(lookahead)
+	fixtures, err := s.Fixtures()
+	if err != nil {
+		return ai.LiveSituation{}, false, err
+	}
+	var upcoming []ai.LiveUpcoming
+	for _, m := range fixtures {
+		if m.Finished || m.Live || !m.StartsAt.After(now) || m.StartsAt.After(horizon) {
+			continue
+		}
+		upcoming = append(upcoming, ai.LiveUpcoming{
+			TeamA:       m.TeamA,
+			TeamB:       m.TeamB,
+			Stage:       stageLabel(m),
+			MinutesToKO: int(m.StartsAt.Sub(now).Minutes()),
+		})
+	}
+
+	// Settled: matches that finished within the last settledWindow, with how the pool
+	// bet them (final points) — "a result just in".
+	settled := s.buildSettled(s.recentlySettledIDs())
+
+	// Nothing in play, upcoming, or just-finished: tell the worker to go quiet.
+	if len(matches) == 0 && len(upcoming) == 0 && len(settled) == 0 {
+		return ai.LiveSituation{}, false, nil
+	}
+
 	// Movers: anyone gaining provisional points or whose rank shifted because of it.
 	board, err := s.Leaderboard()
 	if err != nil {
@@ -136,5 +177,59 @@ func (s *Service) LiveSituation() (ai.LiveSituation, bool, error) {
 		})
 	}
 
-	return ai.LiveSituation{Matches: matches, Movers: movers, Standings: standings}, true, nil
+	return ai.LiveSituation{Matches: matches, Upcoming: upcoming, Settled: settled, Movers: movers, Standings: standings}, true, nil
+}
+
+// buildSettled turns recently-finished match ids into the director's just-finished
+// snapshot: the result + each player's pick and final points (top scorers first,
+// capped like the live picks). Skips anything not actually settled. The live
+// "story" (RecentLiveComments) is deliberately omitted — that's for the heavier
+// derived-notes digest, not this fast per-tick snapshot.
+func (s *Service) buildSettled(ids []int64) []ai.LiveSettled {
+	if len(ids) == 0 {
+		return nil
+	}
+	sc, err := s.newScorer()
+	if err != nil {
+		return nil
+	}
+	out := make([]ai.LiveSettled, 0, len(ids))
+	for _, id := range ids {
+		m, err := s.store.MatchByID(id)
+		if err != nil || !m.Finished || m.ScoreA == nil || m.ScoreB == nil {
+			continue
+		}
+		ls := ai.LiveSettled{
+			TeamA: m.TeamA,
+			TeamB: m.TeamB,
+			Score: fmt.Sprintf("%d-%d", *m.ScoreA, *m.ScoreB),
+			Stage: stageLabel(*m),
+		}
+		if bets, err := s.store.BetsForMatch(m.ID); err == nil && len(bets) > 0 {
+			uids := make([]int64, 0, len(bets))
+			for _, b := range bets {
+				uids = append(uids, b.UserID)
+			}
+			users, _ := s.store.UsersByIDs(uids)
+			picks := make([]ai.LivePickInfo, 0, len(bets))
+			for _, b := range bets {
+				picks = append(picks, ai.LivePickInfo{
+					Player:     users[b.UserID].DisplayName,
+					PredA:      b.PredA,
+					PredB:      b.PredB,
+					Pred:       fmt.Sprintf("%d-%d", b.PredA, b.PredB),
+					LivePoints: sc.points(b, *m),
+				})
+			}
+			// Highest scorers first, then cap — keeps the prompt small but always
+			// shows who nailed it.
+			sort.Slice(picks, func(i, j int) bool { return picks[i].LivePoints > picks[j].LivePoints })
+			if len(picks) > livePicksTop {
+				picks = picks[:livePicksTop]
+			}
+			ls.Picks = picks
+		}
+		out = append(out, ls)
+	}
+	return out
 }

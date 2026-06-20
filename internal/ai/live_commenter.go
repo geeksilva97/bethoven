@@ -27,6 +27,14 @@ const (
 	liveFloor = 120 * time.Second // minimum spacing between two generations
 )
 
+// Director-driven roast regeneration limits — so "she decides when to refresh a
+// player's roast" can't spam the (heavier, per-player-model) regeneration path.
+const (
+	maxRegenPerPass   = 3                // at most this many roast regens requested per director pass
+	commentRegenFloor = 15 * time.Minute // don't regenerate the SAME player's roast more often than this
+	liveRegenTimeout  = 3 * time.Minute  // bounds one background roast regeneration
+)
+
 // LivePickInfo is one player's pick on an in-play match plus the provisional points
 // it is currently earning — grounding for "who's nailing it" lines.
 type LivePickInfo struct {
@@ -77,16 +85,50 @@ type LiveStanding struct {
 	LivePoints int    `json:"live_points,omitempty"`
 }
 
-// LiveSituation is the snapshot the live commenter reasons over: the matches in
-// play (score, clock, odds, who picked what), the notable leaderboard movers, and
+// LiveUpcoming is a match about to kick off — grounding for a "game about to
+// start" hype line. MinutesToKO is whole minutes until kickoff (>0).
+type LiveUpcoming struct {
+	TeamA       string `json:"team_a"`
+	TeamB       string `json:"team_b"`
+	Stage       string `json:"stage,omitempty"`
+	MinutesToKO int    `json:"minutes_to_kickoff"`
+}
+
+// LiveSettled is a match that JUST finished — grounding for a result reaction.
+// Score is the regulation 90' result ("2-1"); Picks reuses LivePickInfo, whose
+// "points" field here is the FINAL points each player scored on the game.
+type LiveSettled struct {
+	TeamA string         `json:"team_a"`
+	TeamB string         `json:"team_b"`
+	Score string         `json:"score"`
+	Stage string         `json:"stage,omitempty"`
+	Picks []LivePickInfo `json:"picks,omitempty"`
+}
+
+// LiveSituation is the snapshot the director reasons over: the matches in play
+// (score, clock, odds, who picked what), matches about to kick off, matches that
+// just finished (with how the pool bet them), the notable leaderboard movers, and
 // the overall standings so the line can riff on the title race / shrinking gaps
 // instead of fixating on the one standout pick. At halftime the prompt pivots
-// entirely to those pool dynamics (see halftimeFocus).
+// entirely to those pool dynamics (see halftimeFocus); with nothing in play it
+// pivots to the upcoming/just-finished slate.
 type LiveSituation struct {
 	Matches   []LiveMatchInfo `json:"matches"`
+	Upcoming  []LiveUpcoming  `json:"upcoming,omitempty"`
+	Settled   []LiveSettled   `json:"settled,omitempty"`
 	Movers    []LiveMover     `json:"movers,omitempty"`
 	Standings []LiveStanding  `json:"standings,omitempty"`
 }
+
+// hasContent reports whether there's anything for the director to talk about: a
+// match in play, one about to start, or one just finished.
+func (s LiveSituation) hasContent() bool {
+	return len(s.Matches) > 0 || len(s.Upcoming) > 0 || len(s.Settled) > 0
+}
+
+// inPlay reports whether at least one match is actually live (vs only upcoming /
+// just-settled), which selects the play-by-play prompt over the pregame one.
+func (s LiveSituation) inPlay() bool { return len(s.Matches) > 0 }
 
 // phaseHalftime is OUR controlled label for the interval (mirrors live.PhaseHalftime);
 // compared as a literal so this package needn't import internal/live.
@@ -107,19 +149,37 @@ func halftimeFocus(sit LiveSituation) bool {
 	return true
 }
 
-// LiveCommentDeps are the service seams the live-comment worker needs. Functions,
-// not the service, so the package stays import-cycle free (mirrors CommentDeps).
+// LiveCommentDeps are the service seams the director needs. Functions, not the
+// service, so the package stays import-cycle free (mirrors CommentDeps).
 type LiveCommentDeps struct {
-	Situation func() (LiveSituation, bool, error) // bool reports whether anything is live
-	Config    func() CommentConfig                // tone + admin prompt override
+	Situation func() (LiveSituation, bool, error) // bool reports whether there's anything to talk about
+	Config    func() CommentConfig                // tone + admin prompt override + current mood
 	Now       func() time.Time
+	// SetMood persists BETanIA's freshly chosen mood (one of MoodValues). Optional —
+	// nil ⇒ mood never evolves (the line is still written). The service validates.
+	SetMood func(mood string) error
+	// RegenComment regenerates ONE player's per-player leaderboard roast, by display
+	// name — the director's "this player's roast is stale now" decision. Optional —
+	// nil ⇒ the director never triggers roast regenerations. Runs on the per-player
+	// path (its own model), not the director's; the worker rate-limits the calls.
+	RegenComment func(ctx context.Context, name string) error
 }
 
-// LiveCommenter writes a single general play-by-play line for the current live
-// situation, aware of the recent lines so it doesn't repeat itself. The concrete
-// implementation is *AnthropicCommenter; tests use a fake.
+// LiveOutput is the director's decision for one pass: the line to show (empty ⇒
+// stay silent), BETanIA's updated mood (empty ⇒ leave it unchanged), and the
+// players whose per-player roast she judges stale enough to rewrite now.
+type LiveOutput struct {
+	Comment string
+	Mood    string
+	Regen   []string // exact player display names to regenerate; usually empty
+}
+
+// LiveCommenter writes a single general line for the current situation (in-play,
+// upcoming, or just-finished) plus an updated mood, aware of the recent lines so
+// it doesn't repeat itself. The concrete implementation is *AnthropicCommenter;
+// tests use a fake.
 type LiveCommenter interface {
-	WriteLiveComment(ctx context.Context, sit LiveSituation, recent []string, cfg CommentConfig) (string, error)
+	WriteLiveComment(ctx context.Context, sit LiveSituation, recent []string, cfg CommentConfig) (LiveOutput, error)
 }
 
 // LiveCommentCache holds BETanIA's CURRENT live-commentary line in memory, plus a
@@ -168,6 +228,16 @@ func (c *LiveCommentCache) clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.text, c.sig, c.expiresAt, c.history = "", "", time.Time{}, nil
+}
+
+// markSig records the situation signature as handled WITHOUT changing the
+// displayed line — used when the director decides to stay silent, so the same
+// situation isn't re-evaluated every tick (the prior line, if any, still expires
+// on its own TTL).
+func (c *LiveCommentCache) markSig(sig string) {
+	c.mu.Lock()
+	c.sig = sig
+	c.mu.Unlock()
 }
 
 // snapshot returns the last signature and a copy of the recent-line history, for
@@ -236,17 +306,23 @@ type LiveCommentWorker struct {
 	deps      LiveCommentDeps
 	cmt       LiveCommenter
 	cache     *LiveCommentCache
+	self      string        // BETanIA's own display name, so she can ground her mood in her own row
 	heartbeat time.Duration // regenerate at least this often while live
 	ttl       time.Duration // how long a written line stays current
 	logPath   string
 	logger    *log.Logger
 	lastGen   time.Time
+	// lastRegen tracks when each player's roast was last regenerated at the
+	// director's request, to enforce commentRegenFloor. Only the Run goroutine
+	// touches it (pass is sequential), so no lock is needed.
+	lastRegen map[string]time.Time
 }
 
-// NewLiveCommentWorker wires a live-comment worker. heartbeat is the longest a
-// quiet (e.g. 0-0) game waits between fresh lines; the displayed line lives for
+// NewLiveCommentWorker wires the director. self is BETanIA's display name (so she
+// can find her own standings row when updating her mood). heartbeat is the longest
+// a quiet (e.g. 0-0) game waits between fresh lines; the displayed line lives for
 // twice that, so a briefly-stalled worker doesn't blank the board mid-game.
-func NewLiveCommentWorker(deps LiveCommentDeps, cmt LiveCommenter, cache *LiveCommentCache, heartbeat time.Duration, logPath string) *LiveCommentWorker {
+func NewLiveCommentWorker(deps LiveCommentDeps, cmt LiveCommenter, cache *LiveCommentCache, self string, heartbeat time.Duration, logPath string) *LiveCommentWorker {
 	// A heartbeat below the regeneration floor is meaningless and would make the
 	// TTL (2×heartbeat) shorter than the floor — the line would flash then blank
 	// for the rest of the floor window. Clamp so a misconfig can't do that.
@@ -257,6 +333,7 @@ func NewLiveCommentWorker(deps LiveCommentDeps, cmt LiveCommenter, cache *LiveCo
 		deps:      deps,
 		cmt:       cmt,
 		cache:     cache,
+		self:      self,
 		heartbeat: heartbeat,
 		ttl:       2 * heartbeat,
 		logPath:   logPath,
@@ -289,13 +366,13 @@ func (w *LiveCommentWorker) pass(ctx context.Context) {
 		}
 	}()
 
-	sit, isLive, err := w.deps.Situation()
+	sit, active, err := w.deps.Situation()
 	if err != nil {
 		w.logger.Printf("ai: live situation: %v", err)
 		return
 	}
-	if !isLive {
-		// Game over (or none in play): throw the line + history away.
+	if !active {
+		// Nothing in play, upcoming, or just-finished: throw the line + history away.
 		w.cache.clear()
 		w.lastGen = time.Time{}
 		return
@@ -318,30 +395,87 @@ func (w *LiveCommentWorker) pass(ctx context.Context) {
 		return
 	}
 
-	// The live line addresses the pool in general, so cfg.Self (BETanIA's own name,
-	// used only for the per-player first-person line) is deliberately left unset.
+	// The line addresses the pool in general, but Self lets her find her own row to
+	// ground her mood ("am I winning?"); it isn't used to write the line itself.
 	cfg := w.deps.Config()
+	cfg.Self = w.self
 
 	pctx, cancel := context.WithTimeout(ctx, liveCommentPassTimeout)
 	defer cancel()
 
-	text, err := w.cmt.WriteLiveComment(pctx, sit, history, cfg)
+	out, err := w.cmt.WriteLiveComment(pctx, sit, history, cfg)
 	if err != nil {
 		w.logger.Printf("ai: write live comment: %v", err)
 		return
 	}
+
+	// Mark this situation handled regardless of whether she spoke, so we don't
+	// re-ask every tick until something actually changes (or the heartbeat fires).
+	w.lastGen = now
+
+	// Apply the freshly chosen mood (best-effort; the service validates the value).
+	if w.deps.SetMood != nil {
+		if m := NormalizeMood(out.Mood); m != "" {
+			if err := w.deps.SetMood(m); err != nil {
+				w.logger.Printf("ai: set mood: %v", err)
+			}
+		}
+	}
+
+	// Her per-player decision: regenerate the roasts she judged stale (rate-limited).
+	w.regenStaleRoasts(ctx, now, out.Regen)
+
 	// Sanitize at the cache/log boundary — untrusted model output rendered into
 	// every terminal, the same ANSI-injection boundary as display names.
-	text = sanitizeText(text)
+	text := sanitizeText(out.Comment)
 	if text == "" {
+		// She chose to stay silent: record the signature so the same situation isn't
+		// re-evaluated next tick, but leave the prior line to expire on its own.
+		w.cache.markSig(sig)
 		return
 	}
 	w.cache.set(text, sig, now.Add(w.ttl))
-	w.lastGen = now
 	if err := appendLiveCommentLog(w.logPath, now, text); err != nil {
 		w.logger.Printf("ai: log live comment: %v", err)
 	}
-	w.logger.Printf("ai: wrote live comment (%d live match(es))", len(sit.Matches))
+	w.logger.Printf("ai: wrote live comment (live=%d upcoming=%d settled=%d)", len(sit.Matches), len(sit.Upcoming), len(sit.Settled))
+}
+
+// regenStaleRoasts fires the director's per-player roast regenerations — the
+// "this player's leaderboard line is stale now" decision. Each runs in the
+// background (the regeneration is a couple of model calls on the per-player path,
+// which must not block the fast director tick), capped per pass and floored per
+// player so she can't spam it.
+func (w *LiveCommentWorker) regenStaleRoasts(ctx context.Context, now time.Time, names []string) {
+	if w.deps.RegenComment == nil || len(names) == 0 {
+		return
+	}
+	if w.lastRegen == nil {
+		w.lastRegen = make(map[string]time.Time)
+	}
+	fired := 0
+	for _, raw := range names {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if t, ok := w.lastRegen[name]; ok && now.Sub(t) < commentRegenFloor {
+			continue // refreshed too recently — skip
+		}
+		w.lastRegen[name] = now
+		fired++
+		n := name
+		go func() {
+			rctx, cancel := context.WithTimeout(ctx, liveRegenTimeout)
+			defer cancel()
+			if err := w.deps.RegenComment(rctx, n); err != nil {
+				w.logger.Printf("ai: director-requested roast regen %q: %v", n, err)
+			}
+		}()
+		if fired >= maxRegenPerPass {
+			break
+		}
+	}
 }
 
 // liveSignature is a deterministic fingerprint of the parts of the situation that
@@ -373,5 +507,29 @@ func liveSignature(sit LiveSituation) string {
 	}
 	sort.Strings(mv)
 	b.WriteString(strings.Join(mv, ","))
+
+	// Upcoming: react once when a match enters the window ("soon") and once when it's
+	// about to start ("imminent"). Bucketed so the per-minute countdown doesn't churn
+	// the signature (the same reason the live clock is excluded above).
+	b.WriteString("#")
+	ups := make([]string, 0, len(sit.Upcoming))
+	for _, u := range sit.Upcoming {
+		bucket := "soon"
+		if u.MinutesToKO <= 10 {
+			bucket = "imminent"
+		}
+		ups = append(ups, fmt.Sprintf("%s-%s:%s", u.TeamA, u.TeamB, bucket))
+	}
+	sort.Strings(ups)
+	b.WriteString(strings.Join(ups, ","))
+
+	// Settled: a fresh result (teams + score) is a new thing to react to.
+	b.WriteString("#")
+	st := make([]string, 0, len(sit.Settled))
+	for _, s := range sit.Settled {
+		st = append(st, fmt.Sprintf("%s%s-%s", s.TeamA, s.Score, s.TeamB))
+	}
+	sort.Strings(st)
+	b.WriteString(strings.Join(st, ","))
 	return b.String()
 }

@@ -164,8 +164,10 @@ func main() {
 				// implements Commenter (per-player) and LiveCommenter (live line).
 				commenter := ai.NewAnthropicCommenter(cfg.AIModel, usageLog)
 
-				ci := time.Duration(cfg.AICommentIntervalSec) * time.Second
-				cmon := ai.NewCommentMonitor(cfg.AIModel, ci)
+				// No periodic interval: the per-player worker runs once at startup, then
+				// only on a trigger (a match settling, the admin key) or the director's
+				// per-player regen. The monitor's interval is 0 (cadence is on demand).
+				cmon := ai.NewCommentMonitor(cfg.AIModel, 0)
 				svc.SetCommentMonitor(cmon)
 				cache := ai.NewCommentCache()
 				svc.SetCommentSource(cache)
@@ -179,16 +181,22 @@ func main() {
 					PendingDigests: svc.PendingDigests,
 					DerivedNotes:   svc.DerivedNotesText,
 					AddDerivedNote: svc.AddDerivedNote,
-				}, commenter, cache, cmon, u.DisplayName, ci, cfg.AICommentLogPath)
+				}, commenter, cache, cmon, u.DisplayName, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
 				svc.SetCommentRegen(cw.RegenerateOne)
 				go cw.Run(ctx)
-				log.Printf("BETanIA commentary enabled (model=%s, every %ds)", cfg.AIModel, cfg.AICommentIntervalSec)
+				log.Printf("BETanIA commentary enabled (model=%s, cadence=on-demand: results + director)", cfg.AIModel)
 
-				// Live top-of-board commentary: a third, fast-cadence worker writes
-				// one general line about the in-play slate (scores, movers, odds),
-				// refreshing it as the game moves and discarding it once nothing is
-				// live. Reuses the comment log file (tagged source:"live_comment").
+				// The "director": a third, fast-cadence worker. A plain 30s code tick
+				// (NOT a model call) reacts to the in-play / about-to-start / just-
+				// finished slate; it calls the model only when the situation actually
+				// changes (or on a heartbeat), and that call decides what to say (it may
+				// stay silent), updates her self-evolving mood, and picks which players'
+				// roasts to refresh. It runs on a cheap model (Haiku by default) since it
+				// fires often and its lines are throwaway. Reuses the comment log file
+				// (tagged source:"live_comment").
+				director := ai.NewAnthropicCommenter(cfg.AICommentModel, usageLog)
+				svc.SetLiveLookahead(time.Duration(cfg.AILiveLookaheadMin) * time.Minute)
 				lhb := time.Duration(cfg.AILiveCommentIntervalSec) * time.Second
 				lcache := ai.NewLiveCommentCache()
 				// Restore the live line + anti-repeat memory persisted on the last
@@ -197,12 +205,14 @@ func main() {
 				liveCache = lcache
 				svc.SetLiveCommentSource(lcache)
 				lw := ai.NewLiveCommentWorker(ai.LiveCommentDeps{
-					Situation: svc.LiveSituation,
-					Config:    svc.CommentConfig,
-					Now:       svc.Now,
-				}, commenter, lcache, lhb, cfg.AICommentLogPath)
+					Situation:    svc.LiveSituation,
+					Config:       svc.CommentConfig,
+					Now:          svc.Now,
+					SetMood:      svc.SetCommentMood,
+					RegenComment: svc.RegenerateOneByName,
+				}, director, lcache, u.DisplayName, lhb, cfg.AICommentLogPath)
 				go lw.Run(ctx)
-				log.Printf("BETanIA live commentary enabled (model=%s, heartbeat %ds)", cfg.AIModel, cfg.AILiveCommentIntervalSec)
+				log.Printf("BETanIA director enabled (model=%s, heartbeat %ds, lookahead %dm)", cfg.AICommentModel, cfg.AILiveCommentIntervalSec, cfg.AILiveLookaheadMin)
 			}
 		}
 	}

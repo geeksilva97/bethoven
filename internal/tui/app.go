@@ -173,9 +173,9 @@ type Model struct {
 	// aiBets is BETanIA's picks on record, sourced from the DB (survives a restart,
 	// unlike aiActivity's in-memory ring). betaniaTab selects which panel tab shows.
 	// aiBetsCursor is the scroll cursor for the Betting tab picks feed.
-	aiBets        []service.AIBet
-	aiBetsCursor  int
-	betaniaTab    int
+	aiBets       []service.AIBet
+	aiBetsCursor int
+	betaniaTab   int
 	// aiUsage is BETanIA's cumulative token usage + estimated cost, read from the
 	// durable on-disk usage log (survives restarts). Shown on the Usage tab.
 	// aiUsageOffset is the line scroll offset for the Usage tab.
@@ -187,6 +187,7 @@ type Model struct {
 	aiCommentStatus    ai.CommentStatus
 	aiCommentActivity  []ai.CommentAction
 	commentTone        string
+	commentMood        string // BETanIA's current self-evolving mood (director-set)
 	// aiCommentCursor selects a row in the Comments tab list (preview); enter opens
 	// screenAICommentDetail for the full text.
 	aiCommentCursor int

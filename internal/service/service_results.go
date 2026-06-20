@@ -203,7 +203,7 @@ func (s *Service) FinalizeFromFeed(matchID int64, scoreA, scoreB int) error {
 	if changed {
 		// This poll is the one that settled the match — regenerate comments + the
 		// derived-notes story. A no-op write means it was already settled.
-		s.onMatchSettled()
+		s.onMatchSettled(matchID)
 	}
 	return nil
 }

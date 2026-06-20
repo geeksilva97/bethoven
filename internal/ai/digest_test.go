@@ -61,7 +61,7 @@ func TestCommentWorkerWritesOneNotePerGame(t *testing.T) {
 		PendingDigests: store.pendingFn,
 		DerivedNotes:   store.load,
 		AddDerivedNote: store.add,
-	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", time.Hour, "")
+	}, fc, NewCommentCache(), NewCommentMonitor("t", time.Hour), "", "")
 
 	// First pass: one pending game ⇒ one digest call, note stored + fed to the writer.
 	w.pass(context.Background())

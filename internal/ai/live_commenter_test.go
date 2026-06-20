@@ -15,10 +15,10 @@ type fakeLiveCommenter struct {
 	lastRecent []string
 }
 
-func (f *fakeLiveCommenter) WriteLiveComment(ctx context.Context, sit LiveSituation, recent []string, cfg CommentConfig) (string, error) {
+func (f *fakeLiveCommenter) WriteLiveComment(ctx context.Context, sit LiveSituation, recent []string, cfg CommentConfig) (LiveOutput, error) {
 	f.calls++
 	f.lastRecent = append([]string(nil), recent...)
-	return fmt.Sprintf("line %d", f.calls), nil
+	return LiveOutput{Comment: fmt.Sprintf("line %d", f.calls)}, nil
 }
 
 // TestLiveCommentWorkerPass drives the worker through first-gen, an unchanged tick
@@ -36,7 +36,7 @@ func TestLiveCommentWorkerPass(t *testing.T) {
 	}
 	fake := &fakeLiveCommenter{}
 	cache := NewLiveCommentCache()
-	w := NewLiveCommentWorker(deps, fake, cache, 5*time.Minute, "")
+	w := NewLiveCommentWorker(deps, fake, cache, "", 5*time.Minute, "")
 	ctx := context.Background()
 
 	// 1) First pass: generates the opening line, no recent history.
@@ -103,6 +103,106 @@ func TestLiveCommentWorkerPass(t *testing.T) {
 	}
 	if sig, hist := cache.snapshot(); sig != "" || len(hist) != 0 {
 		t.Errorf("game-over pass: cache not cleared (sig=%q hist=%v)", sig, hist)
+	}
+}
+
+// scriptedDirector returns a fixed LiveOutput, for asserting the worker's handling
+// of mood, the stay-silent (empty comment) path, and per-player regen requests.
+type scriptedDirector struct{ out LiveOutput }
+
+func (d *scriptedDirector) WriteLiveComment(ctx context.Context, sit LiveSituation, recent []string, cfg CommentConfig) (LiveOutput, error) {
+	return d.out, nil
+}
+
+// TestDirectorMoodSilenceAndRegen drives one director pass over a just-finished
+// match where she stays silent: the line is suppressed but the signature is still
+// recorded, the mood is applied, and the named roasts are queued for regeneration.
+func TestDirectorMoodSilenceAndRegen(t *testing.T) {
+	now := time.Date(2026, 6, 20, 18, 0, 0, 0, time.UTC)
+	sit := LiveSituation{Settled: []LiveSettled{{TeamA: "A", TeamB: "B", Score: "1-0"}}}
+
+	var moodSet string
+	regened := make(chan string, 8)
+	deps := LiveCommentDeps{
+		Situation:    func() (LiveSituation, bool, error) { return sit, true, nil },
+		Config:       func() CommentConfig { return CommentConfig{} },
+		Now:          func() time.Time { return now },
+		SetMood:      func(m string) error { moodSet = m; return nil },
+		RegenComment: func(ctx context.Context, name string) error { regened <- name; return nil },
+	}
+	dir := &scriptedDirector{out: LiveOutput{Comment: "", Mood: "cocky", Regen: []string{"Edy", "Miguel"}}}
+	cache := NewLiveCommentCache()
+	w := NewLiveCommentWorker(deps, dir, cache, "BETanIA 🤖", 5*time.Minute, "")
+	w.pass(context.Background())
+
+	if moodSet != "cocky" {
+		t.Fatalf("mood = %q, want cocky", moodSet)
+	}
+	if got := cache.Current(now); got != "" {
+		t.Fatalf("stay-silent pass should show no line, got %q", got)
+	}
+	if sig, _ := cache.snapshot(); sig == "" {
+		t.Fatal("stay-silent pass should still record the signature (so it isn't re-asked every tick)")
+	}
+	seen := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case n := <-regened:
+			seen[n] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected roast regeneration was not fired")
+		}
+	}
+	if !seen["Edy"] || !seen["Miguel"] {
+		t.Fatalf("regenerated = %v, want Edy + Miguel", seen)
+	}
+}
+
+// TestDirectorRegenCapAndFloor checks the rate limits on her regen power: at most
+// maxRegenPerPass per pass, and the same player not re-fired within commentRegenFloor.
+func TestDirectorRegenCapAndFloor(t *testing.T) {
+	now := time.Date(2026, 6, 20, 18, 0, 0, 0, time.UTC)
+	sit := LiveSituation{Settled: []LiveSettled{{TeamA: "A", TeamB: "B", Score: "1-0"}}}
+	regened := make(chan string, 16)
+	names := []string{"p1", "p2", "p3", "p4", "p5"}
+	deps := LiveCommentDeps{
+		Situation:    func() (LiveSituation, bool, error) { return sit, true, nil },
+		Config:       func() CommentConfig { return CommentConfig{} },
+		Now:          func() time.Time { return now },
+		RegenComment: func(ctx context.Context, name string) error { regened <- name; return nil },
+	}
+	dir := &scriptedDirector{out: LiveOutput{Comment: "x", Regen: names}}
+	w := NewLiveCommentWorker(deps, dir, NewLiveCommentCache(), "BETanIA", 5*time.Minute, "")
+
+	w.pass(context.Background())
+	drain := func() map[string]bool {
+		out := map[string]bool{}
+		for {
+			select {
+			case n := <-regened:
+				out[n] = true
+			case <-time.After(300 * time.Millisecond):
+				return out
+			}
+		}
+	}
+	first := drain()
+	if len(first) != maxRegenPerPass {
+		t.Fatalf("first pass fired %d regens, want cap %d", len(first), maxRegenPerPass)
+	}
+
+	// A later pass within the floor must NOT re-fire a player regenerated last pass.
+	// Force a fresh signature so the pass runs, advance time past the floor so the
+	// 3 already-regenerated players are eligible again — only the 2 leftovers + those
+	// 3 are candidates, still capped at maxRegenPerPass and never the same one twice.
+	sit.Settled[0].Score = "2-0"
+	now = now.Add(commentRegenFloor / 2) // still within the per-player floor
+	w.pass(context.Background())
+	second := drain()
+	for n := range second {
+		if first[n] {
+			t.Fatalf("player %q regenerated again within the floor window", n)
+		}
 	}
 }
 

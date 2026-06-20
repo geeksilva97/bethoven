@@ -75,19 +75,49 @@ func (s *Service) EnterResult(by *models.User, matchID int64, scoreA, scoreB int
 		"match_id": fmt.Sprintf("%d", matchID),
 		"score":    fmt.Sprintf("%d-%d", scoreA, scoreB),
 	})
-	s.onMatchSettled()
+	s.onMatchSettled(matchID)
 	return nil
 }
 
 // onMatchSettled fires whenever a match transitions to finished (admin entry or
-// the feed). It nudges the comment worker to regenerate: that pass also refreshes
-// the derived-notes snapshot ("the story of that game") from the new result. The
-// trigger is the same non-blocking coalesced send as the admin "regenerate" key,
-// so a cluster of finishes collapses into ~one pass. No-op when BETanIA is off.
-func (s *Service) onMatchSettled() {
+// the feed). It (1) remembers the match for a short window so the director can
+// react to the fresh result, and (2) nudges the comment worker to regenerate —
+// that pass also refreshes the derived-notes snapshot ("the story of that game").
+// The trigger is the same non-blocking coalesced send as the admin "regenerate"
+// key, so a cluster of finishes collapses into ~one pass. No-op when BETanIA is off.
+func (s *Service) onMatchSettled(matchID int64) {
+	now := s.Now()
+	s.mu.Lock()
+	kept := s.recentSettled[:0]
+	cutoff := now.Add(-settledWindow)
+	for _, e := range s.recentSettled {
+		if e.matchID != matchID && e.at.After(cutoff) {
+			kept = append(kept, e)
+		}
+	}
+	s.recentSettled = append(kept, recentSettle{matchID: matchID, at: now})
+	s.mu.Unlock()
 	if s.aiCommentTrigger != nil {
 		s.aiCommentTrigger()
 	}
+}
+
+// recentlySettledIDs returns the ids of matches that finished within settledWindow,
+// pruning anything older. Used by the director to react to fresh results.
+func (s *Service) recentlySettledIDs() []int64 {
+	cutoff := s.Now().Add(-settledWindow)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.recentSettled[:0]
+	var ids []int64
+	for _, e := range s.recentSettled {
+		if e.at.After(cutoff) {
+			kept = append(kept, e)
+			ids = append(ids, e.matchID)
+		}
+	}
+	s.recentSettled = kept
+	return ids
 }
 
 // AllBets builds the admin grid of every player's bets and points, across every

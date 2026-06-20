@@ -28,37 +28,37 @@ type CommentDeps struct {
 	AddDerivedNote func(matchID int64, text string) error
 }
 
-// CommentWorker is BETanIA's commentary worker: on a timer it reconstructs the
-// standings history, detects ranking narratives, writes one comment per player,
-// and swaps them into the in-memory cache the leaderboard reads. Mirrors Bettor.
+// CommentWorker is BETanIA's per-player commentary worker. It has NO timer of its
+// own — BETanIA's director owns the cadence. It reconstructs the standings history,
+// detects ranking narratives, writes one comment per player, and swaps them into the
+// in-memory cache the leaderboard reads. It runs once at startup, then only when
+// triggered: a match settling (onMatchSettled), the admin "regenerate all" key, or —
+// per player — the director's RegenerateOne. Written comments never expire on a clock;
+// they persist until the next pass replaces them.
 type CommentWorker struct {
-	deps     CommentDeps
-	cmt      Commenter
-	cache    *CommentCache
-	mon      *CommentMonitor
-	self     string // BETanIA's own display name, so her line is written first-person
-	interval time.Duration
-	ttl      time.Duration // a comment is "fresh" until the next scheduled pass
-	logPath  string
-	logger   *log.Logger
-	trigger  chan struct{} // manual "run now" requests (buffered, coalesced to 1)
+	deps    CommentDeps
+	cmt     Commenter
+	cache   *CommentCache
+	mon     *CommentMonitor
+	self    string // BETanIA's own display name, so her line is written first-person
+	logPath string
+	logger  *log.Logger
+	trigger chan struct{} // manual "run now" requests (buffered, coalesced to 1)
 }
 
-// NewCommentWorker wires a comment worker. interval is the gap between passes and
-// also the comment TTL (a comment stays current until the next pass would replace
-// it). self is BETanIA's display name (her own comment is first-person).
-func NewCommentWorker(deps CommentDeps, cmt Commenter, cache *CommentCache, mon *CommentMonitor, self string, interval time.Duration, logPath string) *CommentWorker {
+// NewCommentWorker wires a comment worker. self is BETanIA's display name (her own
+// comment is first-person). There is no interval — the worker fires once at startup
+// and thereafter only on a trigger (a settle, the admin key) or a per-player regen.
+func NewCommentWorker(deps CommentDeps, cmt Commenter, cache *CommentCache, mon *CommentMonitor, self, logPath string) *CommentWorker {
 	return &CommentWorker{
-		deps:     deps,
-		cmt:      cmt,
-		cache:    cache,
-		mon:      mon,
-		self:     self,
-		interval: interval,
-		ttl:      interval,
-		logPath:  logPath,
-		logger:   log.Default(),
-		trigger:  make(chan struct{}, 1),
+		deps:    deps,
+		cmt:     cmt,
+		cache:   cache,
+		mon:     mon,
+		self:    self,
+		logPath: logPath,
+		logger:  log.Default(),
+		trigger: make(chan struct{}, 1),
 	}
 }
 
@@ -73,18 +73,15 @@ func (w *CommentWorker) Trigger() bool {
 	}
 }
 
-// Run generates comments until ctx is cancelled. It fires once immediately, then
-// on each tick or whenever a manual Trigger lands.
+// Run generates comments until ctx is cancelled. It fires once immediately to fill
+// the board, then ONLY when a Trigger lands — there is no periodic pass. The cadence
+// is owned by the director (per-player regens) and match settlements (full passes).
 func (w *CommentWorker) Run(ctx context.Context) {
-	t := time.NewTicker(w.interval)
-	defer t.Stop()
 	w.pass(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			w.pass(ctx)
 		case <-w.trigger:
 			w.pass(ctx)
 		}
@@ -154,7 +151,7 @@ func (w *CommentWorker) pass(ctx context.Context) {
 			continue // never cache a muted player's comment, even if one slipped through
 		}
 		c.At = now
-		c.ExpiresAt = now.Add(w.ttl)
+		c.ExpiresAt = time.Time{} // never expires on a clock — replaced by the next pass
 		stamped = append(stamped, c)
 		if err := appendCommentLog(w.logPath, cfg.toneFor(c.Player), now, c); err != nil {
 			w.logger.Printf("ai: log comment for %s: %v", c.Player, err)
@@ -208,7 +205,7 @@ func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64, extra s
 		}
 		now := w.deps.Now()
 		c.At = now
-		c.ExpiresAt = now.Add(w.ttl)
+		c.ExpiresAt = time.Time{} // never expires on a clock — replaced by the next pass
 		w.cache.Upsert(c)
 		if err := appendCommentLog(w.logPath, cfg.toneFor(c.Player), now, c); err != nil {
 			w.logger.Printf("ai: log regenerated comment for %s: %v", c.Player, err)

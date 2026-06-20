@@ -205,6 +205,7 @@ func (m *Model) loadBETanIAComments() {
 		m.aiCommentActivity, _ = m.svc.AICommentActivity(m.user, betaniaCommentLimit)
 	}
 	m.commentTone, _ = m.svc.CommentTone()
+	m.commentMood, _ = m.svc.CommentMood()
 	// Keep the Comments-tab selection in range as the feed grows/shrinks.
 	if m.aiCommentCursor >= len(m.aiCommentActivity) {
 		m.aiCommentCursor = len(m.aiCommentActivity) - 1
@@ -456,9 +457,9 @@ func (m Model) betaniaCommentsTab() string {
 	cst := m.aiCommentStatus
 	out := labelStyle.Render("Status") + "\n"
 	out += kpi("Tone", m.commentTone)
-	out += kpi("Regenerating every", cst.Interval.String())
+	out += kpi("Mood", m.commentMood)
+	out += kpi("Cadence", "on demand — results + director")
 	out += kpi("Last run", relativeAgo(now, cst.LastRun))
-	out += kpi("Next run", untilText(now, cst.NextRun))
 	out += kpi("Comments written", fmt.Sprintf("%d", cst.Written))
 	out += kpi("Errors", fmt.Sprintf("%d", cst.Errored))
 	out += "\n" + labelStyle.Render("Recent comments") + helpStyle.Render("  (↑↓ select · enter: full text)") + "\n"

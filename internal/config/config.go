@@ -56,17 +56,31 @@ type Config struct {
 	AILookaheadHrs int    // only bet matches kicking off within this many hours (0 = no horizon)
 
 	// BETanIA leaderboard commentary (gated by AIEnabled; on by default once AI is).
-	// The worker regenerates one comment per player on a timer; the cache TTL is the
-	// same interval. Comments are in-memory only — the log is the durable record.
-	AICommentsEnabled    bool
-	AICommentIntervalSec int    // seconds between comment regenerations (also the TTL)
+	// The per-player worker has NO timer — BETanIA's director owns the cadence (it
+	// regenerates on a match settling and per-player on her own judgement). Comments
+	// are in-memory only — the log is the durable record.
+	AICommentsEnabled bool
+	// AICommentIntervalSec is DEPRECATED / ignored: the per-player worker no longer
+	// runs on an interval (the director drives it). Still parsed so an old env doesn't
+	// error; remove once deploys drop it.
+	AICommentIntervalSec int
 	AICommentLogPath     string // JSON-lines log of every comment
 
 	// Live top-of-leaderboard commentary (gated by AICommentsEnabled). A second,
-	// fast-cadence worker writes one general line about the in-play slate; it
-	// regenerates on change or after this heartbeat, and discards everything once
-	// nothing is live. The line is logged to AICommentLogPath (source:"live_comment").
+	// fast-cadence worker (the "director") writes one general line about the slate
+	// — in-play, about-to-kick-off, or just-finished — carrying an evolving mood and
+	// deciding for itself when to speak. It regenerates on change or after this
+	// heartbeat, and discards everything once nothing is going on. The line is
+	// logged to AICommentLogPath (source:"live_comment").
 	AILiveCommentIntervalSec int // heartbeat seconds: longest a quiet game waits for a fresh line
+
+	// AICommentModel is the (cheaper) Claude model for the director path — live +
+	// mood. The per-player roasts and derived-note digests stay on AIModel; betting
+	// predictions stay on AIModel too (they need web search). Defaults to Haiku.
+	AICommentModel string
+	// AILiveLookaheadMin bounds how soon a match must kick off before the director
+	// will hype it ("a game about to start"). Minutes.
+	AILiveLookaheadMin int
 }
 
 // UsingDefaultInvite reports whether the publicly-known dev invite code is in
@@ -115,6 +129,11 @@ func Load() Config {
 		AICommentLogPath:     aiCommentLogPath,
 
 		AILiveCommentIntervalSec: envInt("BETHOVEN_AI_LIVE_COMMENT_INTERVAL_SECONDS", 300),
+
+		// The director runs on a cheap model by default — it fires often and its lines
+		// are throwaway, so Haiku is the right tier (per-player roasts stay on AIModel).
+		AICommentModel:     env("BETHOVEN_AI_COMMENT_MODEL", "claude-haiku-4-5"),
+		AILiveLookaheadMin: envInt("BETHOVEN_AI_LIVE_LOOKAHEAD_MINUTES", 30),
 	}
 }
 

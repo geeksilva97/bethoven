@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -87,6 +88,10 @@ type CommentConfig struct {
 	// empty on the scheduled worker passes. It's admin-trusted steering but framed
 	// in the prompt as guidance that never overrides the grounding rules.
 	Steering string
+	// Mood is BETanIA's current self-evolving mood (one of MoodValues; "" ⇒ neutral).
+	// It's grounding fed into every line she writes so her voice drifts with how the
+	// tournament is going for her. The director updates it; the service persists it.
+	Mood string
 }
 
 // toneFor returns the effective tone for a player: their override, or the default.
@@ -148,6 +153,37 @@ var narrativeTypes = []string{
 	"bottom_escape_attempt", "deep_in_the_basement", "personal_rivalry",
 	"comeback_story", "fallen_king", "eternal_runner_up",
 	"boring_consistency", "one_hit_wonder",
+}
+
+// MoodValues is the closed set of moods BETanIA's director may pick, mirroring
+// narrativeTypes — a bounded vocabulary keeps her persona steerable and the value
+// safe to render/store. "neutral" is the baseline; the rest react to how the
+// tournament is treating her. The service validates stored moods against this set
+// and the director's submit tool constrains its `mood` field to it.
+var MoodValues = []string{"neutral", "cocky", "salty", "gracious", "nervous", "hyped"}
+
+// NormalizeMood lower-cases and validates a mood against MoodValues, returning ""
+// for anything outside the set (caller keeps the previous value). Exported so the
+// service can validate the persisted setting against the same source of truth.
+func NormalizeMood(m string) string {
+	m = strings.ToLower(strings.TrimSpace(m))
+	for _, v := range MoodValues {
+		if m == v {
+			return v
+		}
+	}
+	return ""
+}
+
+// MoodLine renders the one-line mood directive woven into both the live and the
+// per-player prompts; "" when no (valid) mood is set, so a blank pool reads exactly
+// as before. Shared so the two prompts phrase the mood identically.
+func MoodLine(mood string) string {
+	m := NormalizeMood(mood)
+	if m == "" || m == "neutral" {
+		return ""
+	}
+	return fmt.Sprintf("YOUR CURRENT MOOD is %q — let it colour your voice (word choice, energy), without ever inventing facts.\n", m)
 }
 
 // normalizeTone collapses any tone to the two we support; unknown ⇒ playful.

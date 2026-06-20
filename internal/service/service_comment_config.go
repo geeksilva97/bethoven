@@ -295,12 +295,14 @@ func (s *Service) CommentConfig() ai.CommentConfig {
 		rivalries = append(rivalries, ai.Rivalry{A: a, B: b, Note: r.Note})
 	}
 	override, _ := s.CommentPromptOverride()
+	mood, _ := s.CommentMood()
 	return ai.CommentConfig{
 		DefaultTone:    def,
 		ToneByName:     tones,
 		Rivalries:      rivalries,
 		Notes:          c.Notes,
 		PromptOverride: override,
+		Mood:           mood,
 	}
 }
 
