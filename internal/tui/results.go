@@ -13,6 +13,7 @@ import (
 
 	"bethoven/internal/live"
 	"bethoven/internal/models"
+	"bethoven/internal/service"
 )
 
 // leaderCommentCol is the column where BETanIA's side commentary starts on the
@@ -293,19 +294,42 @@ func fmtResult(mt models.Match) string {
 	return "—"
 }
 
-func (m Model) viewMyResults() string {
-	// Show only matches the player actually bet on (skip the un-bet rows).
-	placed := 0
+// myPlacedRows returns the rows the My bets screen shows: matches the player
+// actually bet on, in chronological (kickoff) order. Un-bet matches are skipped.
+func (m Model) myPlacedRows() []service.MatchResult {
+	out := make([]service.MatchResult, 0, len(m.myRows))
 	for _, r := range m.myRows {
 		if r.Bet != nil {
-			placed++
+			out = append(out, r)
 		}
 	}
+	return out
+}
+
+// myResultsFocus is the row the My bets list centers on when first opened: the
+// most recent match that has already kicked off, so the latest results sit in
+// view with upcoming picks just below. Falls back to the last (most recent) row
+// when nothing has started yet.
+func myResultsFocus(rows []service.MatchResult) int {
+	focus := len(rows) - 1
+	if focus < 0 {
+		return 0
+	}
+	for i, r := range rows {
+		if r.Match.Finished || r.Match.Live {
+			focus = i
+		}
+	}
+	return focus
+}
+
+func (m Model) viewMyResults() string {
+	rows := m.myPlacedRows()
 
 	out := titleStyle.Render("My bets") +
-		labelStyle.Render(fmt.Sprintf("   (%d placed · %s pts)", placed, okStyle.Render(strconv.Itoa(m.myTotal)))) + "\n\n"
+		labelStyle.Render(fmt.Sprintf("   (%d placed · %s pts)", len(rows), okStyle.Render(strconv.Itoa(m.myTotal)))) + "\n\n"
 
-	if placed == 0 {
+	if len(rows) == 0 {
 		out += helpStyle.Render("  No bets yet — pick some matches from the menu.\n")
 		out += "\n" + helpStyle.Render("any key: back · q: quit")
 		return out
@@ -313,30 +337,58 @@ func (m Model) viewMyResults() string {
 
 	out += labelStyle.Render(fmt.Sprintf("  %-30s %-8s %-7s %s", "match", "my pick", "result", "pts")) + "\n"
 	anyLive := false
-	for _, r := range m.myRows {
-		if r.Bet == nil {
-			continue
-		}
+	lines := make([]string, len(rows))
+	for i, r := range rows {
 		// 13 + " v " (3) + 14 = 30 display cols, matching the "%-30s" header.
 		match := teamCell(r.Match.TeamA, 13) + " v " + teamCell(r.Match.TeamB, 14)
 		// In play: show the running score (styled) in place of result/pts.
 		if r.Match.Live {
 			anyLive = true
-			out += fmt.Sprintf("  %s %-8s %s\n", match, fmtPick(r.Bet), liveScore(r.Match))
+			lines[i] = fmt.Sprintf("  %s %-8s %s", match, fmtPick(r.Bet), liveScore(r.Match))
 			continue
 		}
 		pts := "·"
 		if r.Match.Finished {
 			pts = strconv.Itoa(r.Points)
 		}
-		out += fmt.Sprintf("  %s %-8s %-7s %s\n", match, fmtPick(r.Bet), fmtResult(r.Match), pts)
+		lines[i] = fmt.Sprintf("  %s %-8s %-7s %s", match, fmtPick(r.Bet), fmtResult(r.Match), pts)
+	}
+	// Scroll a window around the cursor so a long bet list stays inside the
+	// terminal; the cursor starts on the most recent match (see myResultsFocus).
+	for _, ln := range windowRows(lines, m.myCursor, m.listCapacity()) {
+		out += ln + "\n"
 	}
 	out += "\n"
 	if anyLive {
 		out += lockStyle.Render(liveLegend) + "\n"
 	}
-	out += helpStyle.Render("any key: back · q: quit")
+	out += helpStyle.Render("↑/↓: scroll · esc: back · q: quit")
 	return out
+}
+
+// updateMyResults scrolls the My bets list and returns to the menu on back keys.
+func (m Model) updateMyResults(msg tea.Msg) (tea.Model, tea.Cmd) {
+	k, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch k.String() {
+	case "q":
+		return m, tea.Quit
+	case "up", "k":
+		if m.myCursor > 0 {
+			m.myCursor--
+		}
+		return m, nil
+	case "down", "j":
+		if m.myCursor < len(m.myPlacedRows())-1 {
+			m.myCursor++
+		}
+		return m, nil
+	case "esc", "enter", "backspace", "left", "h", "b":
+		return m.goMenu(), nil
+	}
+	return m, nil
 }
 
 func (m Model) viewLeaderboard() string {

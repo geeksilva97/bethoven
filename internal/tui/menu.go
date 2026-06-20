@@ -96,6 +96,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.myRows, m.myTotal, m.screen = rows, total, screenMyResults
+		m.myCursor = myResultsFocus(m.myPlacedRows())
 	case screenLeaderboard:
 		board, err := m.svc.Leaderboard()
 		if err != nil {

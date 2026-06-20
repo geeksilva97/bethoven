@@ -85,6 +85,10 @@ type Model struct {
 	// my results
 	myRows  []service.MatchResult
 	myTotal int
+	// myCursor scrolls the My bets list; it indexes into the placed-bet rows
+	// (un-bet matches are skipped) and is initialised to the most recent match on
+	// entry so the list opens on recent games, not the oldest.
+	myCursor int
 
 	// leaderboard (+ in-play matches shown as a live header; auto-refreshed).
 	// leaderEpoch is bumped on each entry so stale tick loops from a prior visit
@@ -275,7 +279,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenBet:
 		return m.updateBet(msg)
 	case screenMyResults:
-		return m.updateList(msg) // simple scroll/back screens share this
+		return m.updateMyResults(msg)
 	case screenLeaderboard:
 		return m.updateLeaderboard(msg)
 	case screenMatchRank:
