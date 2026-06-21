@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"bethoven/internal/models"
 	"bethoven/internal/service"
@@ -131,9 +132,17 @@ func (m Model) viewBet() string {
 
 	// Played-games list per team (finished matches only), so players can see who
 	// each team beat and by how much — richer than the at-a-glance form strip above.
+	// The two teams sit side by side (TeamA left, TeamB right) so the section stays
+	// compact instead of one long stacked column.
 	if len(m.betGamesA) > 0 || len(m.betGamesB) > 0 {
-		out += renderTeamGames(mt.TeamA, m.betGamesA)
-		out += renderTeamGames(mt.TeamB, m.betGamesB) + "\n"
+		cols := lipgloss.JoinHorizontal(lipgloss.Top,
+			teamGamesBlock(mt.TeamA, m.betGamesA),
+			"      ",
+			teamGamesBlock(mt.TeamB, m.betGamesB))
+		for _, line := range strings.Split(cols, "\n") {
+			out += "  " + line + "\n"
+		}
+		out += "\n"
 	}
 
 	if len(m.betFormA) > 0 || len(m.betFormB) > 0 {
@@ -154,18 +163,20 @@ func formLegend() string {
 		errStyle.Render("✗") + helpStyle.Render(" loss · newest right")
 }
 
-// renderTeamGames lists a team's played (finished) games, one per line: the W/D/L
-// mark, the scoreline from the team's perspective, then the opponent with its flag.
-// An empty list (no games yet) shows a single dim line so the section still reads.
-func renderTeamGames(team string, games []service.TeamGame) string {
-	out := "  " + labelStyle.Render(team+" — played") + "\n"
+// teamGamesBlock builds one team's played-games column (no outer indent): a header
+// line, then one line per finished game — the W/D/L mark, the scoreline from the
+// team's perspective, then the opponent with its flag. An empty list shows a single
+// dim line so the column still reads. Returned as a multi-line string so callers can
+// place two of them side by side with lipgloss.JoinHorizontal.
+func teamGamesBlock(team string, games []service.TeamGame) string {
+	out := labelStyle.Render(team + " — played")
 	if len(games) == 0 {
-		return out + "  " + helpStyle.Render("  no games yet") + "\n"
+		return out + "\n  " + helpStyle.Render("no games yet")
 	}
 	for _, g := range games {
-		out += "    " + formMark(g.Outcome) + "  " +
+		out += "\n  " + formMark(g.Outcome) + "  " +
 			fmt.Sprintf("%d-%d", g.GoalsFor, g.GoalsAgainst) +
-			helpStyle.Render(" v ") + withFlag(g.Opponent) + "\n"
+			helpStyle.Render(" v ") + withFlag(g.Opponent)
 	}
 	return out
 }
