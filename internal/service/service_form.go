@@ -68,6 +68,52 @@ func (s *Service) TeamForm(team string) []models.FormOutcome {
 	return out
 }
 
+// TeamGame is one finished match for a team, from that team's perspective: the
+// goals it scored/conceded, the opponent, and the resulting W/D/L outcome. Used
+// by the bet screen's played-games list.
+type TeamGame struct {
+	Opponent     string
+	GoalsFor     int
+	GoalsAgainst int
+	Outcome      models.FormOutcome
+}
+
+// TeamResults returns the team's finished matches in this tournament, oldest→newest
+// (ListMatches is kickoff-ordered), from the team's perspective. Unlike TeamForm it
+// is not trimmed — a team plays only a handful of games, and the bet screen shows
+// the full list so players can see who it beat and by how much. Returns nil when the
+// team has no finished games yet.
+func (s *Service) TeamResults(team string) []TeamGame {
+	matches, err := s.store.ListMatches(s.tournamentID)
+	if err != nil {
+		return nil
+	}
+
+	var out []TeamGame
+	for _, m := range matches {
+		if !m.Finished || m.ScoreA == nil || m.ScoreB == nil {
+			continue
+		}
+		switch team {
+		case m.TeamA:
+			out = append(out, TeamGame{
+				Opponent:     m.TeamB,
+				GoalsFor:     *m.ScoreA,
+				GoalsAgainst: *m.ScoreB,
+				Outcome:      outcomeFor(*m.ScoreA, *m.ScoreB),
+			})
+		case m.TeamB:
+			out = append(out, TeamGame{
+				Opponent:     m.TeamA,
+				GoalsFor:     *m.ScoreB,
+				GoalsAgainst: *m.ScoreA,
+				Outcome:      outcomeFor(*m.ScoreB, *m.ScoreA),
+			})
+		}
+	}
+	return out
+}
+
 // outcomeFor classifies a result from the perspective of the team that scored
 // `got` against `against` (regulation 90' scores, so an a.e.t. draw stays a draw).
 func outcomeFor(got, against int) models.FormOutcome {

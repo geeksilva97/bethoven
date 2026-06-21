@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"bethoven/internal/models"
+	"bethoven/internal/service"
 )
 
 // openBet sets up the bet form for a match, pre-filling any existing pick.
@@ -17,6 +18,8 @@ func (m Model) openBet(mt models.Match) Model {
 	m.betFocus = 0
 	m.betFormA = m.svc.TeamForm(mt.TeamA)
 	m.betFormB = m.svc.TeamForm(mt.TeamB)
+	m.betGamesA = m.svc.TeamResults(mt.TeamA)
+	m.betGamesB = m.svc.TeamResults(mt.TeamB)
 
 	a, b := "", ""
 	if existing, _ := m.svc.MyBet(m.user.ID, mt.ID); existing != nil {
@@ -126,6 +129,13 @@ func (m Model) viewBet() string {
 
 	out += "  " + m.betScoreField(0, mt.TeamA) + "   " + m.betScoreField(1, mt.TeamB) + "\n\n"
 
+	// Played-games list per team (finished matches only), so players can see who
+	// each team beat and by how much — richer than the at-a-glance form strip above.
+	if len(m.betGamesA) > 0 || len(m.betGamesB) > 0 {
+		out += renderTeamGames(mt.TeamA, m.betGamesA)
+		out += renderTeamGames(mt.TeamB, m.betGamesB) + "\n"
+	}
+
 	if len(m.betFormA) > 0 || len(m.betFormB) > 0 {
 		out += "  " + formLegend() + "\n"
 	}
@@ -144,6 +154,35 @@ func formLegend() string {
 		errStyle.Render("✗") + helpStyle.Render(" loss · newest right")
 }
 
+// renderTeamGames lists a team's played (finished) games, one per line: the W/D/L
+// mark, the scoreline from the team's perspective, then the opponent with its flag.
+// An empty list (no games yet) shows a single dim line so the section still reads.
+func renderTeamGames(team string, games []service.TeamGame) string {
+	out := "  " + labelStyle.Render(team+" — played") + "\n"
+	if len(games) == 0 {
+		return out + "  " + helpStyle.Render("  no games yet") + "\n"
+	}
+	for _, g := range games {
+		out += "    " + formMark(g.Outcome) + "  " +
+			fmt.Sprintf("%d-%d", g.GoalsFor, g.GoalsAgainst) +
+			helpStyle.Render(" v ") + withFlag(g.Opponent) + "\n"
+	}
+	return out
+}
+
+// formMark renders the single coloured glyph for a result, matching renderForm
+// and formLegend so the bet screen stays visually consistent.
+func formMark(o models.FormOutcome) string {
+	switch o {
+	case models.FormWin:
+		return okStyle.Render("✓")
+	case models.FormDraw:
+		return drawStyle.Render("–")
+	default:
+		return errStyle.Render("✗")
+	}
+}
+
 // renderForm draws a recent-form strip: ✓ win (green) · – draw (dim) · ✗ loss
 // (red), oldest→newest. Shows a dim "—" when no form is known.
 func renderForm(form []models.FormOutcome) string {
@@ -152,14 +191,7 @@ func renderForm(form []models.FormOutcome) string {
 	}
 	marks := make([]string, 0, len(form))
 	for _, o := range form {
-		switch o {
-		case models.FormWin:
-			marks = append(marks, okStyle.Render("✓"))
-		case models.FormDraw:
-			marks = append(marks, drawStyle.Render("–"))
-		case models.FormLoss:
-			marks = append(marks, errStyle.Render("✗"))
-		}
+		marks = append(marks, formMark(o))
 	}
 	return strings.Join(marks, " ")
 }

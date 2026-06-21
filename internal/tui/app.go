@@ -78,6 +78,8 @@ type Model struct {
 	// bet form
 	betFormA  []models.FormOutcome // recent-form strip, TeamA (loaded in openBet)
 	betFormB  []models.FormOutcome // recent-form strip, TeamB
+	betGamesA []service.TeamGame   // played-games list, TeamA (loaded in openBet)
+	betGamesB []service.TeamGame   // played-games list, TeamB
 	betMatch  models.Match
 	betInputs []textinput.Model
 	betFocus  int
