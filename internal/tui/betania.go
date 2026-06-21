@@ -273,13 +273,20 @@ func (m Model) betaniaTabBar() string {
 	return tab("Betting", tabBetting) + " " + tab("Comments", tabComments) + " " + tab("Usage", tabUsage) + "\n\n"
 }
 
-// usageViewCapacity is how many lines fit in the Usage tab body. Chrome is
-// title (2) + tab bar (2) + log hint (1) + status (1) + help (1) ≈ 7 lines.
+// usageViewCapacity is how many CONTENT lines fit in the Usage tab body. The
+// reserve must cover every non-content row, or the view overflows the terminal and
+// scrolls the title off the top (the bug this fixes):
+//   title 2 + tab bar 2 + blank+log-hint 2 + help 1  = 7 fixed chrome
+//   + up to 2 scroll markers ("↑ N more" / "↓ N more", added on top of the body)
+//   + 1 possible status line
+// = 10. betaniaUsageTab adds the markers as extra rows, so they must be reserved
+// here too — otherwise a tall report (which always shows at least "↓ N more" on
+// entry) renders one row too tall.
 func (m Model) usageViewCapacity() int {
 	if m.height <= 0 {
 		return 20
 	}
-	const usageChrome = 7
+	const usageChrome = 10
 	if n := m.height - usageChrome; n >= 5 {
 		return n
 	}
