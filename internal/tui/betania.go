@@ -113,7 +113,9 @@ func (m Model) updateBETanIA(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case m.betaniaTab == tabUsage && (k.String() == "down" || k.String() == "j"):
-		m.aiUsageOffset++
+		if m.aiUsageOffset < len(m.usageReportRows())-1 {
+			m.aiUsageOffset++
+		}
 		return m, nil
 	case m.betaniaTab == tabComments && k.String() == "s":
 		return m.openAIPrompt(), nil
@@ -228,8 +230,9 @@ func (m *Model) refreshBETanIA() {
 // viewBETanIA renders the admin panel for the AI player: a status block (model,
 // schedule, totals) and a feed of recent live picks with their rationale.
 func (m Model) viewBETanIA() string {
-	out := titleStyle.Render("⚙  Admin: BETanIA 🤖") + "\n\n"
+	title := titleStyle.Render("⚙  Admin: BETanIA 🤖") + "\n\n"
 	if m.aiDisabled {
+		out := title
 		out += labelStyle.Render("BETanIA is not running.") + "\n"
 		out += helpStyle.Render("Onboard once with `bethoven ai-seed`, then set BETHOVEN_AI_ENABLED=true") + "\n"
 		out += helpStyle.Render("and BETHOVEN_AI_MODEL / ANTHROPIC_API_KEY, and restart.") + "\n\n"
@@ -237,29 +240,48 @@ func (m Model) viewBETanIA() string {
 		return out
 	}
 
-	out += m.betaniaTabBar()
+	// Each tab is header (always-visible title/tabs/status block) + a scrollable body
+	// + footer. The body budget is the terminal height MINUS the measured height of the
+	// header and footer — never a hand-tuned constant — so a tall feed scrolls in place
+	// instead of pushing the title off the top. See windowBlocks.
+	header := title + m.betaniaTabBar()
+	var rows []string
+	var cursor int
+	var footer string
+
 	switch m.betaniaTab {
 	case tabComments:
-		out += m.betaniaCommentsTab()
-		out += "\n" + helpStyle.Render("comments → ai_comments.log — `tail -f` to watch") + "\n"
-		out += statusLine(m) +
+		header += m.commentsStatusBlock()
+		rows, cursor = m.commentRows(), m.aiCommentCursor
+		footer = "\n" + helpStyle.Render("comments → ai_comments.log — `tail -f` to watch") + "\n" +
+			statusLine(m) +
 			helpStyle.Render("↑↓: select · enter: full text · c: regen all · t: tone · u: per-player · x: context · s: prompt") + "\n" +
 			helpStyle.Render("tab: usage · q: quit · other: back")
-		return out
 	case tabUsage:
-		out += m.betaniaUsageTab()
-		out += "\n" + helpStyle.Render("usage → ai_usage.log — the durable cost record (survives restarts)") + "\n"
-		out += statusLine(m) +
+		rows, cursor = m.usageReportRows(), m.aiUsageOffset
+		footer = "\n" + helpStyle.Render("usage → ai_usage.log — the durable cost record (survives restarts)") + "\n" +
+			statusLine(m) +
 			helpStyle.Render("↑↓/jk: scroll · tab: betting · any other key: back · q: quit")
-		return out
+	default: // tabBetting
+		header += m.bettingStatusBlock()
+		rows, cursor = m.bettingPickRows(), m.aiBetsCursor
+		footer = "\n" + helpStyle.Render("picks → "+aiLogHint()+" — `tail -f` to watch") + "\n" +
+			statusLine(m) +
+			helpStyle.Render("↑↓/jk: scroll · r: run a betting pass now") + "\n" +
+			helpStyle.Render("tab: comments · any other key: back · q: quit")
 	}
 
-	out += m.betaniaBettingTab()
-	out += "\n" + helpStyle.Render("picks → "+aiLogHint()+" — `tail -f` to watch") + "\n"
-	out += statusLine(m) +
-		helpStyle.Render("↑↓/jk: scroll · r: run a betting pass now") + "\n" +
-		helpStyle.Render("tab: comments · any other key: back · q: quit")
-	return out
+	budget := 20 // pre-resize default (height unknown until the first WindowSizeMsg)
+	if m.height > 0 {
+		// Body gets whatever the terminal has left after the fixed header + footer
+		// (measured, not guessed). Floor at 1 so we never *add* rows beyond what fits;
+		// on a terminal too short to hold even the header+footer there's nothing more
+		// to give, but normal terminals (≥ ~24 rows) keep the title and fit cleanly.
+		if budget = m.height - lineCount(header) - lineCount(footer) - 1; budget < 1 {
+			budget = 1
+		}
+	}
+	return header + windowBlocks(rows, cursor, budget) + footer
 }
 
 // betaniaTabBar renders the tab selector, highlighting the active tab.
@@ -273,38 +295,20 @@ func (m Model) betaniaTabBar() string {
 	return tab("Betting", tabBetting) + " " + tab("Comments", tabComments) + " " + tab("Usage", tabUsage) + "\n\n"
 }
 
-// usageViewCapacity is how many CONTENT lines fit in the Usage tab body. The
-// reserve must cover every non-content row, or the view overflows the terminal and
-// scrolls the title off the top (the bug this fixes):
-//   title 2 + tab bar 2 + blank+log-hint 2 + help 1  = 7 fixed chrome
-//   + up to 2 scroll markers ("↑ N more" / "↓ N more", added on top of the body)
-//   + 1 possible status line
-// = 10. betaniaUsageTab adds the markers as extra rows, so they must be reserved
-// here too — otherwise a tall report (which always shows at least "↓ N more" on
-// entry) renders one row too tall.
-func (m Model) usageViewCapacity() int {
-	if m.height <= 0 {
-		return 20
-	}
-	const usageChrome = 10
-	if n := m.height - usageChrome; n >= 5 {
-		return n
-	}
-	return 5
-}
-
-// betaniaUsageTab renders BETanIA's Claude token usage and estimated cost, broken
-// down by category (bets / comments / live commentary) with a grand total. The
-// figures come from the durable on-disk usage log, so they persist across restarts
-// — unlike the "since restart" counters on the Betting tab.
-func (m Model) betaniaUsageTab() string {
+// usageReportRows builds the Usage tab body — BETanIA's Claude token usage and
+// estimated cost, by category (bets / comments / live commentary) with a grand total
+// — as one block per line, so windowBlocks can scroll it (anchored by aiUsageOffset).
+// The figures come from the durable on-disk usage log, so they persist across
+// restarts, unlike the "since restart" counters on the Betting tab.
+func (m Model) usageReportRows() []string {
 	now := m.svc.Now()
 	rep := m.aiUsage
 
 	if rep.Total.Calls == 0 {
-		out := labelStyle.Render("Token usage & estimated cost") + "\n"
-		out += helpStyle.Render("  no usage recorded yet — it accrues as BETanIA bets and comments") + "\n"
-		return out
+		return []string{
+			labelStyle.Render("Token usage & estimated cost"),
+			helpStyle.Render("  no usage recorded yet — it accrues as BETanIA bets and comments"),
+		}
 	}
 
 	section := func(label string, c ai.CategoryUsage) string {
@@ -339,27 +343,7 @@ func (m Model) betaniaUsageTab() string {
 		full += "\n" + helpStyle.Render("  Cost under-counts unknown model(s): "+strings.Join(rep.UnknownModels, ", "))
 	}
 
-	lines := strings.Split(full, "\n")
-	cap := m.usageViewCapacity()
-	off := m.aiUsageOffset
-	if off > len(lines)-cap {
-		off = len(lines) - cap
-	}
-	if off < 0 {
-		off = 0
-	}
-	end := off + cap
-	if end > len(lines) {
-		end = len(lines)
-	}
-	out := strings.Join(lines[off:end], "\n") + "\n"
-	if off > 0 {
-		out = helpStyle.Render(fmt.Sprintf("  ↑ %d more", off)) + "\n" + out
-	}
-	if end < len(lines) {
-		out += helpStyle.Render(fmt.Sprintf("  ↓ %d more", len(lines)-end)) + "\n"
-	}
-	return out
+	return strings.Split(strings.TrimRight(full, "\n"), "\n")
 }
 
 // usageCategoryLabel maps a usage category key to its panel heading.
@@ -398,10 +382,9 @@ func commaInt(n int64) string {
 	return b.String()
 }
 
-// betaniaBettingTab renders the live-worker status block and BETanIA's picks on
-// record. Picks come from the DB (durable across restarts); where this session's
-// in-memory feed has the rationale for a pick, it's shown beneath the row.
-func (m Model) betaniaBettingTab() string {
+// bettingStatusBlock is the always-visible header of the Betting tab: the
+// live-worker status KPIs plus the "Picks on record" section label.
+func (m Model) bettingStatusBlock() string {
 	now := m.svc.Now()
 	st := m.aiStatus
 
@@ -415,11 +398,18 @@ func (m Model) betaniaBettingTab() string {
 	out += kpi("Locked at kickoff", fmt.Sprintf("%d", st.Locked))
 	out += kpi("Errors", fmt.Sprintf("%d", st.Errored))
 	out += "\n"
-
 	out += labelStyle.Render(fmt.Sprintf("Picks on record (%d)", len(m.aiBets))) + "\n"
+	return out
+}
+
+// bettingPickRows builds the scrollable Betting feed: BETanIA's picks on record
+// (from the DB, durable across restarts), each enriched with this session's rationale
+// beneath the row when available — which makes some rows two lines tall, so they must
+// be windowed by visual lines (windowBlocks), not item count.
+func (m Model) bettingPickRows() []string {
+	now := m.svc.Now()
 	if len(m.aiBets) == 0 {
-		out += helpStyle.Render("  nothing yet — the next pass will research and bet upcoming matches") + "\n"
-		return out
+		return []string{helpStyle.Render("  nothing yet — the next pass will research and bet upcoming matches")}
 	}
 	// This session's rationale, keyed by "A vs B", to enrich the durable rows.
 	rationale := make(map[string]ai.Action, len(m.aiActivity))
@@ -449,18 +439,17 @@ func (m Model) betaniaBettingTab() string {
 		}
 		rows[i] = row
 	}
-	for _, r := range windowRows(rows, m.aiBetsCursor, m.bettingFeedCapacity()) {
-		out += r + "\n"
-	}
-	return out
+	return rows
 }
 
-// betaniaCommentsTab renders the comment worker's status block and recent feed.
-func (m Model) betaniaCommentsTab() string {
-	now := m.svc.Now()
+// commentsStatusBlock is the always-visible header of the Comments tab: the comment
+// worker's status KPIs plus the "Recent comments" section label. Returns the
+// worker-not-running notice when the comment worker is off.
+func (m Model) commentsStatusBlock() string {
 	if m.aiCommentsDisabled {
 		return helpStyle.Render("  comment worker not running (set BETHOVEN_AI_COMMENTS_ENABLED=true)") + "\n"
 	}
+	now := m.svc.Now()
 	cst := m.aiCommentStatus
 	out := labelStyle.Render("Status") + "\n"
 	out += kpi("Tone", m.commentTone)
@@ -470,13 +459,19 @@ func (m Model) betaniaCommentsTab() string {
 	out += kpi("Comments written", fmt.Sprintf("%d", cst.Written))
 	out += kpi("Errors", fmt.Sprintf("%d", cst.Errored))
 	out += "\n" + labelStyle.Render("Recent comments") + helpStyle.Render("  (↑↓ select · enter: full text)") + "\n"
-	if len(m.aiCommentActivity) == 0 {
-		out += helpStyle.Render("  nothing yet — press c to generate now") + "\n"
-		return out
+	return out
+}
+
+// commentRows builds the scrollable Comments feed. Each comment is a two-line block
+// (header + preview), so it's windowed by visual lines (windowBlocks).
+func (m Model) commentRows() []string {
+	if m.aiCommentsDisabled || len(m.aiCommentActivity) == 0 {
+		if m.aiCommentsDisabled {
+			return nil
+		}
+		return []string{helpStyle.Render("  nothing yet — press c to generate now")}
 	}
-	// Each comment is a two-line block (header + preview). Build them as single
-	// items so windowRows can scroll the feed around the cursor — without this the
-	// full field overflows the terminal and the selection slides off the bottom.
+	now := m.svc.Now()
 	rows := make([]string, len(m.aiCommentActivity))
 	for i, a := range m.aiCommentActivity {
 		cursor := "  "
@@ -497,39 +492,7 @@ func (m Model) betaniaCommentsTab() string {
 		}
 		rows[i] = row
 	}
-	for _, r := range windowRows(rows, m.aiCommentCursor, m.commentFeedCapacity()) {
-		out += r + "\n"
-	}
-	return out
-}
-
-// commentFeedCapacity is how many comment blocks fit on the Comments tab given the
-// bettingFeedCapacity is how many pick rows fit on the Betting tab. Chrome is
-// title (2) + tab bar (2) + status block (9 KPIs + label + blank = 11) + picks
-// label (1) + footer (3) ≈ 19 lines. Floors at 3; falls back to 8 before resize.
-func (m Model) bettingFeedCapacity() int {
-	if m.height <= 0 {
-		return 8
-	}
-	const bettingChrome = 19
-	if n := m.height - bettingChrome; n >= 3 {
-		return n
-	}
-	return 3
-}
-
-// terminal height. Each block is up to two lines (header + preview), and the tab's
-// fixed chrome (title, tab bar, status block, labels, footer) is ~19 lines. Floors
-// at 3 so the feed is always usable; falls back to 8 before the first size message.
-func (m Model) commentFeedCapacity() int {
-	if m.height <= 0 {
-		return 8
-	}
-	const commentsChrome = 19
-	if items := (m.height - commentsChrome) / 2; items >= 3 {
-		return items
-	}
-	return 3
+	return rows
 }
 
 // viewAICommentDetail shows the full text of the comment selected in the Comments

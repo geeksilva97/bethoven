@@ -58,6 +58,93 @@ func windowRows(rows []string, cursor, maxRows int) []string {
 	return out
 }
 
+// lineCount returns how many terminal rows a rendered string occupies (0 for the
+// empty string). A trailing newline doesn't add a visible content row.
+func lineCount(s string) int {
+	if s == "" {
+		return 0
+	}
+	n := strings.Count(s, "\n") + 1
+	if strings.HasSuffix(s, "\n") {
+		n--
+	}
+	return n
+}
+
+// windowBlocks is the visual-line analogue of windowRows: it windows multi-line
+// blocks (each rendered string may span several rows) to fit within maxLines
+// terminal rows, keeping block `cursor` visible and overlaying "↑ N more"/"↓ N more"
+// on the clipped edges. Markers are counted against the budget (not added on top),
+// so the result is always ≤ maxLines rows — which is what keeps a tall feed from
+// scrolling the screen's title off the top. Single-line blocks reduce to windowRows.
+func windowBlocks(blocks []string, cursor, maxLines int) string {
+	if maxLines < 1 {
+		maxLines = 1
+	}
+	if len(blocks) == 0 {
+		return ""
+	}
+	h := make([]int, len(blocks))
+	total := 0
+	for i, b := range blocks {
+		if h[i] = lineCount(b); h[i] < 1 {
+			h[i] = 1
+		}
+		total += h[i]
+	}
+	if total <= maxLines {
+		return strings.Join(blocks, "\n")
+	}
+
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor >= len(blocks) {
+		cursor = len(blocks) - 1
+	}
+
+	// Reserve up to two rows for the edge markers; always show at least the cursor
+	// block, then grow downward, then upward, while the next block still fits.
+	budget := maxLines - 2
+	if budget < 1 {
+		budget = 1
+	}
+	start, end, used := cursor, cursor+1, h[cursor]
+	for {
+		grew := false
+		if end < len(blocks) && used+h[end] <= budget {
+			used += h[end]
+			end++
+			grew = true
+		}
+		if start > 0 && used+h[start-1] <= budget {
+			start--
+			used += h[start]
+			grew = true
+		}
+		if !grew {
+			break
+		}
+	}
+
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString(helpStyle.Render(fmt.Sprintf("  ↑ %d more", start)))
+		b.WriteString("\n")
+	}
+	for i := start; i < end; i++ {
+		b.WriteString(blocks[i])
+		if i < end-1 {
+			b.WriteString("\n")
+		}
+	}
+	if end < len(blocks) {
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render(fmt.Sprintf("  ↓ %d more", len(blocks)-end)))
+	}
+	return b.String()
+}
+
 // renderList renders match rows for a list screen: builds one matchLine per
 // match, scrolls to keep the cursor visible, and joins with newlines (trailing
 // newline included so callers can append their footer directly).

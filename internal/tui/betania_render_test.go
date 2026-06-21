@@ -223,3 +223,72 @@ func keyModel(t *testing.T, m Model, key string) Model {
 	next, _ := m.updateBETanIA(keyMsg(key))
 	return next.(Model)
 }
+
+// TestBETanIAPanelFitsTerminal is the regression for the title scrolling off the top:
+// on EVERY tab, at a constrained height, with enough (multi-line) feed rows to force
+// scrolling, the rendered frame must (1) fit within the terminal height and (2) still
+// contain the title. Exercises both the initial and a scrolled state.
+func TestBETanIAPanelFitsTerminal(t *testing.T) {
+	now := time.Now()
+	// A tall feed: 30 picks each with a rationale (two visual lines apiece).
+	var bets []service.AIBet
+	var acts []ai.Action
+	for i := 0; i < 30; i++ {
+		a := "Team" + string(rune('A'+i%26))
+		b := "Team" + string(rune('a'+i%26))
+		match := a + " vs " + b
+		bets = append(bets, service.AIBet{
+			Match: models.Match{TeamA: a, TeamB: b},
+			Bet:   models.Bet{PredA: 1, PredB: 0, UpdatedAt: now},
+		})
+		acts = append(acts, ai.Action{Match: match, Rationale: strings.Repeat("reason ", 12), Outcome: "placed"})
+	}
+	var comments []ai.CommentAction
+	for i := 0; i < 30; i++ {
+		comments = append(comments, ai.CommentAction{
+			Player: "Player" + string(rune('A'+i%26)), Text: strings.Repeat("roast ", 12), Outcome: "written",
+		})
+	}
+	usage := ai.UsageReport{
+		Categories: []ai.CategoryUsage{
+			{Category: "bet", Calls: 10, InputTokens: 1000, OutputTokens: 500, EstCostUSD: 1.23, AvgLatencyMS: 800, LastAt: now},
+			{Category: "comment", Calls: 8, InputTokens: 900, OutputTokens: 400, EstCostUSD: 0.98, AvgLatencyMS: 700, LastAt: now},
+			{Category: "live", Calls: 20, InputTokens: 2000, OutputTokens: 600, EstCostUSD: 2.10, AvgLatencyMS: 600, LastAt: now},
+			{Category: "digest", Calls: 4, InputTokens: 500, OutputTokens: 200, EstCostUSD: 0.40, AvgLatencyMS: 900, LastAt: now},
+		},
+		Total: ai.CategoryUsage{Calls: 42, InputTokens: 4400, OutputTokens: 1700, EstCostUSD: 4.71},
+	}
+
+	// 24 is the standard minimum terminal height (the tightest that still fits the
+	// status block + a scrolling feed + footer); also check a roomy terminal.
+	for _, height := range []int{24, 40} {
+		for _, tab := range []struct {
+			name string
+			idx  int
+		}{{"Betting", tabBetting}, {"Comments", tabComments}, {"Usage", tabUsage}} {
+			m := adminModel(t)
+			m.height = height
+			m.screen = screenBETanIA
+			m.betaniaTab = tab.idx
+			m.aiBets, m.aiActivity = bets, acts
+			m.aiCommentActivity = comments
+			m.aiUsage = usage
+
+			// Initial render, then a few scroll steps to exercise the windowed state.
+			for _, steps := range []int{0, 5, 12} {
+				mm := m
+				for i := 0; i < steps; i++ {
+					mm = keyModel(t, mm, "down")
+				}
+				frame := mm.viewBETanIA()
+				if got := lineCount(frame); got > height {
+					t.Errorf("%s tab @h=%d after %d↓: frame is %d rows > height %d (would scroll the title off):\n%s",
+						tab.name, height, steps, got, height, frame)
+				}
+				if !strings.Contains(frame, "Admin: BETanIA") {
+					t.Errorf("%s tab @h=%d after %d↓: title missing from frame:\n%s", tab.name, height, steps, frame)
+				}
+			}
+		}
+	}
+}
