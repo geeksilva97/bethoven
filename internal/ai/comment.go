@@ -92,6 +92,12 @@ type CommentConfig struct {
 	// It's grounding fed into every line she writes so her voice drifts with how the
 	// tournament is going for her. The director updates it; the service persists it.
 	Mood string
+	// PriorComments is the previous pass's line per player (keyed by display name),
+	// fed back into the stage-2 prompt so a regeneration writes something FRESH
+	// instead of recycling the same fact/phrasing (the per-player echo of the live
+	// worker's anti-repeat history). Optional — empty ⇒ no prior-lines block (first
+	// fill, or tests). The worker populates it from the comment cache.
+	PriorComments map[string]string
 	// LiveFocus is a transient, per-pass directive for the LIVE director only: the
 	// single pool dynamic this line must cover (title race, a backmarker, a rivalry,
 	// a climber/faller, who nailed/whiffed). The worker rotates it every line so the

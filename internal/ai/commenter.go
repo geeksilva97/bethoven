@@ -133,6 +133,7 @@ func (w *CommentWorker) pass(ctx context.Context) {
 
 	cfg := w.deps.Config()
 	cfg.Self = w.self // BETanIA's own line is first person
+	cfg.PriorComments = w.priorComments()
 
 	pctx, cancel := context.WithTimeout(ctx, commentPassTimeout)
 	defer cancel()
@@ -214,6 +215,7 @@ func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64, extra s
 	cfg := w.deps.Config()
 	cfg.Self = w.self
 	cfg.Steering = extra
+	cfg.PriorComments = w.priorComments()
 
 	narratives, err := w.cmt.DetectNarratives(ctx, history)
 	if err != nil {
@@ -253,6 +255,28 @@ func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64, extra s
 		return c, nil
 	}
 	return Comment{}, fmt.Errorf("model didn't write a comment for that player")
+}
+
+// priorComments reads the current cached line per player (keyed by display name)
+// so the next pass can be told what it said last time and write something fresh.
+// Nil when there's no cache or it's empty (first fill) — the prompt then omits the
+// prior-lines block entirely.
+func (w *CommentWorker) priorComments() map[string]string {
+	if w.cache == nil {
+		return nil
+	}
+	cur := w.cache.All(w.deps.Now())
+	if len(cur) == 0 {
+		return nil
+	}
+	prior := make(map[string]string, len(cur))
+	for _, c := range cur {
+		if c.Player == "" || c.Text == "" {
+			continue
+		}
+		prior[c.Player] = c.Text
+	}
+	return prior
 }
 
 // refreshDerivedNotes returns the combined derived-notes text to feed the comment

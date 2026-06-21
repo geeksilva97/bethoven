@@ -98,6 +98,29 @@ func TestCommentWorkerPassCachesSanitized(t *testing.T) {
 	}
 }
 
+func TestCommentWorkerPassFeedsBackPriorComments(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{{UserID: 1, Player: "Joao", Text: "you're cruising at the top"}}}
+	cache := NewCommentCache()
+	w := NewCommentWorker(CommentDeps{
+		History: func() ([]RoundStanding, error) { return oneRound(), nil },
+		Config:  func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
+		Now:     func() time.Time { return now },
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", "")
+
+	// First pass has nothing cached yet — no prior-lines context.
+	w.pass(context.Background())
+	if len(fc.lastCfg.PriorComments) != 0 {
+		t.Fatalf("first pass should carry no prior comments, got %+v", fc.lastCfg.PriorComments)
+	}
+
+	// Second pass must feed the first pass's line back so the model varies.
+	w.pass(context.Background())
+	if got := fc.lastCfg.PriorComments["Joao"]; got != "you're cruising at the top" {
+		t.Fatalf("second pass PriorComments[Joao] = %q, want the first pass's line", got)
+	}
+}
+
 func TestCommentWorkerRefreshesAutoRivalries(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	fc := &fakeCommenter{
