@@ -125,10 +125,20 @@ type autoRivalry struct {
 	Pinned bool   `json:"pinned,omitempty"`
 }
 
+// storedPlayerNote is a house note bound to ONE player (by user id), so the comment
+// writer can attribute it correctly and never weave it into another player's line —
+// the structural fix for the cross-player note leak. The free-text Notes tier stays
+// for genuinely pool-wide notes (about nobody in particular).
+type storedPlayerNote struct {
+	UserID int64  `json:"user_id"`
+	Note   string `json:"note"`
+}
+
 type storedContext struct {
-	Rivalries     []storedRivalry `json:"rivalries"`
-	Notes         []string        `json:"notes"`
-	AutoRivalries []autoRivalry   `json:"auto_rivalries,omitempty"` // BETanIA-managed
+	Rivalries     []storedRivalry    `json:"rivalries"`
+	Notes         []string           `json:"notes"`
+	PlayerNotes   []storedPlayerNote `json:"player_notes,omitempty"`   // bound to a single player
+	AutoRivalries []autoRivalry      `json:"auto_rivalries,omitempty"` // BETanIA-managed
 }
 
 func (s *Service) loadStoredContext() storedContext {
@@ -239,6 +249,62 @@ func (s *Service) DeleteCommentNote(by *models.User, idx int) error {
 	return s.saveStoredContext(c)
 }
 
+// AddPlayerNote records a house note ABOUT one player (bound by user id), so it can
+// be attributed to exactly that player in the comment prompt. Admin only.
+func (s *Service) AddPlayerNote(by *models.User, userID int64, note string) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return errors.New("a note is required")
+	}
+	if s.userNameMap()[userID] == "" {
+		return errors.New("no such player")
+	}
+	c := s.loadStoredContext()
+	c.PlayerNotes = append(c.PlayerNotes, storedPlayerNote{UserID: userID, Note: note})
+	return s.saveStoredContext(c)
+}
+
+// EditPlayerNote replaces the text of the player note at idx (the player is
+// unchanged, mirroring EditRivalry). Admin only.
+func (s *Service) EditPlayerNote(by *models.User, idx int, note string) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	note = strings.TrimSpace(note)
+	if note == "" {
+		return errors.New("a note is required")
+	}
+	c := s.loadStoredContext()
+	if idx < 0 || idx >= len(c.PlayerNotes) {
+		return errors.New("no such note")
+	}
+	c.PlayerNotes[idx].Note = note
+	return s.saveStoredContext(c)
+}
+
+// DeletePlayerNote removes the player note at idx. Admin only.
+func (s *Service) DeletePlayerNote(by *models.User, idx int) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	c := s.loadStoredContext()
+	if idx < 0 || idx >= len(c.PlayerNotes) {
+		return errors.New("no such note")
+	}
+	c.PlayerNotes = append(c.PlayerNotes[:idx], c.PlayerNotes[idx+1:]...)
+	return s.saveStoredContext(c)
+}
+
+// PlayerNoteView is a player note resolved to a display name, for the admin editor.
+type PlayerNoteView struct {
+	UserID int64
+	Player string
+	Note   string
+}
+
 // RivalryView is a rivalry resolved to display names, for the admin editor.
 type RivalryView struct {
 	AID, BID int64
@@ -248,11 +314,15 @@ type RivalryView struct {
 
 // CommentContextView is the admin-facing view of the stored comment context.
 type CommentContextView struct {
-	Rivalries []RivalryView
-	Notes     []string
+	Rivalries   []RivalryView
+	PlayerNotes []PlayerNoteView
+	Notes       []string
 }
 
-// CommentContextView returns the stored rivalries (resolved to names) + notes. Admin only.
+// CommentContextView returns the stored rivalries + player notes (both resolved to
+// names) + general notes. Every stored row is returned in order (a deleted player
+// resolves to an empty name, like rivalries) so the editor's row indices line up
+// with the slice indices the Edit*/Delete* methods use. Admin only.
 func (s *Service) CommentContextView(by *models.User) (CommentContextView, error) {
 	if err := requireAdmin(by); err != nil {
 		return CommentContextView{}, err
@@ -263,6 +333,11 @@ func (s *Service) CommentContextView(by *models.User) (CommentContextView, error
 	for _, r := range c.Rivalries {
 		v.Rivalries = append(v.Rivalries, RivalryView{
 			AID: r.A, BID: r.B, A: names[r.A], B: names[r.B], Note: r.Note,
+		})
+	}
+	for _, n := range c.PlayerNotes {
+		v.PlayerNotes = append(v.PlayerNotes, PlayerNoteView{
+			UserID: n.UserID, Player: names[n.UserID], Note: n.Note,
 		})
 	}
 	v.Notes = append(v.Notes, c.Notes...)
@@ -318,12 +393,21 @@ func (s *Service) CommentConfig() ai.CommentConfig {
 		rivalries = append(rivalries, ai.Rivalry{A: a, B: b, Note: r.Note})
 		seen[pairKey(r.A, r.B)] = true
 	}
+	var playerNotes []ai.PlayerNote
+	for _, n := range c.PlayerNotes {
+		name := names[n.UserID]
+		if name == "" {
+			continue // player no longer exists — never feed an orphan note to the model
+		}
+		playerNotes = append(playerNotes, ai.PlayerNote{Player: name, Text: n.Note})
+	}
 	override, _ := s.CommentPromptOverride()
 	mood, _ := s.CommentMood()
 	return ai.CommentConfig{
 		DefaultTone:    def,
 		ToneByName:     tones,
 		Rivalries:      rivalries,
+		PlayerNotes:    playerNotes,
 		Notes:          c.Notes,
 		PromptOverride: override,
 		Mood:           mood,

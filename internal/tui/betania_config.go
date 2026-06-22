@@ -13,21 +13,23 @@ import (
 
 // ctxMode drives the rivalry/context editor's small wizard.
 const (
-	ctxModeList      = iota // browsing rivalries + notes
-	ctxModeNote             // typing a house note
-	ctxModePickA            // picking the first player of a rivalry
-	ctxModePickB            // picking the second player
-	ctxModeRivalNote        // typing the rivalry note
-	ctxModeDetail           // reading one entry's full content
-	ctxModeEdit             // editing an existing entry's text
+	ctxModeList           = iota // browsing rivalries + notes
+	ctxModeNote                  // typing a house note (general or player-bound)
+	ctxModeNotePickPlayer        // picking who a new house note is about (or General)
+	ctxModePickA                 // picking the first player of a rivalry
+	ctxModePickB                 // picking the second player
+	ctxModeRivalNote             // typing the rivalry note
+	ctxModeDetail                // reading one entry's full content
+	ctxModeEdit                  // editing an existing entry's text
 )
 
 // ctx entry kinds, for the detail/edit flow.
 const (
-	ctxKindRivalry = iota
-	ctxKindNote
-	ctxKindDerived
-	ctxKindAuto // BETanIA's self-managed rivalries
+	ctxKindRivalry    = iota
+	ctxKindNote       // pool-wide house note (no player)
+	ctxKindDerived    // BETanIA's auto per-game story notes
+	ctxKindAuto       // BETanIA's self-managed rivalries
+	ctxKindPlayerNote // house note bound to one player
 )
 
 // openBETanIA (re)loads the admin panel — used when returning from a sub-editor.
@@ -180,27 +182,30 @@ func (m *Model) reloadCtx() {
 	m.ctxDerived, _ = m.svc.DerivedNotes(m.user)
 }
 
-// ctxTotal is the number of selectable rows: admin rivalries, auto rivalries, house
-// notes, then derived notes.
+// ctxTotal is the number of selectable rows: admin rivalries, auto rivalries, player
+// notes, house notes, then derived notes.
 func (m Model) ctxTotal() int {
-	return len(m.ctxView.Rivalries) + len(m.ctxAuto) + len(m.ctxView.Notes) + len(m.ctxDerived)
+	return len(m.ctxView.Rivalries) + len(m.ctxAuto) + len(m.ctxView.PlayerNotes) + len(m.ctxView.Notes) + len(m.ctxDerived)
 }
 
-// ctxRowAt maps a list cursor to its tier and the local index within that tier.
-// Order matches viewCtxList: admin rivalries, auto rivalries, house notes, derived.
+// ctxRowAt maps a list cursor to its tier and the local index within that tier. Order
+// matches viewCtxList: admin rivalries, auto rivalries, player notes, house notes, derived.
 func (m Model) ctxRowAt(cursor int) (kind, idx int) {
 	nRiv := len(m.ctxView.Rivalries)
 	nAuto := len(m.ctxAuto)
+	nPlayer := len(m.ctxView.PlayerNotes)
 	nNote := len(m.ctxView.Notes)
 	switch {
 	case cursor < nRiv:
 		return ctxKindRivalry, cursor
 	case cursor < nRiv+nAuto:
 		return ctxKindAuto, cursor - nRiv
-	case cursor < nRiv+nAuto+nNote:
-		return ctxKindNote, cursor - nRiv - nAuto
+	case cursor < nRiv+nAuto+nPlayer:
+		return ctxKindPlayerNote, cursor - nRiv - nAuto
+	case cursor < nRiv+nAuto+nPlayer+nNote:
+		return ctxKindNote, cursor - nRiv - nAuto - nPlayer
 	default:
-		return ctxKindDerived, cursor - nRiv - nAuto - nNote
+		return ctxKindDerived, cursor - nRiv - nAuto - nPlayer - nNote
 	}
 }
 
@@ -231,6 +236,8 @@ func (m Model) updateAIContext(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.ctxMode {
 	case ctxModeNote, ctxModeRivalNote, ctxModeEdit:
 		return m.updateCtxInput(msg)
+	case ctxModeNotePickPlayer:
+		return m.updateCtxNotePick(msg)
 	case ctxModePickA, ctxModePickB:
 		return m.updateCtxPick(msg)
 	case ctxModeDetail:
@@ -257,6 +264,13 @@ func (m Model) openCtxDetail() Model {
 		r := m.ctxAuto[i]
 		m.ctxDetailTitle = fmt.Sprintf("%s vs %s (auto)", r.A, r.B)
 		m.ctxDetailFull = r.Note
+	case ctxKindPlayerNote:
+		if i < 0 || i >= len(m.ctxView.PlayerNotes) {
+			return m
+		}
+		n := m.ctxView.PlayerNotes[i]
+		m.ctxDetailTitle = "Note about " + n.Player
+		m.ctxDetailFull = n.Note
 	case ctxKindNote:
 		m.ctxDetailTitle = "House note"
 		m.ctxDetailFull = m.ctxView.Notes[i]
@@ -312,6 +326,8 @@ func (m Model) updateCtxDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = m.svc.DeleteRivalry(m.user, m.ctxDetailIdx)
 		case ctxKindAuto:
 			err = m.svc.DeleteAutoRivalry(m.user, m.ctxDetailIdx)
+		case ctxKindPlayerNote:
+			err = m.svc.DeletePlayerNote(m.user, m.ctxDetailIdx)
 		case ctxKindNote:
 			err = m.svc.DeleteCommentNote(m.user, m.ctxDetailIdx)
 		default:
@@ -354,9 +370,10 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.openCtxDetail(), nil
 	case "n":
-		m.ctxMode = ctxModeNote
-		m.ctxArea = newCtxArea("a house note about the pool…", "")
-		return m, textarea.Blink
+		// Choose who the note is about first (a player, or General/pool-wide), so a
+		// player-bound note can be attributed and never leak onto someone else.
+		m.ctxMode, m.ctxPickCursor = ctxModeNotePickPlayer, 0
+		return m, nil
 	case "a":
 		if len(m.tonePlayers) < 2 {
 			m.setStatus("need at least two players for a rivalry", true)
@@ -411,6 +428,8 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			err = m.svc.DeleteRivalry(m.user, i)
 		case ctxKindAuto:
 			err = m.svc.DeleteAutoRivalry(m.user, i)
+		case ctxKindPlayerNote:
+			err = m.svc.DeletePlayerNote(m.user, i)
 		case ctxKindNote:
 			err = m.svc.DeleteCommentNote(m.user, i)
 		default:
@@ -451,10 +470,15 @@ func (m Model) updateCtxInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err = m.svc.EditRivalry(m.user, m.ctxDetailIdx, text)
 			case m.ctxMode == ctxModeEdit && m.ctxDetailKind == ctxKindAuto:
 				err = m.svc.EditAutoRivalry(m.user, m.ctxDetailIdx, text)
+			case m.ctxMode == ctxModeEdit && m.ctxDetailKind == ctxKindPlayerNote:
+				err = m.svc.EditPlayerNote(m.user, m.ctxDetailIdx, text)
 			case m.ctxMode == ctxModeEdit:
 				err = m.svc.EditCommentNote(m.user, m.ctxDetailIdx, text)
 			case m.ctxMode == ctxModeRivalNote:
 				err = m.svc.AddRivalry(m.user, m.ctxRivalA, m.ctxRivalB, text)
+			case m.ctxNotePlayer != 0:
+				// A new note bound to a specific player (chosen in the note picker).
+				err = m.svc.AddPlayerNote(m.user, m.ctxNotePlayer, text)
 			default:
 				err = m.svc.AddCommentNote(m.user, text)
 			}
@@ -510,11 +534,56 @@ func (m Model) updateCtxPick(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateCtxNotePick handles choosing who a new house note is about: row 0 is the
+// pool-wide "General" option, the rest are players. Selecting one opens the note
+// textarea — General saves via AddCommentNote, a player via AddPlayerNote (the
+// ctxNotePlayer != 0 sentinel, set here, drives that branch in updateCtxInput).
+func (m Model) updateCtxNotePick(msg tea.Msg) (tea.Model, tea.Cmd) {
+	k, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch k.String() {
+	case "q":
+		return m, tea.Quit
+	case "esc":
+		m.ctxMode = ctxModeList
+		return m, nil
+	case "up", "k":
+		if m.ctxPickCursor > 0 {
+			m.ctxPickCursor--
+		}
+	case "down", "j":
+		if m.ctxPickCursor < len(m.tonePlayers) { // row 0 = General, then one per player
+			m.ctxPickCursor++
+		}
+	case "enter":
+		if m.ctxPickCursor == 0 {
+			m.ctxNotePlayer, m.ctxNotePlayerName = 0, ""
+			m.ctxMode = ctxModeNote
+			m.ctxArea = newCtxArea("a house note about the pool…", "")
+			return m, textarea.Blink
+		}
+		sel := m.tonePlayers[m.ctxPickCursor-1].User
+		m.ctxNotePlayer, m.ctxNotePlayerName = sel.ID, sel.DisplayName
+		m.ctxMode = ctxModeNote
+		m.ctxArea = newCtxArea(fmt.Sprintf("a note about %s…", sel.DisplayName), "")
+		return m, textarea.Blink
+	}
+	return m, nil
+}
+
 func (m Model) viewAIContext() string {
 	switch m.ctxMode {
 	case ctxModeNote:
-		return titleStyle.Render("⚙  BETanIA: add house note") + "\n\n" +
+		title := "add house note"
+		if m.ctxNotePlayer != 0 {
+			title = "add note about " + m.ctxNotePlayerName
+		}
+		return titleStyle.Render("⚙  BETanIA: "+title) + "\n\n" +
 			m.ctxArea.View() + "\n\n" + helpStyle.Render("ctrl+s: save · enter: new line · esc: cancel")
+	case ctxModeNotePickPlayer:
+		return m.viewCtxNotePick()
 	case ctxModeRivalNote:
 		head := fmt.Sprintf("%s  vs  %s", m.ctxRivalAName, nameByID(m.tonePlayers, m.ctxRivalB))
 		return titleStyle.Render("⚙  BETanIA: rivalry note") + "\n\n" +
@@ -584,7 +653,16 @@ func (m Model) viewCtxList() string {
 		idx++
 	}
 
-	out += "\n" + labelStyle.Render("House notes") + "\n"
+	out += "\n" + labelStyle.Render("Player notes (about one player — used only in their comment)") + "\n"
+	if len(m.ctxView.PlayerNotes) == 0 {
+		out += helpStyle.Render("  none yet — press n and pick a player") + "\n"
+	}
+	for _, n := range m.ctxView.PlayerNotes {
+		out += cursorRow(idx == m.ctxCursor, truncate(fmt.Sprintf("%s — %s", n.Player, n.Note), w)) + "\n"
+		idx++
+	}
+
+	out += "\n" + labelStyle.Render("House notes (general — about the pool)") + "\n"
 	if len(m.ctxView.Notes) == 0 {
 		out += helpStyle.Render("  none yet") + "\n"
 	}
@@ -619,6 +697,16 @@ func (m Model) viewCtxPick() string {
 	out := titleStyle.Render("⚙  BETanIA: add rivalry") + "\n\n" + labelStyle.Render(title) + "\n\n"
 	for i, pt := range m.tonePlayers {
 		out += cursorRow(i == m.ctxPickCursor, pt.User.DisplayName) + "\n"
+	}
+	out += "\n" + statusLine(m) + helpStyle.Render("↑/↓: move · enter: pick · esc: cancel")
+	return out
+}
+
+func (m Model) viewCtxNotePick() string {
+	out := titleStyle.Render("⚙  BETanIA: add note — who is it about?") + "\n\n"
+	out += cursorRow(m.ctxPickCursor == 0, "— General (about the pool, not one player) —") + "\n"
+	for i, pt := range m.tonePlayers {
+		out += cursorRow(m.ctxPickCursor == i+1, pt.User.DisplayName) + "\n"
 	}
 	out += "\n" + statusLine(m) + helpStyle.Render("↑/↓: move · enter: pick · esc: cancel")
 	return out

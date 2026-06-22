@@ -62,6 +62,14 @@ type Rivalry struct {
 	Note string
 }
 
+// PlayerNote is an admin house note bound to ONE player (by display name), fed to the
+// comment writer with explicit attribution so it can never be applied to a different
+// player. The free-text Notes tier remains for genuinely pool-wide notes.
+type PlayerNote struct {
+	Player string
+	Text   string
+}
+
 // CommentConfig carries everything the comment writer needs beyond the standings:
 // the default tone, per-player tone overrides (by display name), BETanIA's own
 // name (her line is first person), and admin context (rivalries + house notes).
@@ -70,7 +78,12 @@ type CommentConfig struct {
 	Self        string            // BETanIA's display name; her line is first person
 	ToneByName  map[string]string // display name -> "playful" | "savage" | "mute"; absent ⇒ default
 	Rivalries   []Rivalry
-	Notes       []string
+	// PlayerNotes are house notes each bound to a single player (by display name).
+	// Rendered with explicit "About <player>:" attribution so the model cannot reassign
+	// one player's note to another — the structural fix for the cross-player note leak.
+	PlayerNotes []PlayerNote
+	// Notes are pool-wide house notes about nobody in particular (no player binding).
+	Notes []string
 	// DerivedNotes is BETanIA's own auto-generated "house notes" snapshot: a short
 	// condensation of recently finished matches and how the pool's picks fared,
 	// produced by DigestResults and refreshed when a match settles. It's a SEPARATE

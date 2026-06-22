@@ -247,6 +247,75 @@ func TestCommentConfigAdminGated(t *testing.T) {
 	if err := svc.AddRivalry(player, 1, 2, "x"); err == nil {
 		t.Error("non-admin AddRivalry should be rejected")
 	}
+	if err := svc.AddPlayerNote(player, player.ID, "x"); err == nil {
+		t.Error("non-admin AddPlayerNote should be rejected")
+	}
+}
+
+// TestPlayerNotes covers the player-bound house-note tier: add (with player
+// validation), the resolved CommentConfig + admin view, edit/delete by index, and
+// that a note whose player was removed is dropped from the model-facing config but
+// kept (with a blank name) in the admin view so editor indices stay aligned.
+func TestPlayerNotes(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	admin, _ := svc.Register(adminFP, testInvite, "Admin")
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
+
+	// A note bound to a non-existent player is rejected.
+	if err := svc.AddPlayerNote(admin, 9999, "ghost"); err == nil {
+		t.Error("AddPlayerNote for a missing player should fail")
+	}
+	// Empty text is rejected.
+	if err := svc.AddPlayerNote(admin, alice.ID, "  "); err == nil {
+		t.Error("empty player note should fail")
+	}
+
+	if err := svc.AddPlayerNote(admin, alice.ID, "always bets late"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AddPlayerNote(admin, bob.ID, "Barcelona diehard"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := svc.CommentConfig()
+	if len(cfg.PlayerNotes) != 2 {
+		t.Fatalf("player notes = %+v", cfg.PlayerNotes)
+	}
+	if cfg.PlayerNotes[0].Player != "Alice" || cfg.PlayerNotes[0].Text != "always bets late" {
+		t.Errorf("note 0 = %+v", cfg.PlayerNotes[0])
+	}
+	if cfg.PlayerNotes[1].Player != "Bob" || cfg.PlayerNotes[1].Text != "Barcelona diehard" {
+		t.Errorf("note 1 = %+v", cfg.PlayerNotes[1])
+	}
+
+	// Admin view resolves names in stored order.
+	v, err := svc.CommentContextView(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.PlayerNotes) != 2 || v.PlayerNotes[0].Player != "Alice" || v.PlayerNotes[1].Player != "Bob" {
+		t.Errorf("view player notes = %+v", v.PlayerNotes)
+	}
+
+	// Edit replaces the text in place; player unchanged.
+	if err := svc.EditPlayerNote(admin, 0, "bets at the last second"); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.CommentConfig().PlayerNotes[0]; got.Player != "Alice" || got.Text != "bets at the last second" {
+		t.Errorf("edited note = %+v", got)
+	}
+	if err := svc.EditPlayerNote(admin, 9, "x"); err == nil {
+		t.Error("out-of-range player-note edit should fail")
+	}
+
+	// Delete by index removes one.
+	if err := svc.DeletePlayerNote(admin, 0); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := svc.CommentConfig(); len(cfg.PlayerNotes) != 1 || cfg.PlayerNotes[0].Player != "Bob" {
+		t.Errorf("after delete = %+v", cfg.PlayerNotes)
+	}
 }
 
 type fakeCommentSource struct{ m map[int64]ai.Comment }

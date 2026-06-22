@@ -214,6 +214,10 @@ type Model struct {
 	ctxRivalA     int64
 	ctxRivalAName string
 	ctxRivalB     int64
+	// add-note target: the player a new house note is about (0 ⇒ General/pool-wide).
+	// Set in the note picker, drives AddPlayerNote vs AddCommentNote at save.
+	ctxNotePlayer     int64
+	ctxNotePlayerName string
 	// detail/edit of an existing context entry (enter on a row → read full; e → edit).
 	ctxDetailKind  int    // ctxKindRivalry | ctxKindNote | ctxKindDerived
 	ctxDetailIdx   int    // index within that kind's list
