@@ -55,14 +55,14 @@ func (p *AnthropicCommenter) UpdateRivalries(ctx context.Context, history []Roun
 func rivalryPrompt(history []RoundStanding, derivedNotes string, existing []Rivalry, cfg CommentConfig) string {
 	var b strings.Builder
 	b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool. ")
-	b.WriteString("From the standings, decide which player rivalries are worth tracking RIGHT NOW — feuds the pool would recognize. ")
+	b.WriteString("From the standings AND the match-by-match story below, decide which player rivalries are worth tracking RIGHT NOW — feuds the pool would recognize. ")
 	b.WriteString("Return the FULL desired set: keep ones that still hold, drop ones that no longer do, add genuinely new ones.\n\n")
 	b.WriteString("RULES:\n")
 	b.WriteString("1. Ground every rivalry ONLY in the data below. Never invent a player, a position, or a result. Use exact display names from the data.\n")
-	b.WriteString("2. A rivalry needs a real basis: two players sharing or trading the lead, neck-and-neck on points, one hunting the other, a tight battle for a place. A runaway leader with no challenger is NOT a rivalry.\n")
+	b.WriteString("2. A rivalry needs a real basis in the data: two players sharing or trading the lead, neck-and-neck on points, one hunting the other, a tight battle for a place — OR a head-to-head STORY in the notes below (they keep calling the same matches differently, both nailed or both whiffed the same upset, one overtook the other on a single result). A runaway leader with no challenger is NOT a rivalry.\n")
 	b.WriteString(fmt.Sprintf("3. Return AT MOST %d rivalries — only the most compelling. Quality over quantity; an empty list is fine if nothing stands out.\n", maxAutoRivalries))
 	b.WriteString("4. Be STABLE: if a current rivalry below still holds, keep it (you may refresh its note). Only change the set when the standings clearly shifted — don't churn every matchday.\n")
-	b.WriteString("5. Each note is one short, factual phrase about why they're rivals (e.g. \"tied at the top since matchday 3\"). No emojis, no markdown, no line breaks, no second-person address.\n\n")
+	b.WriteString("5. Make each note SPECIFIC, not just a point gap. Reach into the STORY SO FAR for real color — a shared called shot, contrasting prediction styles, a result that swung the order between them, who nailed what — so it reads like a feud with history, not a stat line (e.g. \"both backed the Brazil upset, but Maria pulled ahead when Sofia whiffed the final\" beats \"2 points apart\"). Stay grounded: never invent a game, pick, or result not in the data below. One short factual phrase or sentence, third person (name the players, no \"you\"). No emojis, no markdown, no line breaks.\n\n")
 	b.WriteString(untrustedDataNote)
 	if cur, _ := json.Marshal(existing); len(existing) > 0 {
 		b.WriteString("YOUR CURRENT RIVALRIES (JSON — keep the ones that still hold):\n")
