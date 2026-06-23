@@ -24,6 +24,15 @@ const leaderCommentCol = 38
 // readable block instead of one very long line on a wide terminal.
 const leaderCommentMaxWidth = 54
 
+// livePickGutter is the display width of a standings row's rank+name+pts portion
+// (incl. the 2-cell live marker), i.e. the column where the inline pick columns
+// begin. Keep in sync with the row layout in viewLeaderboard.
+const livePickGutter = 36
+
+// livePickCol is the width of one inline pick column — wide enough for a matchup
+// code header like "NOR-SEN" and any "12-10"-style pick.
+const livePickCol = 8
+
 // leaderTickMsg drives the live leaderboard's auto-refresh. epoch ties a tick to
 // the visit that scheduled it, so a stale loop from a prior visit is ignored.
 type leaderTickMsg struct{ epoch int }
@@ -398,20 +407,22 @@ func (m Model) viewLeaderboard() string {
 	}
 	out += "\n\n"
 
-	// When picks are revealed for a SINGLE in-play match, fold each player's pick
-	// into their own leaderboard row (cleaner than a separate stacked block of the
-	// same names). With 2+ live matches one inline column would be ambiguous, so we
-	// keep the per-match block in that case.
-	pickByUser := map[int64]string{}
-	showInlinePicks := m.revealLivePicks && len(m.liveMatches) == 1
+	// When picks are revealed, fold each player's pick into their own leaderboard row
+	// (one column per in-play match, in the same order as the live-score header) rather
+	// than stacking a separate per-match block of the same names — which, with 2+ live
+	// matches, overflowed the terminal and pushed the standings off the top. A column
+	// header above the standings maps each column to its match (see livePickHeader).
+	// inlinePicks[userID][matchID] holds the rendered pick; absent ⇒ "—".
+	showInlinePicks := m.revealLivePicks && len(m.liveMatches) > 0
+	inlinePicks := map[int64]map[int64]string{}
 	if showInlinePicks {
 		for _, mp := range m.livePicks {
-			if mp.Match.ID != m.liveMatches[0].ID {
-				continue
-			}
 			for _, pk := range mp.Picks {
 				b := pk.Bet
-				pickByUser[pk.User.ID] = fmtPick(&b)
+				if inlinePicks[pk.User.ID] == nil {
+					inlinePicks[pk.User.ID] = map[int64]string{}
+				}
+				inlinePicks[pk.User.ID][mp.Match.ID] = fmtPick(&b)
 			}
 		}
 	}
@@ -419,14 +430,11 @@ func (m Model) viewLeaderboard() string {
 	// In-play header: the matches currently feeding provisional points. With the
 	// pick reveal on ('p'), each match expands to show every player's pick.
 	if len(m.liveMatches) > 0 {
-		// Live scores first, then each match's picks (only when NOT folding picks into
-		// the standings rows below, i.e. multiple live matches).
+		// Live scores first; revealed picks are folded into the standings rows below
+		// (inline columns), so there's no separate per-match pick block here.
 		for _, mt := range m.liveMatches {
 			out += "  " + liveScore(mt) +
 				labelStyle.Render(fmt.Sprintf("  %s v %s", mt.TeamA, mt.TeamB)) + "\n"
-			if m.revealLivePicks && !showInlinePicks {
-				out += m.liveMatchPicks(mt.ID)
-			}
 		}
 		// BETanIA's running take on the in-play slate, BELOW the scores — it reads as a
 		// reaction to what's on the board. Always shown when present: this is general
@@ -451,6 +459,11 @@ func (m Model) viewLeaderboard() string {
 	if len(m.standings) == 0 {
 		out += helpStyle.Render("No players yet.\n")
 	}
+	// Column header for the inline pick columns, aligned over the picks (which start
+	// past the fixed rank+name+pts gutter) and labelling each with its matchup code.
+	if showInlinePicks {
+		out += labelStyle.Render(m.livePickHeader()) + "\n"
+	}
 	anyLive := false
 	for i, s := range m.standings {
 		rank := fmt.Sprintf("%2d.", i+1)
@@ -473,13 +486,15 @@ func (m Model) viewLeaderboard() string {
 		default:
 			line = labelStyle.Render(line)
 		}
-		// Revealed pick for the single live match, on the player's own row.
+		// Revealed picks, one column per in-play match (header order), on the player's
+		// own row. A player with no bet for a given match shows a dim "—".
 		if showInlinePicks {
-			pick, ok := pickByUser[s.User.ID]
-			if !ok {
-				line += "  " + helpStyle.Render(fmt.Sprintf("%-4s", "—"))
-			} else {
-				line += "  " + labelStyle.Render(fmt.Sprintf("%-4s", pick))
+			for _, lm := range m.liveMatches {
+				if pick, ok := inlinePicks[s.User.ID][lm.ID]; ok {
+					line += "  " + labelStyle.Render(fmt.Sprintf("%-*s", livePickCol, pick))
+				} else {
+					line += "  " + helpStyle.Render(fmt.Sprintf("%-*s", livePickCol, "—"))
+				}
 			}
 		}
 		// Points gained from live matches + rank shift they caused, rendered as
@@ -604,29 +619,23 @@ func (m Model) cycleName(id int64) string {
 	return ""
 }
 
-// liveMatchPicks renders every player's revealed pick for one in-play match
-// (pick + provisional points), indented under its live score line.
-func (m Model) liveMatchPicks(matchID int64) string {
-	for i := range m.livePicks {
-		if m.livePicks[i].Match.ID != matchID {
-			continue
-		}
-		picks := m.livePicks[i].Picks
-		if len(picks) == 0 {
-			break
-		}
-		out := ""
-		for _, p := range picks {
-			pick := p.Bet // address a local copy for fmtPick
-			gain := helpStyle.Render(fmt.Sprintf("+%d", p.LivePoints))
-			if p.LivePoints > 0 {
-				gain = liveStyle.Render(fmt.Sprintf("+%d", p.LivePoints))
-			}
-			out += "      " +
-				labelStyle.Render(fmt.Sprintf("%-20s %-4s ", p.User.DisplayName, fmtPick(&pick))) +
-				gain + "\n"
-		}
-		return out
+// livePickHeader builds the column-header row that sits above the standings when
+// picks are revealed: a blank gutter, then one matchup code per in-play match
+// (header order), each aligned over its pick column.
+func (m Model) livePickHeader() string {
+	hdr := strings.Repeat(" ", livePickGutter)
+	for _, lm := range m.liveMatches {
+		hdr += "  " + fmt.Sprintf("%-*s", livePickCol, teamCode(lm.TeamA)+"-"+teamCode(lm.TeamB))
 	}
-	return helpStyle.Render("      (no picks yet)") + "\n"
+	return hdr
+}
+
+// teamCode is a short uppercase code for a team name, used as a compact column
+// label (e.g. "Norway" → "NOR"). Names shorter than 3 letters are used whole.
+func teamCode(team string) string {
+	r := []rune(team)
+	if len(r) > 3 {
+		r = r[:3]
+	}
+	return strings.ToUpper(string(r))
 }
