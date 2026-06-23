@@ -28,6 +28,11 @@ type KnockoutPicture struct {
 	Groups     []standings.Group
 	ThirdPlace []standings.ThirdPlace
 	Bracket    []BracketRound
+	// Projected is the Round-of-32 bracket inferred from the current group
+	// tables — "if the group stage ended now, who plays whom". It fills the R32
+	// slots from current standings; the UI shows it only until real knockout
+	// matchups are entered. A projection, not necessarily FIFA's official table.
+	Projected []standings.ProjMatch
 }
 
 // BracketRound is one knockout phase and the matches entered for it (live scores
@@ -65,6 +70,7 @@ func (s *Service) KnockoutPicture() (KnockoutPicture, error) {
 		Groups:     groups,
 		ThirdPlace: thirds,
 		Bracket:    buildBracket(matches, snap),
+		Projected:  standings.ProjectR32(groups, thirds),
 	}, nil
 }
 

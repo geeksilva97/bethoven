@@ -84,7 +84,7 @@ func (m Model) viewKnockoutGroups() string {
 	return out
 }
 
-const koBlockWidth = 26 // group-table column width incl. padding
+const koBlockWidth = 30 // group-table column width incl. padding (room for the qualification tag)
 
 // renderGroupBlock renders one group's table as a fixed-width block.
 func renderGroupBlock(g standings.Group) string {
@@ -150,11 +150,21 @@ func renderThirdRace(thirds []standings.ThirdPlace) string {
 	return b.String()
 }
 
-// viewKnockoutBracket renders the knockout ladder, one round per section, with
-// "not drawn yet" for rounds the admin has not added matches to.
+// viewKnockoutBracket renders the knockout ladder, one round per section. For the
+// Round of 32, when the admin has not entered real matchups yet, it shows the
+// projected bracket built from the current group tables; deeper rounds show
+// "not drawn yet" until they are drawn.
 func (m Model) viewKnockoutBracket() string {
 	out := titleStyle.Render("Knockouts — bracket") + "\n\n"
 	for _, rd := range m.ko.Bracket {
+		if len(rd.Matches) == 0 && rd.Phase == models.PhaseRound32 && len(m.ko.Projected) > 0 {
+			out += labelStyle.Render(rd.Label) + helpStyle.Render("  — projected, if the group stage ended now") + "\n"
+			for _, pm := range m.ko.Projected {
+				out += "  " + koProjLine(pm) + "\n"
+			}
+			out += "\n"
+			continue
+		}
 		out += labelStyle.Render(rd.Label) + "\n"
 		if len(rd.Matches) == 0 {
 			out += helpStyle.Render("  (not drawn yet)") + "\n\n"
@@ -166,6 +176,21 @@ func (m Model) viewKnockoutBracket() string {
 		out += "\n"
 	}
 	return out
+}
+
+// koProjLine renders one projected R32 tie: resolved team names where known,
+// falling back to the slot label, with the slot descriptors dimmed alongside.
+func koProjLine(pm standings.ProjMatch) string {
+	home, away := pm.HomeTeam, pm.AwayTeam
+	if home == "" {
+		home = pm.HomeDesc
+	}
+	if away == "" {
+		away = pm.AwayDesc
+	}
+	return fmt.Sprintf("%-16s %s %-16s %s",
+		truncate(home, 16), labelStyle.Render("v"), truncate(away, 16),
+		helpStyle.Render("("+pm.HomeDesc+" v "+pm.AwayDesc+")"))
 }
 
 // koMatchLine renders one bracket match: the final score if played, the live
