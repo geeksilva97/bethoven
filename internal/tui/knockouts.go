@@ -77,7 +77,9 @@ func (m Model) viewKnockouts() string {
 		help += " · ↑/↓: scroll"
 	}
 	help += " · esc: back · q: quit"
-	return body + "\n" + statusLine(m) + helpStyle.Render(help)
+	body += "\n" + statusLine(m) + helpStyle.Render(help)
+	// Breathing room: a top blank line and a left margin on the whole screen.
+	return lipgloss.NewStyle().Margin(1, 0, 0, 2).Render(body)
 }
 
 // viewKnockoutGroups renders every group's table plus the cross-group race for
@@ -91,7 +93,10 @@ func (m Model) viewKnockoutGroups() string {
 	for _, g := range m.ko.Groups {
 		blocks = append(blocks, renderGroupBlock(g))
 	}
-	out += arrangeColumns(blocks, m.width, koBlockWidth) + "\n"
+	out += arrangeColumns(blocks, m.width, koBlockWidth)
+	out += " " + okStyle.Render("green = advancing") + helpStyle.Render("   ") +
+		liveStyle.Render("cyan = 3rd place") + helpStyle.Render("   ") +
+		helpStyle.Render("dim = eliminated") + "\n\n"
 
 	out += titleStyle.Render("Best 3rd-placed (top 8 advance)") + "\n"
 	out += renderThirdRace(m.ko.ThirdPlace)
@@ -110,32 +115,25 @@ func renderGroupBlock(g standings.Group) string {
 	return b.String()
 }
 
-// groupRow renders one team line: rank, name, played, signed GD, points, and a
-// qualification marker (✓ top two, · third place, ? unresolved tie).
+// groupRow renders one team line: rank, name, played, signed GD, points. Status
+// is conveyed by colour only — green = advancing (top two), cyan = third place
+// (in the best-thirds race), dim = eliminated.
 func groupRow(r standings.TeamRow) string {
 	name := truncate(r.Team, 13)
 	line := fmt.Sprintf("%d %-13s %d %+3d %2d", r.Rank, name, r.Played, r.GD(), r.Pts)
-	tag := "  "
 	switch {
 	case r.Rank <= 2:
-		tag = okStyle.Render(" ✓")
+		return okStyle.Render(line)
 	case r.Rank == 3:
-		tag = liveStyle.Render(" ·")
+		return liveStyle.Render(line)
+	default:
+		return helpStyle.Render(line)
 	}
-	if r.Tied {
-		tag += errStyle.Render("?")
-	}
-	style := labelStyle
-	if r.Rank <= 2 {
-		style = okStyle
-	} else if r.Rank > 3 {
-		style = helpStyle
-	}
-	return style.Render(line) + tag
 }
 
 // renderThirdRace renders the third-placed teams ranked across groups, with the
-// qualification cut-line drawn after the eighth.
+// qualification cut-line drawn after the eighth. Colour-only status: green =
+// advancing, gold = tied (pending official tiebreak), dim = below the cut.
 func renderThirdRace(thirds []standings.ThirdPlace) string {
 	if len(thirds) == 0 {
 		return helpStyle.Render("  (no third-placed teams yet)") + "\n"
@@ -145,22 +143,19 @@ func renderThirdRace(thirds []standings.ThirdPlace) string {
 		name := truncate(tp.Team, 16)
 		line := fmt.Sprintf(" %2d %-16s (%s) %d  %+3d  %2d", tp.Rank, name, groupLetter(tp.Group), tp.Played, tp.GD(), tp.Pts)
 		style := helpStyle
-		mark := ""
 		if tp.Qualifies {
 			style = okStyle
-			mark = okStyle.Render(" ✓")
 		}
-		if tp.Tied {
-			mark += errStyle.Render(" ?")
+		if tp.Tied { // gold overrides: the spot is provisional
+			style = titleStyle
 		}
-		b.WriteString(style.Render(line) + mark + "\n")
+		b.WriteString(style.Render(line) + "\n")
 		if i+1 == standings.QualifyingThirds && i+1 < len(thirds) {
 			b.WriteString(helpStyle.Render(" ── qualification cut ──────────────") + "\n")
 		}
 	}
-	if anyTied(thirds) {
-		b.WriteString(helpStyle.Render(" ? = tied — pending official tiebreak (fair play, FIFA ranking)") + "\n")
-	}
+	b.WriteString("\n " + okStyle.Render("green = advancing") + helpStyle.Render("   ") +
+		titleStyle.Render("gold = tied, pending official tiebreak") + "\n")
 	return b.String()
 }
 
@@ -195,7 +190,7 @@ func (m Model) viewBracketTree() string {
 	out := titleStyle.Render("Knockouts — bracket") +
 		helpStyle.Render("  projected, if the group stage ended now") + "\n\n"
 
-	cap := m.height - 7
+	cap := m.height - 8 // title, top margin, section header, markers, status, help
 	if cap < 6 {
 		cap = 6
 	}
@@ -387,11 +382,3 @@ func groupLetter(label string) string {
 	return label
 }
 
-func anyTied(thirds []standings.ThirdPlace) bool {
-	for _, tp := range thirds {
-		if tp.Tied {
-			return true
-		}
-	}
-	return false
-}
