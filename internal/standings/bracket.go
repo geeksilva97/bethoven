@@ -53,6 +53,31 @@ var r32Schedule = []r32Def{
 	{88, slotR("D"), slotR("G")},
 }
 
+// bracketLeafOrder lists the R32 match numbers top-to-bottom in bracket position,
+// derived from the fixed 2026 feed structure (R16 89–96 → QF 97–100 → SF 101–102
+// → Final): 89=W74/W77, 90=W73/W75, 93=W83/W84, 94=W81/W82 feed the top half
+// (SF 101); 91=W76/W78, 92=W79/W80, 95=W86/W88, 96=W85/W87 feed the bottom (SF
+// 102). Because the tree is balanced, ordering the leaves this way lets a renderer
+// merge adjacent pairs at every round without any further mapping.
+var bracketLeafOrder = []int{74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87}
+
+// BracketLeaves returns the 16 projected R32 ties reordered top-to-bottom into
+// their bracket positions, so a renderer can lay out the full R32→Final tree by
+// merging neighbours. Any match missing from the projection is skipped.
+func BracketLeaves(r32 []ProjMatch) []ProjMatch {
+	byNum := make(map[int]ProjMatch, len(r32))
+	for _, pm := range r32 {
+		byNum[pm.Match] = pm
+	}
+	out := make([]ProjMatch, 0, len(bracketLeafOrder))
+	for _, n := range bracketLeafOrder {
+		if pm, ok := byNum[n]; ok {
+			out = append(out, pm)
+		}
+	}
+	return out
+}
+
 // ProjMatch is one projected Round-of-32 tie. A Team is "" when its slot cannot
 // be filled yet (e.g. a third-slot left unmatched by incomplete data); Desc
 // always carries the slot label ("Winner A", "Runner-up B", "3rd C").

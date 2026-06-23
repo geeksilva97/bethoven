@@ -162,8 +162,9 @@ type Model struct {
 
 	// knockouts screen: live group tables + third-place race + bracket ladder.
 	// koView toggles between the qualification view and the bracket (tab/←/→).
-	ko     service.KnockoutPicture
-	koView int
+	ko       service.KnockoutPicture
+	koView   int
+	koScroll int // vertical scroll offset for the bracket tree
 
 	// active scoring mode, cached for the settings selector and the player-facing
 	// "How scoring works" screen.
