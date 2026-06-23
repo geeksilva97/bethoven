@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"bethoven/internal/models"
 	"bethoven/internal/scoring"
 )
 
@@ -138,4 +139,97 @@ func TestScarcityQuorum(t *testing.T) {
 	if got := totalFor(board, alice.ID); got != 4 {
 		t.Errorf("Scarcity (below quorum) Alice total = %d, want 4 (Proximity base, no bonus)", got)
 	}
+}
+
+// TestRoundWeightsDefaultAndGate checks the default scheme and admin gating.
+func TestRoundWeightsDefaultAndGate(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	player, _ := svc.Register("SHA256:p", testInvite, "Player")
+	admin, _ := svc.Register(adminFP, "", "Boss")
+
+	w, err := svc.RoundWeights()
+	if err != nil {
+		t.Fatalf("RoundWeights: %v", err)
+	}
+	if w != scoring.WeightFlat {
+		t.Errorf("default scheme = %v, want Flat", w)
+	}
+	if err := svc.SetRoundWeights(player, scoring.WeightDoubling); !errors.Is(err, ErrForbidden) {
+		t.Errorf("player SetRoundWeights = %v, want ErrForbidden", err)
+	}
+	if err := svc.SetRoundWeights(admin, scoring.WeightDoubling); err != nil {
+		t.Fatalf("admin SetRoundWeights: %v", err)
+	}
+	if w, _ := svc.RoundWeights(); w != scoring.WeightDoubling {
+		t.Errorf("after set, scheme = %v, want Doubling", w)
+	}
+}
+
+// TestRoundWeightsScaleKnockouts verifies that, under the doubling scheme, a
+// knockout result scores base×phaseWeight while a group result stays at base —
+// and that the default (flat) leaves group and knockout identical.
+func TestRoundWeightsScaleKnockouts(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	admin, _ := svc.Register(adminFP, "", "Boss")
+
+	// A group match and a final, both kicking off later.
+	kickoff := base.Add(time.Hour)
+	groupID := addMatch(t, store, svc.tournamentID, kickoff)
+	finalID, err := store.CreateMatch(models.Match{
+		TournamentID: svc.tournamentID, TeamA: "A", TeamB: "B",
+		Phase: models.PhaseFinal, StartsAt: kickoff,
+	})
+	if err != nil {
+		t.Fatalf("CreateMatch final: %v", err)
+	}
+
+	// Alice nails both exact scores (Classic exact = 3 each).
+	if err := svc.PlaceBet(alice.ID, groupID, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.PlaceBet(alice.ID, finalID, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	fc.T = kickoff.Add(2 * time.Hour)
+	if err := svc.EnterResult(admin, groupID, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.EnterResult(admin, finalID, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Flat (default): both exacts worth 3 → total 6.
+	if board, _ := svc.Leaderboard(); totalFor(board, alice.ID) != 6 {
+		t.Errorf("flat total = %d, want 6 (3 group + 3 final)",
+			totalFor(boardOf(svc), alice.ID))
+	}
+
+	// Doubling: group exact stays 3, final exact ×16 = 48 → total 51.
+	if err := svc.SetRoundWeights(admin, scoring.WeightDoubling); err != nil {
+		t.Fatal(err)
+	}
+	if got := totalFor(boardOf(svc), alice.ID); got != 51 {
+		t.Errorf("doubling total = %d, want 51 (3 group + 48 final)", got)
+	}
+
+	// The final's per-match points reflect the weight too (not just the total).
+	rows, _, err := svc.MyResults(alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.Match.ID == finalID && r.Points != 48 {
+			t.Errorf("final row points = %d, want 48", r.Points)
+		}
+		if r.Match.ID == groupID && r.Points != 3 {
+			t.Errorf("group row points = %d, want 3", r.Points)
+		}
+	}
+}
+
+// boardOf is a tiny helper to fetch the leaderboard inline in assertions.
+func boardOf(svc *Service) []Standing {
+	board, _ := svc.Leaderboard()
+	return board
 }

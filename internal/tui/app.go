@@ -163,6 +163,10 @@ type Model struct {
 	// "How scoring works" screen.
 	scoringMode scoring.Mode
 
+	// active round-weight scheme, cached alongside scoringMode for the settings
+	// selector and the "How scoring works" ladder.
+	roundWeights scoring.WeightScheme
+
 	// admin: analytics panel. anDisabled is set when the subsystem is off, so the
 	// screen can explain that instead of showing empty stats.
 	anDisabled bool

@@ -7,8 +7,8 @@ import (
 )
 
 // settingsRows is the number of selectable rows on the admin settings screen:
-// 0 = public bets, 1 = scoring mode.
-const settingsRows = 2
+// 0 = public bets, 1 = scoring mode, 2 = round weights.
+const settingsRows = 3
 
 // nextMode cycles Classic -> Proximity -> Scarcity -> Classic.
 func nextMode(m scoring.Mode) scoring.Mode {
@@ -19,6 +19,18 @@ func nextMode(m scoring.Mode) scoring.Mode {
 		return scoring.ModeScarcity
 	default:
 		return scoring.ModeClassic
+	}
+}
+
+// nextWeightScheme cycles Flat -> Doubling -> Linear -> Flat.
+func nextWeightScheme(w scoring.WeightScheme) scoring.WeightScheme {
+	switch w {
+	case scoring.WeightFlat:
+		return scoring.WeightDoubling
+	case scoring.WeightDoubling:
+		return scoring.WeightLinear
+	default:
+		return scoring.WeightFlat
 	}
 }
 
@@ -48,6 +60,10 @@ func (m Model) viewSettings() string {
 	out += settingsRow(m.settingsCursor == 1, "Scoring mode", okStyle.Render(m.scoringMode.Label()))
 	out += helpStyle.Render("    "+scoringModeHelp(m.scoringMode)) + "\n"
 
+	// Row 2: round weights.
+	out += settingsRow(m.settingsCursor == 2, "Round weights", okStyle.Render(m.roundWeights.Label()))
+	out += helpStyle.Render("    "+roundWeightsHelp(m.roundWeights)) + "\n"
+
 	out += "\n" + statusLine(m) +
 		helpStyle.Render("↑/↓: move · enter/space: toggle/cycle · b/esc: back · q: quit")
 	return out
@@ -76,6 +92,18 @@ func scoringModeHelp(m scoring.Mode) string {
 	}
 }
 
+// roundWeightsHelp is the one-liner shown under the round-weights row.
+func roundWeightsHelp(w scoring.WeightScheme) string {
+	switch w {
+	case scoring.WeightDoubling:
+		return "knockouts worth more: R16 ×2 · QF ×4 · SF ×8 · Final ×16"
+	case scoring.WeightLinear:
+		return "knockouts worth more: R16 ×2 · QF ×3 · SF ×4 · Final ×5"
+	default:
+		return "every match worth the same, whatever the round"
+	}
+}
+
 // updateSettings handles the settings screen: toggle the selected option.
 func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
@@ -101,6 +129,8 @@ func (m Model) updateSettings(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.togglePublicBets(), nil
 		case 1:
 			return m.cycleScoringMode(), nil
+		case 2:
+			return m.cycleRoundWeights(), nil
 		}
 	}
 	return m, nil
@@ -130,5 +160,17 @@ func (m Model) cycleScoringMode() Model {
 	}
 	m.scoringMode, _ = m.svc.ScoringMode()
 	m.setStatus("Scoring mode: "+m.scoringMode.Label(), false)
+	return m
+}
+
+// cycleRoundWeights advances the round-weight scheme and refreshes the cached value.
+func (m Model) cycleRoundWeights() Model {
+	next := nextWeightScheme(m.roundWeights)
+	if err := m.svc.SetRoundWeights(m.user, next); err != nil {
+		m.setStatus(err.Error(), true)
+		return m
+	}
+	m.roundWeights, _ = m.svc.RoundWeights()
+	m.setStatus("Round weights: "+m.roundWeights.Label(), false)
 	return m
 }

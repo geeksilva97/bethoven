@@ -169,10 +169,12 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 	case screenSettings:
 		m.publicBets, _ = m.svc.PublicBetsEnabled()
 		m.scoringMode, _ = m.svc.ScoringMode()
+		m.roundWeights, _ = m.svc.RoundWeights()
 		m.settingsCursor = 0
 		m.screen = screenSettings
 	case screenScoringRules:
 		m.scoringMode, _ = m.svc.ScoringMode()
+		m.roundWeights, _ = m.svc.RoundWeights()
 		m.screen = screenScoringRules
 	case screenAnalytics:
 		m.anDisabled = false

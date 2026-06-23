@@ -52,6 +52,21 @@ func (bd *Breakdown) add(label string, points int, note string) {
 	bd.Lines = append(bd.Lines, BreakdownLine{Label: label, Points: points, Note: note})
 }
 
+// ApplyWeight scales a breakdown by a whole-number round multiplier (see
+// WeightScheme). When the multiplier is >1 and the base scored anything, it
+// appends a line carrying the added points and bumps Total, so the invariant
+// Total == sum(Lines) holds and the explanation still matches the weighted
+// Score. A ×1 multiplier or a zero base is a no-op.
+func (bd Breakdown) ApplyWeight(weight int, phaseLabel string) Breakdown {
+	if weight <= 1 || bd.Total == 0 {
+		return bd
+	}
+	added := bd.Total*weight - bd.Total
+	bd.add(fmt.Sprintf("%s ×%d", phaseLabel, weight), added, "knockout round multiplier")
+	bd.Total *= weight
+	return bd
+}
+
 func (bd *Breakdown) explainClassic(b models.Bet, m models.Match) {
 	sa, sb := *m.ScoreA, *m.ScoreB
 	switch {

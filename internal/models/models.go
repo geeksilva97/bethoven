@@ -25,6 +25,25 @@ const (
 	PhaseFinal   Phase = "final"
 )
 
+// Label is the human-facing name of a tournament phase, used wherever a phase is
+// shown to players (the scoring-rules ladder, the round-weight breakdown line).
+func (p Phase) Label() string {
+	switch p {
+	case PhaseGroup:
+		return "Group stage"
+	case PhaseRound16:
+		return "Round of 16"
+	case PhaseRound8:
+		return "Quarter-final"
+	case PhaseSemi:
+		return "Semi-final"
+	case PhaseFinal:
+		return "Final"
+	default:
+		return string(p)
+	}
+}
+
 // Tournament scopes a set of matches and bets (e.g. "World Cup 2026").
 type Tournament struct {
 	ID        int64

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"bethoven/internal/scoring"
@@ -55,8 +57,22 @@ func (m Model) viewScoringRules() string {
 		out += "\n" + helpStyle.Render("An exact score is worth 3 — there is no extra over/under bonus.") + "\n"
 	}
 
+	if m.roundWeights != scoring.WeightFlat {
+		out += "\n" + ruleLadder(m.roundWeights)
+	}
+
 	out += "\n" + helpStyle.Render("Knockouts use the 90-minute score (a 1-1 a.e.t. counts as a 1-1 draw).") + "\n"
 	out += "\n" + statusLine(m) + helpStyle.Render("any key: back · q: quit")
+	return out
+}
+
+// ruleLadder renders the active round-weight ladder: which phases multiply the
+// points above, so players see exactly how much more knockouts are worth.
+func ruleLadder(w scoring.WeightScheme) string {
+	out := helpStyle.Render("Round weights — later rounds multiply the points above:") + "\n"
+	for _, e := range w.Ladder() {
+		out += rule(e.Phase.Label(), fmt.Sprintf("×%d", e.Mult))
+	}
 	return out
 }
 
