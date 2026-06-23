@@ -19,6 +19,7 @@ type Phase string
 
 const (
 	PhaseGroup   Phase = "group"
+	PhaseRound32 Phase = "round_32"
 	PhaseRound16 Phase = "round_16"
 	PhaseRound8  Phase = "round_8"
 	PhaseSemi    Phase = "semi"
@@ -31,6 +32,8 @@ func (p Phase) Label() string {
 	switch p {
 	case PhaseGroup:
 		return "Group stage"
+	case PhaseRound32:
+		return "Round of 32"
 	case PhaseRound16:
 		return "Round of 16"
 	case PhaseRound8:

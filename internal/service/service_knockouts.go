@@ -1,0 +1,107 @@
+package service
+
+import (
+	"sort"
+
+	"bethoven/internal/live"
+	"bethoven/internal/models"
+	"bethoven/internal/standings"
+)
+
+// knockoutPhases is the bracket ladder in tournament order. The picture always
+// lists every round (even before it is drawn) so the screen can show the full
+// scaffold with "not drawn yet" placeholders.
+var knockoutPhases = []models.Phase{
+	models.PhaseRound32,
+	models.PhaseRound16,
+	models.PhaseRound8,
+	models.PhaseSemi,
+	models.PhaseFinal,
+}
+
+// KnockoutPicture is the read-only state for the player-facing "Knockouts"
+// screen: live-computed group tables, the cross-group race for the eight best
+// third-placed spots, and the knockout bracket as the admin has entered it. It
+// reveals no individual picks — purely tournament state — so it needs no admin
+// gate. Computed entirely from ListMatches; nothing here is persisted.
+type KnockoutPicture struct {
+	Groups     []standings.Group
+	ThirdPlace []standings.ThirdPlace
+	Bracket    []BracketRound
+}
+
+// BracketRound is one knockout phase and the matches entered for it (live scores
+// overlaid). Empty Matches ⇒ that round has not been drawn yet — knockout
+// matchups are added by the admin as they are decided, so the bracket is exactly
+// the set of entered matches; advancement is never inferred (a level 90' result
+// can't reveal a penalty-shootout winner, and only the 90' score is stored).
+type BracketRound struct {
+	Phase   models.Phase
+	Label   string
+	Matches []models.Match
+}
+
+// KnockoutPicture assembles the group tables, third-place race, and bracket. The
+// group computation folds in-play matches provisionally — exactly like the
+// leaderboard — by treating each live score as final on a synthetic copy, so the
+// table reflects the current state of play. Knockout matches are excluded from
+// the group math (the pure package ignores non-group phases) and surfaced only in
+// the bracket.
+func (s *Service) KnockoutPicture() (KnockoutPicture, error) {
+	matches, err := s.store.ListMatches(s.tournamentID)
+	if err != nil {
+		return KnockoutPicture{}, err
+	}
+	snap := s.liveSnapshot()
+
+	groupInput := make([]models.Match, len(matches))
+	for i, m := range matches {
+		groupInput[i] = liveFinal(m, snap)
+	}
+	groups := standings.GroupStandings(groupInput)
+	thirds := standings.ThirdPlaceRace(groups)
+
+	return KnockoutPicture{
+		Groups:     groups,
+		ThirdPlace: thirds,
+		Bracket:    buildBracket(matches, snap),
+	}, nil
+}
+
+// liveFinal returns a copy of m with the in-play score baked in as the final
+// result, so the pure standings package (which reads only ScoreA/ScoreB +
+// Finished) scores it provisionally. Finished matches and matches with no live
+// entry are returned unchanged.
+func liveFinal(m models.Match, snap map[int64]live.Score) models.Match {
+	if m.Finished || snap == nil {
+		return m
+	}
+	ls, ok := snap[m.ID]
+	if !ok || ls.State != live.StateIn {
+		return m
+	}
+	a, b := ls.A, ls.B
+	m.Finished, m.ScoreA, m.ScoreB = true, &a, &b
+	return m
+}
+
+// buildBracket groups the non-group matches by phase (in ladder order), each
+// round's matches sorted by kickoff, with live scores overlaid for display.
+func buildBracket(matches []models.Match, snap map[int64]live.Score) []BracketRound {
+	byPhase := map[models.Phase][]models.Match{}
+	for _, m := range matches {
+		if m.Phase == models.PhaseGroup {
+			continue
+		}
+		mm := m
+		overlayLive(&mm, snap)
+		byPhase[m.Phase] = append(byPhase[m.Phase], mm)
+	}
+	rounds := make([]BracketRound, 0, len(knockoutPhases))
+	for _, p := range knockoutPhases {
+		ms := byPhase[p]
+		sort.SliceStable(ms, func(i, j int) bool { return ms[i].StartsAt.Before(ms[j].StartsAt) })
+		rounds = append(rounds, BracketRound{Phase: p, Label: p.Label(), Matches: ms})
+	}
+	return rounds
+}

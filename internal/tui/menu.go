@@ -21,6 +21,7 @@ func (m *Model) buildMenu() {
 		{"Place / edit bets", screenFixtures},
 		{"My bets", screenMyResults},
 		{"Leaderboard", screenLeaderboard},
+		{"Knockouts", screenKnockouts},
 		{"Per-game ranking", screenMatchRank},
 		{"How scoring works", screenScoringRules},
 	}
@@ -123,6 +124,18 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cy)
 		}
 		return m, tea.Batch(cmds...)
+	case screenKnockouts:
+		pic, err := m.svc.KnockoutPicture()
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		// Adaptive default: lead with the qualification picture during the group
+		// stage, but open straight to the bracket once any knockout is drawn.
+		m.ko, m.koView, m.screen = pic, koViewGroups, screenKnockouts
+		if bracketDrawn(pic) {
+			m.koView = koViewBracket
+		}
 	case screenMatchRank:
 		// Reuse the fixtures list to pick which game to rank.
 		fx, err := m.svc.Fixtures()
@@ -224,6 +237,8 @@ func screenName(s screen) string {
 		return "my_results"
 	case screenLeaderboard:
 		return "leaderboard"
+	case screenKnockouts:
+		return "knockouts"
 	case screenMatchRank:
 		return "match_rank"
 	case screenScoringRules:

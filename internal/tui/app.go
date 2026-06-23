@@ -32,6 +32,7 @@ const (
 	screenAllBets
 	screenPublicBets // player-facing, kickoff-filtered; reuses the all-bets view
 	screenSettings
+	screenKnockouts       // read-only: group standings, third-place race + bracket
 	screenScoringRules    // read-only: explains the active scoring mode
 	screenAnalytics       // admin-only: usage stats panel
 	screenBETanIA         // admin-only: AI player status + activity
@@ -158,6 +159,11 @@ type Model struct {
 	// "All players' bets" menu entry).
 	settingsCursor int
 	publicBets     bool
+
+	// knockouts screen: live group tables + third-place race + bracket ladder.
+	// koView toggles between the qualification view and the bracket (tab/←/→).
+	ko     service.KnockoutPicture
+	koView int
 
 	// active scoring mode, cached for the settings selector and the player-facing
 	// "How scoring works" screen.
@@ -305,6 +311,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAllBets(msg)
 	case screenSettings:
 		return m.updateSettings(msg)
+	case screenKnockouts:
+		return m.updateKnockouts(msg)
 	case screenScoringRules:
 		return m.updateScoringRules(msg)
 	case screenAnalytics:
@@ -350,6 +358,8 @@ func (m Model) View() string {
 		return m.viewAllBets()
 	case screenSettings:
 		return m.viewSettings()
+	case screenKnockouts:
+		return m.viewKnockouts()
 	case screenScoringRules:
 		return m.viewScoringRules()
 	case screenAnalytics:
