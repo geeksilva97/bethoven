@@ -22,10 +22,12 @@ func nextMode(m scoring.Mode) scoring.Mode {
 	}
 }
 
-// nextWeightScheme cycles Flat -> Doubling -> Linear -> Flat.
+// nextWeightScheme cycles Flat -> Knockout -> Doubling -> Linear -> Flat.
 func nextWeightScheme(w scoring.WeightScheme) scoring.WeightScheme {
 	switch w {
 	case scoring.WeightFlat:
+		return scoring.WeightKnockout
+	case scoring.WeightKnockout:
 		return scoring.WeightDoubling
 	case scoring.WeightDoubling:
 		return scoring.WeightLinear
@@ -95,6 +97,8 @@ func scoringModeHelp(m scoring.Mode) string {
 // roundWeightsHelp is the one-liner shown under the round-weights row.
 func roundWeightsHelp(w scoring.WeightScheme) string {
 	switch w {
+	case scoring.WeightKnockout:
+		return "knockouts worth more: R16 ×2 · QF/SF ×3 · Final ×4"
 	case scoring.WeightDoubling:
 		return "knockouts worth more: R16 ×2 · QF ×4 · SF ×8 · Final ×16"
 	case scoring.WeightLinear:

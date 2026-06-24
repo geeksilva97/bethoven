@@ -14,20 +14,44 @@ type WeightScheme string
 
 const (
 	WeightFlat     WeightScheme = "flat"     // every phase ×1 (default)
-	WeightDoubling WeightScheme = "doubling" // ×1/2/4/8/16 by round
-	WeightLinear   WeightScheme = "linear"   // ×1/2/3/4/5 by round
+	WeightKnockout WeightScheme = "knockout" // ×1/2/2/3/3/4 — gentle knockout bump
+	WeightDoubling WeightScheme = "doubling" // ×2 per round (steep)
+	WeightLinear   WeightScheme = "linear"   // +1× per round
 )
 
-// phaseOrder lists phases earliest-to-latest. The multipliers below are keyed by
-// a phase's index here (group = 0 … final = 4); Ladder renders in this order.
+// phaseOrder lists phases earliest-to-latest; Ladder renders in this order and
+// every weight table below is keyed by these phases. The Round of 32 is
+// deliberately omitted: it is left unweighted (×1, like the group stage), so the
+// multipliers start at the Round of 16.
 var phaseOrder = []models.Phase{
 	models.PhaseGroup, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseFinal,
+}
+
+// weightTables holds the explicit per-phase multiplier for each non-flat scheme.
+// Explicit (not a formula) so each curve is readable at a glance. A phase missing
+// from a table — including the Round of 32 — scores ×1.
+var weightTables = map[WeightScheme]map[models.Phase]int{
+	// Gentle: knockouts matter more, but the final isn't worth a whole group stage.
+	WeightKnockout: {
+		models.PhaseGroup: 1, models.PhaseRound16: 2,
+		models.PhaseRound8: 3, models.PhaseSemi: 3, models.PhaseFinal: 4,
+	},
+	WeightDoubling: {
+		models.PhaseGroup: 1, models.PhaseRound16: 2,
+		models.PhaseRound8: 4, models.PhaseSemi: 8, models.PhaseFinal: 16,
+	},
+	WeightLinear: {
+		models.PhaseGroup: 1, models.PhaseRound16: 2,
+		models.PhaseRound8: 3, models.PhaseSemi: 4, models.PhaseFinal: 5,
+	},
 }
 
 // ParseWeightScheme maps a stored setting value to a WeightScheme. Unknown/empty
 // ⇒ WeightFlat.
 func ParseWeightScheme(s string) WeightScheme {
 	switch WeightScheme(s) {
+	case WeightKnockout:
+		return WeightKnockout
 	case WeightDoubling:
 		return WeightDoubling
 	case WeightLinear:
@@ -40,6 +64,8 @@ func ParseWeightScheme(s string) WeightScheme {
 // String is the value persisted in the settings table.
 func (w WeightScheme) String() string {
 	switch w {
+	case WeightKnockout:
+		return "knockout"
 	case WeightDoubling:
 		return "doubling"
 	case WeightLinear:
@@ -52,6 +78,8 @@ func (w WeightScheme) String() string {
 // Label is the human-facing name shown in the TUI.
 func (w WeightScheme) Label() string {
 	switch w {
+	case WeightKnockout:
+		return "Knockout (2–4× later rounds)"
 	case WeightDoubling:
 		return "Doubling (×2 per round)"
 	case WeightLinear:
@@ -65,18 +93,10 @@ func (w WeightScheme) Label() string {
 // scheme. The group stage and any unknown phase are always ×1; WeightFlat is ×1
 // for every phase.
 func (w WeightScheme) Weight(p models.Phase) int {
-	if w == WeightFlat {
-		return 1
-	}
-	idx := phaseIndex(p) // 0 group … 4 final, -1 unknown
-	if idx <= 0 {
-		return 1
-	}
-	switch w {
-	case WeightDoubling:
-		return 1 << idx // 1, 2, 4, 8, 16
-	case WeightLinear:
-		return idx + 1 // 1, 2, 3, 4, 5
+	if tbl, ok := weightTables[w]; ok {
+		if mult, ok := tbl[p]; ok {
+			return mult
+		}
 	}
 	return 1
 }
@@ -96,13 +116,4 @@ func (w WeightScheme) Ladder() []LadderEntry {
 		out = append(out, LadderEntry{Phase: p, Mult: w.Weight(p)})
 	}
 	return out
-}
-
-func phaseIndex(p models.Phase) int {
-	for i, q := range phaseOrder {
-		if q == p {
-			return i
-		}
-	}
-	return -1
 }

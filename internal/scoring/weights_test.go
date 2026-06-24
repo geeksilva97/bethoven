@@ -17,15 +17,25 @@ func TestWeightScheme(t *testing.T) {
 		{WeightFlat, models.PhaseRound16, 1},
 		{WeightFlat, models.PhaseFinal, 1},
 
-		// Doubling: 1, 2, 4, 8, 16.
+		// Knockout: group/R32 ×1, then R16 2, QF 3, SF 3, Final 4.
+		{WeightKnockout, models.PhaseGroup, 1},
+		{WeightKnockout, models.PhaseRound32, 1},
+		{WeightKnockout, models.PhaseRound16, 2},
+		{WeightKnockout, models.PhaseRound8, 3},
+		{WeightKnockout, models.PhaseSemi, 3},
+		{WeightKnockout, models.PhaseFinal, 4},
+
+		// Doubling: 1, 2, 4, 8, 16 (R32 unweighted, ×1).
 		{WeightDoubling, models.PhaseGroup, 1},
+		{WeightDoubling, models.PhaseRound32, 1},
 		{WeightDoubling, models.PhaseRound16, 2},
 		{WeightDoubling, models.PhaseRound8, 4},
 		{WeightDoubling, models.PhaseSemi, 8},
 		{WeightDoubling, models.PhaseFinal, 16},
 
-		// Linear: 1, 2, 3, 4, 5.
+		// Linear: 1, 2, 3, 4, 5 (R32 unweighted, ×1).
 		{WeightLinear, models.PhaseGroup, 1},
+		{WeightLinear, models.PhaseRound32, 1},
 		{WeightLinear, models.PhaseRound16, 2},
 		{WeightLinear, models.PhaseRound8, 3},
 		{WeightLinear, models.PhaseSemi, 4},
@@ -47,6 +57,7 @@ func TestParseWeightScheme(t *testing.T) {
 		in   string
 		want WeightScheme
 	}{
+		{"knockout", WeightKnockout},
 		{"doubling", WeightDoubling},
 		{"linear", WeightLinear},
 		{"flat", WeightFlat},
@@ -59,7 +70,7 @@ func TestParseWeightScheme(t *testing.T) {
 		}
 	}
 	// Round-trips through String().
-	for _, w := range []WeightScheme{WeightFlat, WeightDoubling, WeightLinear} {
+	for _, w := range []WeightScheme{WeightFlat, WeightKnockout, WeightDoubling, WeightLinear} {
 		if got := ParseWeightScheme(w.String()); got != w {
 			t.Errorf("round-trip %q -> %q", w, got)
 		}
