@@ -132,7 +132,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		}
 		// Adaptive default: lead with the qualification picture during the group
 		// stage, but open straight to the bracket once any knockout is drawn.
-		m.ko, m.koView, m.koScroll, m.screen = pic, koViewGroups, 0, screenKnockouts
+		m.ko, m.koView, m.koScroll, m.koTraceIdx, m.screen = pic, koViewGroups, 0, -1, screenKnockouts
 		if bracketDrawn(pic) {
 			m.koView = koViewBracket
 		}

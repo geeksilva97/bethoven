@@ -29,6 +29,12 @@ var (
 	// leaderboard points) so it's never mistaken for a settled value.
 	liveStyle = lipgloss.NewStyle().Foreground(cyan).Bold(true)
 
+	// bracketPathStyle lights the bracket-tree path of the team a player is
+	// tracing (leaf name + connector skeleton up to the Champion box). Gold bold
+	// is the existing "focus / you are here" accent and isn't used elsewhere in
+	// the tree, so it reads clearly against the grey label/skeleton.
+	bracketPathStyle = lipgloss.NewStyle().Foreground(gold).Bold(true)
+
 	// commentStyle renders BETanIA's leaderboard commentary. It deliberately sets
 	// NO foreground colour so it uses the terminal's default text colour — readable
 	// on both light and dark themes (any fixed grey is unreadable on one of them).

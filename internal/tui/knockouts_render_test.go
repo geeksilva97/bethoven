@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
 	"bethoven/internal/models"
 	"bethoven/internal/service"
 	"bethoven/internal/standings"
@@ -75,7 +78,7 @@ func TestViewBracketTree(t *testing.T) {
 	}
 	pic := service.KnockoutPicture{Projected: proj} // empty Bracket ⇒ not drawn ⇒ tree shown
 
-	m := Model{width: 120, height: 200, ko: pic, koView: koViewBracket}
+	m := Model{width: 120, height: 200, ko: pic, koView: koViewBracket, koTraceIdx: -1}
 	frame := m.viewKnockoutBracket()
 	for _, want := range []string{"ROUND OF 32", "Champion", "├", "┐", "Home74", "Away87"} {
 		if !strings.Contains(frame, want) {
@@ -84,8 +87,29 @@ func TestViewBracketTree(t *testing.T) {
 	}
 
 	// Header + 63 rows for a 16-leaf bracket.
-	if got := len(bracketLines(standings.BracketLeaves(proj))); got != 64 {
+	leaves := standings.BracketLeaves(proj)
+	if got := len(bracketLines(leaves, -1)); got != 64 {
 		t.Errorf("want 64 bracket lines, got %d", got)
+	}
+
+	// Tracing a team restyles the cells on its path: team 0's leaf row (line 1)
+	// changes vs the untraced render, while an off-path leaf row (team 31, the
+	// last leaf at line 63) is untouched. Force a colour profile so the styling
+	// is observable — tests otherwise run under lipgloss's Ascii (no-colour) profile.
+	defer lipgloss.SetColorProfile(lipgloss.ColorProfile())
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	plain := bracketLines(leaves, -1)
+	traced := bracketLines(leaves, 0)
+	if traced[1] == plain[1] {
+		t.Errorf("traced leaf row should differ from the untraced render")
+	}
+	if traced[63] != plain[63] {
+		t.Errorf("off-path leaf row should be unchanged when tracing another team")
+	}
+	// The path runs end-to-end: the Champion row (rowLevel(5,0)=31 → line 32) is
+	// lit for the traced team.
+	if traced[32] == plain[32] {
+		t.Errorf("traced path should reach the Champion row")
 	}
 }
 

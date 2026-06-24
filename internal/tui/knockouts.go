@@ -30,25 +30,35 @@ func bracketDrawn(pic service.KnockoutPicture) bool {
 	return false
 }
 
-// updateKnockouts handles the read-only Knockouts screen: tab/←/→ toggle between
-// the qualification picture and the bracket, esc returns to the menu, q quits.
+// updateKnockouts handles the read-only Knockouts screen: tab toggles between the
+// qualification picture and the bracket; in the projected bracket tree ←/→ cycle
+// the team whose path is lit; ↑/↓ scroll; esc/b return to the menu, q quits.
 func (m Model) updateKnockouts(msg tea.Msg) (tea.Model, tea.Cmd) {
 	k, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
 	}
+	// ←/→ trace a team only on the projected tree; elsewhere they toggle the view.
+	tracing := m.koView == koViewBracket && len(m.ko.Projected) > 0 && !bracketDrawn(m.ko)
 	switch k.String() {
 	case "q":
 		return m, tea.Quit
-	case "esc", "enter":
+	case "esc", "enter", "b":
 		return m.goMenu(), nil
-	case "tab", "left", "right", "h", "l":
-		if m.koView == koViewGroups {
-			m.koView = koViewBracket
-		} else {
-			m.koView = koViewGroups
+	case "tab":
+		m.koView, m.koScroll, m.koTraceIdx = toggleKoView(m.koView), 0, -1
+		return m, nil
+	case "right", "l":
+		if tracing {
+			return m.cycleTrace(1), nil
 		}
-		m.koScroll = 0
+		m.koView, m.koScroll, m.koTraceIdx = toggleKoView(m.koView), 0, -1
+		return m, nil
+	case "left", "h":
+		if tracing {
+			return m.cycleTrace(-1), nil
+		}
+		m.koView, m.koScroll, m.koTraceIdx = toggleKoView(m.koView), 0, -1
 		return m, nil
 	case "down", "j":
 		if m.koView == koViewBracket {
@@ -64,6 +74,42 @@ func (m Model) updateKnockouts(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// toggleKoView flips between the qualification and bracket views.
+func toggleKoView(v int) int {
+	if v == koViewGroups {
+		return koViewBracket
+	}
+	return koViewGroups
+}
+
+// cycleTrace steps the lit team by dir (±1), wrapping off → team0 → … → last →
+// off, and scrolls so the newly lit leaf stays on screen.
+func (m Model) cycleTrace(dir int) Model {
+	n := len(koTeamNames(standings.BracketLeaves(m.ko.Projected)))
+	if n == 0 {
+		return m
+	}
+	m.koTraceIdx += dir
+	if m.koTraceIdx >= n {
+		m.koTraceIdx = -1
+	} else if m.koTraceIdx < -1 {
+		m.koTraceIdx = n - 1
+	}
+	if m.koTraceIdx >= 0 {
+		cap := m.height - 9
+		if cap < 6 {
+			cap = 6
+		}
+		// The leaf sits at output line 1+2*idx (header offset); centre it. The
+		// view re-clamps koScroll to range, so an approximate target is fine.
+		m.koScroll = 1 + 2*m.koTraceIdx - cap/2
+		if m.koScroll < 0 {
+			m.koScroll = 0
+		}
+	}
+	return m
+}
+
 func (m Model) viewKnockouts() string {
 	var body string
 	switch m.koView {
@@ -74,9 +120,12 @@ func (m Model) viewKnockouts() string {
 	}
 	help := "tab: " + map[int]string{koViewGroups: "bracket", koViewBracket: "qualification"}[m.koView]
 	if m.koView == koViewBracket {
+		if len(m.ko.Projected) > 0 && !bracketDrawn(m.ko) {
+			help += " · ←/→: trace team"
+		}
 		help += " · ↑/↓: scroll"
 	}
-	help += " · esc: back · q: quit"
+	help += " · esc/b: back · q: quit"
 	body += "\n" + statusLine(m) + helpStyle.Render(help)
 	// Breathing room: a top blank line and a left margin on the whole screen.
 	return lipgloss.NewStyle().Margin(1, 0, 0, 2).Render(body)
@@ -185,12 +234,20 @@ func (m Model) viewKnockoutBracket() string {
 
 // viewBracketTree draws the projected R32→Final bracket as a scrollable tree.
 func (m Model) viewBracketTree() string {
-	lines := bracketLines(standings.BracketLeaves(m.ko.Projected))
+	leaves := standings.BracketLeaves(m.ko.Projected)
+	lines := bracketLines(leaves, m.koTraceIdx)
 
 	out := titleStyle.Render("Knockouts — bracket") +
-		helpStyle.Render("  projected, if the group stage ended now") + "\n\n"
+		helpStyle.Render("  projected, if the group stage ended now") + "\n"
+	names := koTeamNames(leaves)
+	if m.koTraceIdx >= 0 && m.koTraceIdx < len(names) {
+		out += bracketPathStyle.Render("Tracing: "+names[m.koTraceIdx]) +
+			helpStyle.Render("  ←/→ change · tab clears") + "\n\n"
+	} else {
+		out += helpStyle.Render("←/→ trace a team's path to the final") + "\n\n"
+	}
 
-	cap := m.height - 8 // title, top margin, section header, markers, status, help
+	cap := m.height - 9 // title, top margin, trace hint, section header, markers, status, help
 	if cap < 6 {
 		cap = 6
 	}
@@ -221,8 +278,10 @@ func (m Model) viewBracketTree() string {
 // bracketLines renders the 16-leaf balanced bracket (R32→Final) as fixed-width
 // lines. Only the Round-of-32 teams are known under a projection, so the inner
 // rounds are drawn as the connector skeleton — the path each team would follow.
-// leaves must be in bracket position order (see standings.BracketLeaves).
-func bracketLines(leaves []standings.ProjMatch) []string {
+// leaves must be in bracket position order (see standings.BracketLeaves). When
+// trace is in 0..31 the leaf at that team index and the connector cells carrying
+// its slot up to the Champion box are lit in the traced-path accent.
+func bracketLines(leaves []standings.ProjMatch, trace int) []string {
 	if len(leaves) != 16 {
 		return []string{helpStyle.Render("  bracket unavailable (incomplete projection)")}
 	}
@@ -235,8 +294,10 @@ func bracketLines(leaves []standings.ProjMatch) []string {
 	width := nameW + nMerges*segW + 12
 
 	grid := make([][]rune, height)
+	lit := make([][]bool, height)
 	for r := range grid {
 		grid[r] = make([]rune, width)
+		lit[r] = make([]bool, width)
 		for c := range grid[r] {
 			grid[r][c] = ' '
 		}
@@ -253,17 +314,7 @@ func bracketLines(leaves []standings.ProjMatch) []string {
 	xv := func(lvl int) int { return nameW + lvl*segW + 1 }
 
 	// Level-0 leaves: the two teams of each R32 tie.
-	teams := make([]string, 0, 32)
-	for _, lf := range leaves {
-		h, a := lf.HomeTeam, lf.AwayTeam
-		if h == "" {
-			h = lf.HomeDesc
-		}
-		if a == "" {
-			a = lf.AwayDesc
-		}
-		teams = append(teams, h, a)
-	}
+	teams := koTeamNames(leaves)
 	for i, name := range teams {
 		put(rowLevel(0, i), 0, truncate(name, nameW-1))
 	}
@@ -302,6 +353,51 @@ func bracketLines(leaves []standings.ProjMatch) []string {
 	}
 	put(rowLevel(nMerges, 0), xv(nMerges-1)+segW, "Champion")
 
+	// Light the traced team's path, mirroring the draw loop above: its leaf name,
+	// then at each merge level its corner, the vertical down to the junction, and
+	// the line carrying the winner rightward — up to the Champion box.
+	mark := func(r, c int) {
+		if r >= 0 && r < height && c >= 0 && c < width {
+			lit[r][c] = true
+		}
+	}
+	if trace >= 0 && trace < len(teams) {
+		nr := rowLevel(0, trace)
+		for c := 0; c < nameW; c++ {
+			mark(nr, c)
+		}
+		for mlvl := 0; mlvl < nMerges; mlvl++ {
+			child := trace >> mlvl
+			j := child / 2
+			v := xv(mlvl)
+			myRow := rowLevel(mlvl, child)
+			pr := rowLevel(mlvl+1, j)
+			if mlvl == 0 { // dashes from the team name to its first corner
+				for c := nameW; c <= v; c++ {
+					mark(myRow, c)
+				}
+			}
+			lo, hi := myRow, pr // corner → junction vertical (inclusive)
+			if lo > hi {
+				lo, hi = hi, lo
+			}
+			for r := lo; r <= hi; r++ {
+				mark(r, v)
+			}
+			end := xv(mlvl + 1)
+			if mlvl == nMerges-1 {
+				end = v + segW
+			}
+			for c := v + 1; c < end; c++ { // winner line toward the next round
+				mark(pr, c)
+			}
+		}
+		cr := rowLevel(nMerges, 0) // the Champion box
+		for c := xv(nMerges-1) + segW; c < width; c++ {
+			mark(cr, c)
+		}
+	}
+
 	// Header row: which round each vertical column decides.
 	hdr := make([]rune, width)
 	for c := range hdr {
@@ -321,15 +417,59 @@ func bracketLines(leaves []standings.ProjMatch) []string {
 		}
 	}
 
-	// Style: team names bright, connector skeleton dim.
+	// Style: traced path bright gold, team names bright, connector skeleton dim.
 	out := make([]string, 0, height+1)
 	out = append(out, helpStyle.Render(string(hdr)))
 	for r := 0; r < height; r++ {
-		left := string(grid[r][:nameW])
-		right := string(grid[r][nameW:])
-		out = append(out, labelStyle.Render(left)+helpStyle.Render(right))
+		out = append(out, styleBracketRow(grid[r], lit[r], nameW))
 	}
 	return out
+}
+
+// koTeamNames flattens the bracket leaves into the 32 team labels in bracket
+// position order (home, away per tie), falling back to the slot description when
+// a team isn't resolved yet — the same ordering bracketLines lays out.
+func koTeamNames(leaves []standings.ProjMatch) []string {
+	names := make([]string, 0, len(leaves)*2)
+	for _, lf := range leaves {
+		h, a := lf.HomeTeam, lf.AwayTeam
+		if h == "" {
+			h = lf.HomeDesc
+		}
+		if a == "" {
+			a = lf.AwayDesc
+		}
+		names = append(names, h, a)
+	}
+	return names
+}
+
+// styleBracketRow renders one bracket grid row, coalescing runs of equally-styled
+// cells: lit cells in the traced-path accent, otherwise team names (left of nameW)
+// bright and the connector skeleton (right) dim.
+func styleBracketRow(row []rune, lit []bool, nameW int) string {
+	styles := []lipgloss.Style{labelStyle, helpStyle, bracketPathStyle}
+	kind := func(c int) int {
+		switch {
+		case lit[c]:
+			return 2
+		case c < nameW:
+			return 0
+		default:
+			return 1
+		}
+	}
+	var b strings.Builder
+	for c := 0; c < len(row); {
+		k := kind(c)
+		j := c
+		for j < len(row) && kind(j) == k {
+			j++
+		}
+		b.WriteString(styles[k].Render(string(row[c:j])))
+		c = j
+	}
+	return b.String()
 }
 
 // koMatchLine renders one bracket match: the final score if played, the live
