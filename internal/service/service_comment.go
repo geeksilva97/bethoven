@@ -306,6 +306,13 @@ func (s *Service) SetNotesCompactor(fn func(ctx context.Context, notes []string)
 	s.aiNotesCompactor = fn
 }
 
+// SetHouseNotesCompactor attaches the worker's house-notes-compaction hook. Optional —
+// when unset, CompactCommentNotes degrades to merging the notes into one (a lossless
+// join, no model call).
+func (s *Service) SetHouseNotesCompactor(fn func(ctx context.Context, notes []string) (string, error)) {
+	s.aiHouseNotesCompactor = fn
+}
+
 // RegenerateOneByName regenerates a single player's leaderboard roast by display
 // name. WORKER seam for the director ("she decides, per player, when a roast is
 // stale") — ungated, since the director, not a user, is the caller. No-op when the

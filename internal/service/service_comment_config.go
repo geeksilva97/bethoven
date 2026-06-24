@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"bethoven/internal/ai"
 	"bethoven/internal/db"
@@ -246,6 +248,45 @@ func (s *Service) DeleteCommentNote(by *models.User, idx int) error {
 		return errors.New("no such note")
 	}
 	c.Notes = append(c.Notes[:idx], c.Notes[idx+1:]...)
+	return s.saveStoredContext(c)
+}
+
+// compactCommentNotesTimeout bounds the single model call that fuses the house notes.
+const compactCommentNotesTimeout = 3 * time.Minute
+
+// CompactCommentNotes fuses the admin's free-text house notes (the general, pool-wide
+// Notes tier) into ONE consolidated note via BETanIA — a lossless merge that removes
+// duplication while preserving every distinct fact (unlike the recency-weighted
+// derived-notes compaction, since these are admin-authored facts, not a game diary).
+// Player notes, rivalries and derived notes are untouched. Synchronous (one model
+// call) — callers should run it off the UI thread. Admin only.
+//
+// When the comment worker isn't attached (nil compactor) it degrades to merging the
+// notes into one entry (a lossless join — admin notes aren't regenerable, so never
+// trim/drop like derived notes do). On a model error the notes are left untouched and
+// the error is returned, so a transient failure never destroys the admin's notes.
+func (s *Service) CompactCommentNotes(by *models.User) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	c := s.loadStoredContext()
+	if len(c.Notes) <= 1 {
+		return nil
+	}
+	if s.aiHouseNotesCompactor == nil {
+		c.Notes = []string{strings.Join(c.Notes, "\n")}
+		return s.saveStoredContext(c)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), compactCommentNotesTimeout)
+	defer cancel()
+	summary, err := s.aiHouseNotesCompactor(ctx, c.Notes)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(summary) == "" {
+		return errors.New("compaction produced no text")
+	}
+	c.Notes = []string{summary}
 	return s.saveStoredContext(c)
 }
 

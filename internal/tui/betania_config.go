@@ -222,6 +222,19 @@ func (m Model) compactNotesCmd() tea.Cmd {
 	}
 }
 
+// compactHouseNotesMsg carries the result of an async house-notes compaction (a model
+// call, so it runs off the UI thread).
+type compactHouseNotesMsg struct{ err error }
+
+// compactHouseNotesCmd fuses the admin's free-text house notes into one note off the
+// UI thread, delivering the result as a compactHouseNotesMsg.
+func (m Model) compactHouseNotesCmd() tea.Cmd {
+	svc, user := m.svc, m.user
+	return func() tea.Msg {
+		return compactHouseNotesMsg{err: svc.CompactCommentNotes(user)}
+	}
+}
+
 func (m Model) updateAIContext(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cm, ok := msg.(compactNotesMsg); ok {
 		if cm.err != nil {
@@ -229,6 +242,16 @@ func (m Model) updateAIContext(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setStatus("derived notes fused into one narrative", false)
+		m.reloadCtx()
+		m.clampCtxCursor()
+		return m, nil
+	}
+	if cm, ok := msg.(compactHouseNotesMsg); ok {
+		if cm.err != nil {
+			m.setStatus("compact failed: "+cm.err.Error(), true)
+			return m, nil
+		}
+		m.setStatus("house notes fused into one", false)
 		m.reloadCtx()
 		m.clampCtxCursor()
 		return m, nil
@@ -386,6 +409,15 @@ func (m Model) updateCtxList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// narrative. This is a model call, so run it off the UI thread.
 		m.setStatus("fusing derived notes…", false)
 		return m, m.compactNotesCmd()
+	case "f":
+		// Fuse the admin's free-text house notes into ONE consolidated note (a model
+		// call, run off the UI thread). Lossless merge — distinct facts are kept.
+		if len(m.ctxView.Notes) < 2 {
+			m.setStatus("need at least two house notes to fuse", true)
+			return m, nil
+		}
+		m.setStatus("fusing house notes…", false)
+		return m, m.compactHouseNotesCmd()
 	case "C":
 		// Clear all derived notes (the next finished match regenerates one).
 		if err := m.svc.ClearDerivedNotes(m.user); err != nil {
@@ -685,7 +717,7 @@ func (m Model) viewCtxList() string {
 	}
 
 	out += "\n" + statusLine(m) +
-		helpStyle.Render("enter: read/edit · a: add rivalry · n: add note · p: pin auto · d: delete · c: fuse derived · C: clear derived · R: clear auto · ↑/↓: move · esc: back")
+		helpStyle.Render("enter: read/edit · a: add rivalry · n: add note · p: pin auto · d: delete · f: fuse house · c: fuse derived · C: clear derived · R: clear auto · ↑/↓: move · esc: back")
 	return out
 }
 

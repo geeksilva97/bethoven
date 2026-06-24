@@ -373,3 +373,20 @@ func (w *CommentWorker) CompactNotes(ctx context.Context, notes []string) (strin
 	}
 	return sanitizeText(text), nil
 }
+
+// CompactHouseNotes fuses the admin's free-text house notes into ONE consolidated
+// note (a lossless merge that preserves every distinct fact, not a recency-weighted
+// narrative), sanitized for terminal output. The service seam for the admin "compact
+// house notes" action — the service owns reading/storing; the worker only runs the
+// model call. Returns "" (no change) when there's fewer than two notes or the call
+// fails.
+func (w *CommentWorker) CompactHouseNotes(ctx context.Context, notes []string) (string, error) {
+	if w.cmt == nil || len(notes) < 2 {
+		return "", nil
+	}
+	text, err := w.cmt.CompactHouseNotes(ctx, notes, w.deps.Config())
+	if err != nil {
+		return "", err
+	}
+	return sanitizeText(text), nil
+}

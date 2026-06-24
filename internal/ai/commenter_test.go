@@ -24,6 +24,11 @@ type fakeCommenter struct {
 	compactCalls int
 	lastCompact  []string
 
+	houseCompact      string
+	houseCompactErr   error
+	houseCompactCalls int
+	lastHouseCompact  []string
+
 	rivalries    []Rivalry
 	rivalriesErr error
 	rivalryCalls int
@@ -50,6 +55,12 @@ func (f *fakeCommenter) CompactNotes(ctx context.Context, notes []string, cfg Co
 	f.compactCalls++
 	f.lastCompact = notes
 	return f.compact, f.compactErr
+}
+
+func (f *fakeCommenter) CompactHouseNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error) {
+	f.houseCompactCalls++
+	f.lastHouseCompact = notes
+	return f.houseCompact, f.houseCompactErr
 }
 
 func (f *fakeCommenter) UpdateRivalries(ctx context.Context, h []RoundStanding, dn string, existing []Rivalry, cfg CommentConfig) ([]Rivalry, error) {

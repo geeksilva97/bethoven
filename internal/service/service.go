@@ -98,6 +98,10 @@ type Service struct {
 	// (admin "compact derived"); nil when the comment worker isn't running, in which
 	// case CompactDerivedNotes falls back to keeping just the latest entry.
 	aiNotesCompactor func(ctx context.Context, notes []string) (string, error)
+	// aiHouseNotesCompactor fuses the admin's free-text house notes into one
+	// consolidated note (admin "compact house notes"); nil when the comment worker
+	// isn't running, in which case CompactCommentNotes degrades to a lossless join.
+	aiHouseNotesCompactor func(ctx context.Context, notes []string) (string, error)
 	// aiUsage is the optional persistent reader for BETanIA's Claude token usage and
 	// estimated cost (backed by the on-disk usage log); nil when BETanIA isn't running.
 	aiUsage AIUsageSource

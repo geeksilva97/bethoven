@@ -136,3 +136,63 @@ func compactTool() anthropic.ToolParam {
 		},
 	}
 }
+
+// CompactHouseNotes implements Commenter: one grounded Claude call that fuses the
+// admin's free-text house notes into a SINGLE tighter note — merging overlapping
+// entries and dropping duplication while PRESERVING every distinct fact. Unlike
+// CompactNotes (the per-game diary), these are admin-authored context facts, not a
+// game story, so the prompt never weights by recency or spins a narrative: it
+// condenses losslessly. No web search; recorded under the "digest" usage category.
+// Returns "" when there's nothing to compact.
+func (p *AnthropicCommenter) CompactHouseNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error) {
+	if len(notes) == 0 {
+		return "", nil
+	}
+	raw, err := p.runTool(ctx, "digest", houseCompactPrompt(notes), houseCompactTool(),
+		"Call submit_compact now with the consolidated note.")
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return "", fmt.Errorf("parse house compact: %w", err)
+	}
+	return strings.TrimSpace(out.Summary), nil
+}
+
+func houseCompactPrompt(notes []string) string {
+	var b strings.Builder
+	b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool. Below are the admin's HOUSE NOTES: ")
+	b.WriteString("free-text context facts about the pool (house rules, running jokes, storylines, anything the admin wants you to keep in mind). ")
+	b.WriteString("Fuse them into a SINGLE tighter note, removing duplication while keeping every distinct fact.\n\n")
+	b.WriteString("RULES:\n")
+	b.WriteString("1. PRESERVE every distinct fact, name, rule and detail below. This is a lossless MERGE, not a summary — only remove duplication, never drop information.\n")
+	b.WriteString("2. Merge overlapping or repeated notes into one statement; keep unrelated facts as separate sentences.\n")
+	b.WriteString("3. Ground everything ONLY in the notes below. Never invent a fact, a name, or a result.\n")
+	b.WriteString("4. Stay neutral and factual — these are context notes for you to use later, not a message to anyone. No emojis, no markdown, no headings — just the sentences.\n\n")
+	b.WriteString(untrustedDataNote)
+	b.WriteString("THE HOUSE NOTES:\n")
+	for i, n := range notes {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, n)
+	}
+	b.WriteString("\nCall submit_compact with the single consolidated note.")
+	return b.String()
+}
+
+func houseCompactTool() anthropic.ToolParam {
+	return anthropic.ToolParam{
+		Name:        "submit_compact",
+		Description: anthropic.String("Submit BETanIA's single consolidated house note, merging the admin's notes without losing any fact."),
+		InputSchema: anthropic.ToolInputSchemaParam{
+			Properties: map[string]any{
+				"summary": map[string]any{
+					"type":        "string",
+					"description": "One consolidated house note merging all the admin's notes, preserving every distinct fact with no duplication. No emojis or line breaks.",
+				},
+			},
+			ExtraFields: map[string]any{"required": []string{"summary"}},
+		},
+	}
+}

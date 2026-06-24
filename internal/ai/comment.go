@@ -140,6 +140,11 @@ type Commenter interface {
 	// consolidated narrative, weighting recent games most (the admin "compact"
 	// action). Returns "" when there's nothing to compact.
 	CompactNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error)
+	// CompactHouseNotes fuses the admin's free-text house notes into ONE tighter
+	// note, merging duplication while preserving every distinct fact (the admin
+	// "compact house notes" action — a lossless merge, not a narrative). Returns ""
+	// when there's nothing to compact.
+	CompactHouseNotes(ctx context.Context, notes []string, cfg CommentConfig) (string, error)
 	// UpdateRivalries inspects the standings (positions/movement/points) plus the
 	// derived-note story and BETanIA's CURRENT auto-rivalries, and returns the full
 	// desired set of auto-rivalries — declarative, so add/update/delete all fall out

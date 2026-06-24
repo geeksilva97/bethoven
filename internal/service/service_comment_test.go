@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -315,6 +317,79 @@ func TestPlayerNotes(t *testing.T) {
 	}
 	if cfg := svc.CommentConfig(); len(cfg.PlayerNotes) != 1 || cfg.PlayerNotes[0].Player != "Bob" {
 		t.Errorf("after delete = %+v", cfg.PlayerNotes)
+	}
+}
+
+// TestCompactCommentNotes covers fusing the admin's free-text house notes: the
+// worker-attached path (uses the compactor's output), admin gating, the <2 no-op, and
+// the nil-compactor lossless-join fallback.
+func TestCompactCommentNotes(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	admin, _ := svc.Register(adminFP, testInvite, "Admin")
+	player, _ := svc.Register("SHA256:p", testInvite, "Pleb")
+
+	// Player can't compact.
+	if err := svc.CompactCommentNotes(player); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("player CompactCommentNotes: want ErrForbidden, got %v", err)
+	}
+
+	// Fewer than two notes ⇒ no-op (leaves the single note intact).
+	if err := svc.AddCommentNote(admin, "only one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompactCommentNotes(admin); err != nil {
+		t.Fatalf("compact with one note: %v", err)
+	}
+	if v, _ := svc.CommentContextView(admin); len(v.Notes) != 1 {
+		t.Fatalf("one-note compact changed the notes: %+v", v.Notes)
+	}
+
+	if err := svc.AddCommentNote(admin, "two"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AddCommentNote(admin, "three"); err != nil {
+		t.Fatal(err)
+	}
+
+	// With a compactor attached, the fused note is the compactor's output.
+	var got []string
+	svc.SetHouseNotesCompactor(func(_ context.Context, notes []string) (string, error) {
+		got = notes
+		return "fused house note", nil
+	})
+	if err := svc.CompactCommentNotes(admin); err != nil {
+		t.Fatalf("CompactCommentNotes: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("compactor saw %d notes, want 3", len(got))
+	}
+	v, _ := svc.CommentContextView(admin)
+	if len(v.Notes) != 1 || v.Notes[0] != "fused house note" {
+		t.Fatalf("after compact: %+v", v.Notes)
+	}
+
+	// A compactor error leaves the notes untouched (never destroys them).
+	if err := svc.AddCommentNote(admin, "another"); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetHouseNotesCompactor(func(_ context.Context, _ []string) (string, error) {
+		return "", errors.New("model down")
+	})
+	if err := svc.CompactCommentNotes(admin); err == nil {
+		t.Fatal("compact should surface the model error")
+	}
+	if v, _ := svc.CommentContextView(admin); len(v.Notes) != 2 {
+		t.Fatalf("notes lost on compactor error: %+v", v.Notes)
+	}
+
+	// No compactor ⇒ lossless join into a single note (nothing dropped).
+	svc.SetHouseNotesCompactor(nil)
+	if err := svc.CompactCommentNotes(admin); err != nil {
+		t.Fatalf("nil-compactor compact: %v", err)
+	}
+	v, _ = svc.CommentContextView(admin)
+	if len(v.Notes) != 1 || v.Notes[0] != "fused house note\nanother" {
+		t.Fatalf("lossless join = %+v", v.Notes)
 	}
 }
 
