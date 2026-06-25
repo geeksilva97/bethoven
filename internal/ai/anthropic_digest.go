@@ -111,9 +111,10 @@ func compactPrompt(notes []string, cfg CommentConfig) string {
 	b.WriteString("2. Capture the playing DYNAMICS: who keeps nailing scorelines, who keeps whiffing, ongoing rivalries, streaks, climbs and collapses across the tournament — not a flat list of games.\n")
 	b.WriteString("3. WEIGHT RECENT EVENTS MORE: the latest entries describe the current state of the pool and matter most; older entries are background. Lead with where things stand now.\n")
 	b.WriteString("4. Condense hard — 4-8 sentences total, no matter how many entries there are. Keep the names and the standout moments; drop the rest.\n")
-	b.WriteString("5. This is a shared situational snapshot for the pool, not a message to one person. No emojis, no markdown, no headings — just the sentences.\n\n")
+	b.WriteString("5. This is a shared situational snapshot for the pool, not a message to one person. No emojis, no markdown, no headings — just the sentences.\n")
+	b.WriteString("6. Each entry is tagged with the date it was played (e.g. [Jun 22]). KEEP these dates in your narrative — anchor each event to when it happened (\"on Jun 22\", \"by Jun 25\") so a game from days ago is never retold as if it just happened. Use the absolute dates from the tags, not \"today\"/\"yesterday\".\n\n")
 	b.WriteString(untrustedDataNote)
-	b.WriteString("THE DIARY (one entry per finished match, oldest first):\n")
+	b.WriteString("THE DIARY (one entry per finished match, oldest first; each tagged [date] with when it was played):\n")
 	for i, n := range notes {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, n)
 	}

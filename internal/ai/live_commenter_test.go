@@ -277,7 +277,7 @@ func TestLiveCommentPromptFeedsDerivedNotes(t *testing.T) {
 		Matches: []LiveMatchInfo{{TeamA: "Germany", TeamB: "Ivory Coast", Picks: []LivePickInfo{{Player: "Gabriel", Pred: "0-1"}}}},
 	}
 	p := liveCommentPrompt(sit, nil, cfg)
-	if !strings.Contains(p, "EARLIER TODAY") {
+	if !strings.Contains(p, "EARLIER FINISHED MATCHES") {
 		t.Error("prompt should carry the past-game (derived notes) tier")
 	}
 	if !strings.Contains(p, "Brobbey hat-trick") {
@@ -285,7 +285,7 @@ func TestLiveCommentPromptFeedsDerivedNotes(t *testing.T) {
 	}
 
 	// Absent ⇒ no tier (no behaviour change for the common case).
-	if strings.Contains(liveCommentPrompt(sit, nil, CommentConfig{DefaultTone: "playful"}), "EARLIER TODAY") {
+	if strings.Contains(liveCommentPrompt(sit, nil, CommentConfig{DefaultTone: "playful"}), "EARLIER FINISHED MATCHES") {
 		t.Error("empty derived notes should not add the past-game tier")
 	}
 }

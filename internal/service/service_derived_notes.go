@@ -169,19 +169,47 @@ func stageLabel(m models.Match) string {
 	return string(m.Phase)
 }
 
+// noteDateLabel renders a derived note's calendar date (parsed from its RFC3339 At)
+// for the prompt, e.g. "Jun 22". Empty when At is missing/unparseable — older notes
+// still feed fine, just without a tag.
+func noteDateLabel(at string) string {
+	t, err := time.Parse(time.RFC3339, at)
+	if err != nil {
+		return ""
+	}
+	return t.Format("Jan 2")
+}
+
+// datedNote prefixes a note's text with the date it was recorded (≈ when the match
+// was played), so BETanIA can tell a fresh result from a days-old one instead of
+// describing every finished game as if it just happened.
+func datedNote(n derivedNote) string {
+	if d := noteDateLabel(n.At); d != "" {
+		return "[" + d + "] " + n.Text
+	}
+	return n.Text
+}
+
 // DerivedNotesText returns the combined derived-notes text to feed the comment
-// prompt (the last derivedNoteFeedCap game stories, oldest first). Worker seam.
+// prompt (the last derivedNoteFeedCap game stories, oldest first). Each entry is
+// tagged with the date it was played and the block is led by today's date, so the
+// model anchors recency correctly and never frames an old game as if it just
+// happened. Worker seam.
 func (s *Service) DerivedNotesText() string {
 	d := s.loadDerivedNotes()
 	notes := d.Notes
 	if len(notes) > derivedNoteFeedCap {
 		notes = notes[len(notes)-derivedNoteFeedCap:]
 	}
-	texts := make([]string, 0, len(notes))
-	for _, n := range notes {
-		texts = append(texts, n.Text)
+	if len(notes) == 0 {
+		return ""
 	}
-	return strings.Join(texts, "\n")
+	lines := make([]string, 0, len(notes)+1)
+	lines = append(lines, "Today is "+s.Now().Format("Jan 2")+".")
+	for _, n := range notes {
+		lines = append(lines, datedNote(n))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // AddDerivedNote appends one finished match's story and marks that match done, so
@@ -275,9 +303,12 @@ func (s *Service) CompactDerivedNotes(by *models.User) error {
 		return s.saveDerivedNotes(d)
 	}
 
+	// Date-tag each entry so the fused narrative keeps the time references — without
+	// them BETanIA collapses the whole diary into "today" and retells old games as
+	// fresh. The compaction prompt is told to preserve these dates.
 	texts := make([]string, 0, len(d.Notes))
 	for _, n := range d.Notes {
-		texts = append(texts, n.Text)
+		texts = append(texts, datedNote(n))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), compactNotesTimeout)
 	defer cancel()

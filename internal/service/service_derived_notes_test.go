@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,10 +139,18 @@ func TestDerivedNotesCurate(t *testing.T) {
 		t.Fatalf("notes = %+v", notes)
 	}
 
-	// Combined feed carries all three.
+	// Combined feed carries all three, each tagged with the date it was played and
+	// led by today's date — so BETanIA can't retell an old game as if it just
+	// happened.
 	combined := svc.DerivedNotesText()
 	if combined == "" {
 		t.Fatalf("combined empty")
+	}
+	if !strings.Contains(combined, "Today is Jun 11.") {
+		t.Errorf("combined feed should lead with today's date, got:\n%s", combined)
+	}
+	if !strings.Contains(combined, "[Jun 11] story one") {
+		t.Errorf("combined feed should date-tag each note, got:\n%s", combined)
 	}
 
 	// Delete the middle one.
