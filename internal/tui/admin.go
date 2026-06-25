@@ -15,7 +15,7 @@ import (
 
 // phaseCycle is the order the admin toggles through when adding a match.
 var phaseCycle = []models.Phase{
-	models.PhaseGroup, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseFinal,
+	models.PhaseGroup, models.PhaseRound32, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseFinal,
 }
 
 // --- add match -----------------------------------------------------------
@@ -35,7 +35,7 @@ func (m *Model) initAddMatch() {
 		mk("kickoff (local tz), e.g. 2026-06-20 18:00"),
 	}
 	m.addFocus = 0
-	m.addPhase = models.PhaseRound16 // knockouts are the common admin add
+	m.addPhase = models.PhaseRound32 // the first knockout round (48-team format) is the common admin add
 	m.focusAdd()
 }
 

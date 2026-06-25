@@ -17,25 +17,25 @@ func TestWeightScheme(t *testing.T) {
 		{WeightFlat, models.PhaseRound16, 1},
 		{WeightFlat, models.PhaseFinal, 1},
 
-		// Knockout: group/R32 ×1, then R16 2, QF 3, SF 3, Final 4.
+		// Knockout: group ×1, then R32/R16 2, QF 3, SF 3, Final 4.
 		{WeightKnockout, models.PhaseGroup, 1},
-		{WeightKnockout, models.PhaseRound32, 1},
+		{WeightKnockout, models.PhaseRound32, 2},
 		{WeightKnockout, models.PhaseRound16, 2},
 		{WeightKnockout, models.PhaseRound8, 3},
 		{WeightKnockout, models.PhaseSemi, 3},
 		{WeightKnockout, models.PhaseFinal, 4},
 
-		// Doubling: 1, 2, 4, 8, 16 (R32 unweighted, ×1).
+		// Doubling: group 1, R32/R16 2, then 4, 8, 16.
 		{WeightDoubling, models.PhaseGroup, 1},
-		{WeightDoubling, models.PhaseRound32, 1},
+		{WeightDoubling, models.PhaseRound32, 2},
 		{WeightDoubling, models.PhaseRound16, 2},
 		{WeightDoubling, models.PhaseRound8, 4},
 		{WeightDoubling, models.PhaseSemi, 8},
 		{WeightDoubling, models.PhaseFinal, 16},
 
-		// Linear: 1, 2, 3, 4, 5 (R32 unweighted, ×1).
+		// Linear: group 1, R32/R16 2, then 3, 4, 5.
 		{WeightLinear, models.PhaseGroup, 1},
-		{WeightLinear, models.PhaseRound32, 1},
+		{WeightLinear, models.PhaseRound32, 2},
 		{WeightLinear, models.PhaseRound16, 2},
 		{WeightLinear, models.PhaseRound8, 3},
 		{WeightLinear, models.PhaseSemi, 4},
@@ -79,7 +79,7 @@ func TestParseWeightScheme(t *testing.T) {
 
 func TestWeightLadder(t *testing.T) {
 	got := WeightDoubling.Ladder()
-	want := []int{1, 2, 4, 8, 16}
+	want := []int{1, 2, 2, 4, 8, 16}
 	if len(got) != len(want) {
 		t.Fatalf("Ladder len = %d, want %d", len(got), len(want))
 	}

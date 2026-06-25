@@ -20,28 +20,28 @@ const (
 )
 
 // phaseOrder lists phases earliest-to-latest; Ladder renders in this order and
-// every weight table below is keyed by these phases. The Round of 32 is
-// deliberately omitted: it is left unweighted (×1, like the group stage), so the
-// multipliers start at the Round of 16.
+// every weight table below is keyed by these phases. The Round of 32 is the first
+// knockout round under the 48-team format, weighted like the Round of 16.
 var phaseOrder = []models.Phase{
-	models.PhaseGroup, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseFinal,
+	models.PhaseGroup, models.PhaseRound32, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseFinal,
 }
 
 // weightTables holds the explicit per-phase multiplier for each non-flat scheme.
-// Explicit (not a formula) so each curve is readable at a glance. A phase missing
-// from a table — including the Round of 32 — scores ×1.
+// Explicit (not a formula) so each curve is readable at a glance. The Round of 32
+// is the first knockout round (48-team format) and enters at the same multiplier as
+// the Round of 16. Only the group stage and unknown phases score ×1.
 var weightTables = map[WeightScheme]map[models.Phase]int{
 	// Gentle: knockouts matter more, but the final isn't worth a whole group stage.
 	WeightKnockout: {
-		models.PhaseGroup: 1, models.PhaseRound16: 2,
+		models.PhaseGroup: 1, models.PhaseRound32: 2, models.PhaseRound16: 2,
 		models.PhaseRound8: 3, models.PhaseSemi: 3, models.PhaseFinal: 4,
 	},
 	WeightDoubling: {
-		models.PhaseGroup: 1, models.PhaseRound16: 2,
+		models.PhaseGroup: 1, models.PhaseRound32: 2, models.PhaseRound16: 2,
 		models.PhaseRound8: 4, models.PhaseSemi: 8, models.PhaseFinal: 16,
 	},
 	WeightLinear: {
-		models.PhaseGroup: 1, models.PhaseRound16: 2,
+		models.PhaseGroup: 1, models.PhaseRound32: 2, models.PhaseRound16: 2,
 		models.PhaseRound8: 3, models.PhaseSemi: 4, models.PhaseFinal: 5,
 	},
 }
