@@ -429,17 +429,20 @@ func (m Model) viewLeaderboard() string {
 
 	// In-play header: the matches currently feeding provisional points. With the
 	// pick reveal on ('p'), each match expands to show every player's pick.
-	if len(m.liveMatches) > 0 {
+	// Also entered when there are no in-play matches but BETanIA has a live line —
+	// her pre-match "about to kick off" hype (LiveSituation reports isLive on
+	// upcoming matches too), which would otherwise be silently dropped.
+	if len(m.liveMatches) > 0 || m.liveCommentary != "" {
 		// Live scores first; revealed picks are folded into the standings rows below
 		// (inline columns), so there's no separate per-match pick block here.
 		for _, mt := range m.liveMatches {
 			out += "  " + liveScore(mt) +
 				labelStyle.Render(fmt.Sprintf("  %s v %s", mt.TeamA, mt.TeamB)) + "\n"
 		}
-		// BETanIA's running take on the in-play slate, BELOW the scores — it reads as a
-		// reaction to what's on the board. Always shown when present: this is general
-		// live commentary, not a per-player take, so the per-viewer comment hide ('h')
-		// deliberately does NOT cover it.
+		// BETanIA's running take on the in-play slate (or pre-match hype), BELOW any
+		// scores — it reads as a reaction to what's on the board. Always shown when
+		// present: this is general live commentary, not a per-player take, so the
+		// per-viewer comment hide ('h') deliberately does NOT cover it.
 		if m.liveCommentary != "" {
 			width := m.width - 6
 			if width > leaderCommentMaxWidth {
