@@ -30,6 +30,96 @@ func bracketDrawn(pic service.KnockoutPicture) bool {
 	return false
 }
 
+// treeShown reports whether the projected R32→Final tree can be drawn (a full
+// 16-leaf projection exists). The tree persists once knockouts begin — entered
+// matches are overlaid onto it rather than collapsing it to a flat list.
+func treeShown(pic service.KnockoutPicture) bool {
+	return len(standings.BracketLeaves(pic.Projected)) == 16
+}
+
+// r32Entered returns the entered Round-of-32 matches from the bracket.
+func r32Entered(pic service.KnockoutPicture) []models.Match {
+	for _, rd := range pic.Bracket {
+		if rd.Phase == models.PhaseRound32 {
+			return rd.Matches
+		}
+	}
+	return nil
+}
+
+// overlayEnteredR32 substitutes entered R32 matches into their projected slots,
+// returning the overlaid projection plus a match-number → entered-match map for
+// score display. Entered matches are matched to projected ties first by exact
+// team pair, then by a single determined (non-third) anchor side — so an
+// officially-drawn winner-vs-third tie lands on the right slot even when our
+// projected third differs from FIFA's. Advancement is never inferred: only R32
+// (which comes straight from the group tables) is overlaid.
+func overlayEnteredR32(projected []standings.ProjMatch, entered []models.Match) ([]standings.ProjMatch, map[int]models.Match) {
+	out := make([]standings.ProjMatch, len(projected))
+	copy(out, projected)
+	byNum := map[int]models.Match{} // match number -> entered match
+	used := make([]bool, len(entered))
+	pairKey := func(a, b string) string {
+		if a > b {
+			a, b = b, a
+		}
+		return a + "\x00" + b
+	}
+	// Pass 1: exact team pair.
+	for ei, e := range entered {
+		ek := pairKey(e.TeamA, e.TeamB)
+		for i := range out {
+			p := out[i]
+			if p.HomeTeam == "" || p.AwayTeam == "" {
+				continue
+			}
+			if _, taken := byNum[p.Match]; taken {
+				continue
+			}
+			if pairKey(p.HomeTeam, p.AwayTeam) == ek {
+				byNum[p.Match] = e
+				used[ei] = true
+				break
+			}
+		}
+	}
+	// Pass 2: a single determined non-third anchor side (places drawn
+	// winner-vs-third ties whose projected third we may have guessed differently).
+	isThird := func(desc string) bool { return strings.HasPrefix(desc, "3rd") }
+	for ei, e := range entered {
+		if used[ei] {
+			continue
+		}
+		cand := -1
+		for i := range out {
+			p := out[i]
+			if _, taken := byNum[p.Match]; taken {
+				continue
+			}
+			hit := (!isThird(p.HomeDesc) && p.HomeTeam != "" && (p.HomeTeam == e.TeamA || p.HomeTeam == e.TeamB)) ||
+				(!isThird(p.AwayDesc) && p.AwayTeam != "" && (p.AwayTeam == e.TeamA || p.AwayTeam == e.TeamB))
+			if hit {
+				if cand != -1 {
+					cand = -2 // ambiguous — leave it for the team-pair pass only
+					break
+				}
+				cand = i
+			}
+		}
+		if cand >= 0 {
+			byNum[out[cand].Match] = e
+			used[ei] = true
+		}
+	}
+	// Substitute the real teams (admin's home/away order) into their slots.
+	for i := range out {
+		if e, ok := byNum[out[i].Match]; ok {
+			out[i].HomeTeam, out[i].AwayTeam = e.TeamA, e.TeamB
+		}
+	}
+	return out, byNum
+}
+
 // updateKnockouts handles the read-only Knockouts screen: tab toggles between the
 // qualification picture and the bracket; in the projected bracket tree ←/→ cycle
 // the team whose path is lit; ↑/↓ scroll; esc/b return to the menu, q quits.
@@ -38,8 +128,8 @@ func (m Model) updateKnockouts(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	// ←/→ trace a team only on the projected tree; elsewhere they toggle the view.
-	tracing := m.koView == koViewBracket && len(m.ko.Projected) > 0 && !bracketDrawn(m.ko)
+	// ←/→ trace a team only on the bracket tree; elsewhere they toggle the view.
+	tracing := m.koView == koViewBracket && treeShown(m.ko)
 	switch k.String() {
 	case "q":
 		return m, tea.Quit
@@ -120,7 +210,7 @@ func (m Model) viewKnockouts() string {
 	}
 	help := "tab: " + map[int]string{koViewGroups: "bracket", koViewBracket: "qualification"}[m.koView]
 	if m.koView == koViewBracket {
-		if len(m.ko.Projected) > 0 && !bracketDrawn(m.ko) {
+		if treeShown(m.ko) {
 			help += " · ←/→: trace team"
 		}
 		help += " · ↑/↓: scroll"
@@ -208,13 +298,12 @@ func renderThirdRace(thirds []standings.ThirdPlace) string {
 	return b.String()
 }
 
-// viewKnockoutBracket renders the knockout ladder. When the admin has not entered
-// real knockout matchups yet, it draws the full projected bracket tree (R32 →
-// Final) so a team's path through the rounds is visible; once matches are entered
-// it falls back to listing each round's ties.
+// viewKnockoutBracket renders the knockout ladder as the full R32→Final tree
+// (so a team's path through the rounds is always visible), with entered matches
+// overlaid onto it. It only falls back to a flat list of entered ties when no
+// projection exists yet (too early to draw a tree).
 func (m Model) viewKnockoutBracket() string {
-	projecting := len(m.ko.Projected) > 0 && !bracketDrawn(m.ko)
-	if projecting {
+	if treeShown(m.ko) {
 		return m.viewBracketTree()
 	}
 	out := titleStyle.Render("Knockouts — bracket") + "\n\n"
@@ -232,13 +321,25 @@ func (m Model) viewKnockoutBracket() string {
 	return out
 }
 
-// viewBracketTree draws the projected R32→Final bracket as a scrollable tree.
+// viewBracketTree draws the R32→Final bracket as a scrollable tree. The R32
+// leaves come from the group-table projection, with any entered R32 matches
+// overlaid (real teams + score). Later rounds can't be placed in the tree
+// without inferring winners (penalties aren't stored), so entered R16+ ties are
+// listed beneath it.
 func (m Model) viewBracketTree() string {
-	leaves := standings.BracketLeaves(m.ko.Projected)
-	lines := bracketLines(leaves, m.koTraceIdx)
+	overlaid, byNum := overlayEnteredR32(m.ko.Projected, r32Entered(m.ko))
+	leaves := standings.BracketLeaves(overlaid)
+	scores := bracketScores(leaves, byNum)
+	lines := bracketLines(leaves, m.koTraceIdx, scores)
 
-	out := titleStyle.Render("Knockouts — bracket") +
-		helpStyle.Render("  projected, if the group stage ended now") + "\n"
+	sub := "  projected, if the group stage ended now"
+	switch {
+	case len(byNum) >= len(leaves) && len(leaves) > 0:
+		sub = "" // fully drawn — nothing left to project
+	case len(byNum) > 0:
+		sub = "  drawn ties shown; the rest projected"
+	}
+	out := titleStyle.Render("Knockouts — bracket") + helpStyle.Render(sub) + "\n"
 	names := koTeamNames(leaves)
 	if m.koTraceIdx >= 0 && m.koTraceIdx < len(names) {
 		out += bracketPathStyle.Render("Tracing: "+names[m.koTraceIdx]) +
@@ -272,16 +373,58 @@ func (m Model) viewBracketTree() string {
 	if end < len(lines) {
 		out += helpStyle.Render(fmt.Sprintf("  ↓ %d more", len(lines)-end)) + "\n"
 	}
+	out += m.viewEnteredLaterRounds()
 	return out
 }
 
+// viewEnteredLaterRounds lists entered R16→Final ties beneath the tree. The tree
+// can't place them (advancement is never inferred — a 90' score can't reveal a
+// shootout winner), so they're shown as a compact list; empty rounds are omitted.
+func (m Model) viewEnteredLaterRounds() string {
+	var out string
+	for _, rd := range m.ko.Bracket {
+		if rd.Phase == models.PhaseRound32 || len(rd.Matches) == 0 {
+			continue
+		}
+		out += "\n" + labelStyle.Render(rd.Label) + "\n"
+		for _, mt := range rd.Matches {
+			out += "  " + koMatchLine(mt) + "\n"
+		}
+	}
+	return out
+}
+
+// bracketScores maps a team's leaf-row index (home=2i, away=2i+1 for leaf i) to
+// a short goals suffix, for entered R32 matches that are finished or in play.
+// Drawn-but-unplayed ties get no suffix (just the matchup).
+func bracketScores(leaves []standings.ProjMatch, byNum map[int]models.Match) map[int]string {
+	scores := map[int]string{}
+	for i, lf := range leaves {
+		mt, ok := byNum[lf.Match]
+		if !ok {
+			continue
+		}
+		switch {
+		case mt.Finished && mt.ScoreA != nil && mt.ScoreB != nil:
+			scores[2*i] = fmt.Sprintf("%d", *mt.ScoreA)
+			scores[2*i+1] = fmt.Sprintf("%d", *mt.ScoreB)
+		case mt.Live:
+			scores[2*i] = fmt.Sprintf("%d", mt.LiveScoreA)
+			scores[2*i+1] = fmt.Sprintf("%d", mt.LiveScoreB)
+		}
+	}
+	return scores
+}
+
 // bracketLines renders the 16-leaf balanced bracket (R32→Final) as fixed-width
-// lines. Only the Round-of-32 teams are known under a projection, so the inner
-// rounds are drawn as the connector skeleton — the path each team would follow.
-// leaves must be in bracket position order (see standings.BracketLeaves). When
-// trace is in 0..31 the leaf at that team index and the connector cells carrying
-// its slot up to the Champion box are lit in the traced-path accent.
-func bracketLines(leaves []standings.ProjMatch, trace int) []string {
+// lines. Only the Round-of-32 teams are known (projected, with entered matches
+// overlaid), so the inner rounds are drawn as the connector skeleton — the path
+// each team would follow. leaves must be in bracket position order (see
+// standings.BracketLeaves); scores[teamIdx] adds a goals suffix to a leaf when
+// its tie has been played. When trace is in 0..31 the leaf at that team index and
+// the connector cells carrying its slot up to the Champion box are lit in the
+// traced-path accent.
+func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string) []string {
 	if len(leaves) != 16 {
 		return []string{helpStyle.Render("  bracket unavailable (incomplete projection)")}
 	}
@@ -313,10 +456,14 @@ func bracketLines(leaves []standings.ProjMatch, trace int) []string {
 	rowLevel := func(lvl, j int) int { return (1 << lvl) - 1 + j*(1 << (lvl + 1)) }
 	xv := func(lvl int) int { return nameW + lvl*segW + 1 }
 
-	// Level-0 leaves: the two teams of each R32 tie.
+	// Level-0 leaves: the two teams of each R32 tie, with a goals suffix once played.
 	teams := koTeamNames(leaves)
 	for i, name := range teams {
-		put(rowLevel(0, i), 0, truncate(name, nameW-1))
+		label := truncate(name, nameW-1)
+		if sc := scores[i]; sc != "" {
+			label = truncate(name, nameW-2-len(sc)) + " " + sc
+		}
+		put(rowLevel(0, i), 0, label)
 	}
 
 	for mlvl := 0; mlvl < nMerges; mlvl++ {

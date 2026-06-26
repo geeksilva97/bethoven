@@ -88,7 +88,7 @@ func TestViewBracketTree(t *testing.T) {
 
 	// Header + 63 rows for a 16-leaf bracket.
 	leaves := standings.BracketLeaves(proj)
-	if got := len(bracketLines(leaves, -1)); got != 64 {
+	if got := len(bracketLines(leaves, -1, nil)); got != 64 {
 		t.Errorf("want 64 bracket lines, got %d", got)
 	}
 
@@ -98,8 +98,8 @@ func TestViewBracketTree(t *testing.T) {
 	// is observable — tests otherwise run under lipgloss's Ascii (no-colour) profile.
 	defer lipgloss.SetColorProfile(lipgloss.ColorProfile())
 	lipgloss.SetColorProfile(termenv.TrueColor)
-	plain := bracketLines(leaves, -1)
-	traced := bracketLines(leaves, 0)
+	plain := bracketLines(leaves, -1, nil)
+	traced := bracketLines(leaves, 0, nil)
 	if traced[1] == plain[1] {
 		t.Errorf("traced leaf row should differ from the untraced render")
 	}
@@ -110,6 +110,65 @@ func TestViewBracketTree(t *testing.T) {
 	// lit for the traced team.
 	if traced[32] == plain[32] {
 		t.Errorf("traced path should reach the Champion row")
+	}
+}
+
+// Once R32 ties are drawn the tree must persist (not collapse to a flat list),
+// with the entered teams overlaid onto their slots and a score shown when played.
+func TestBracketTreePersistsWithEnteredMatches(t *testing.T) {
+	var proj []standings.ProjMatch
+	for n := 73; n <= 88; n++ {
+		proj = append(proj, standings.ProjMatch{
+			Match:    n,
+			HomeTeam: fmt.Sprintf("Home%d", n),
+			HomeDesc: "Winner X",
+			AwayTeam: fmt.Sprintf("Away%d", n),
+			AwayDesc: "Runner-up Y",
+		})
+	}
+	sa, sb := 2, 1
+	pic := service.KnockoutPicture{
+		Projected: proj,
+		Bracket: []service.BracketRound{{
+			Phase: models.PhaseRound32, Label: "Round of 32",
+			Matches: []models.Match{
+				// Exact team-pair overlay onto slot 73, played 2-1.
+				{TeamA: "Home73", TeamB: "Away73", Phase: models.PhaseRound32, Finished: true, ScoreA: &sa, ScoreB: &sb},
+			},
+		}},
+	}
+	m := Model{width: 120, height: 200, ko: pic, koView: koViewBracket, koTraceIdx: -1}
+	frame := m.viewKnockoutBracket()
+	// Tree, not the flat list.
+	for _, want := range []string{"ROUND OF 32", "Champion", "Home73"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("entered bracket should still render the tree; missing %q\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "not drawn yet") {
+		t.Errorf("tree view should not show the flat-list placeholder")
+	}
+}
+
+// overlayEnteredR32 places entered ties by exact pair, then by a single
+// determined non-third anchor (so a drawn winner-vs-third lands correctly even
+// when the projected third differs).
+func TestOverlayEnteredR32(t *testing.T) {
+	proj := []standings.ProjMatch{
+		{Match: 73, HomeTeam: "RunA", HomeDesc: "Runner-up A", AwayTeam: "RunB", AwayDesc: "Runner-up B"},
+		{Match: 74, HomeTeam: "WinE", HomeDesc: "Winner E", AwayTeam: "GuessThird", AwayDesc: "3rd C"},
+	}
+	entered := []models.Match{
+		{TeamA: "RunB", TeamB: "RunA"},     // exact pair (reversed) → slot 73
+		{TeamA: "WinE", TeamB: "RealThird"}, // anchor on Winner E → slot 74, fixing the third
+	}
+	_, byNum := overlayEnteredR32(proj, entered)
+	if _, ok := byNum[73]; !ok {
+		t.Errorf("expected entered match on slot 73 (exact pair)")
+	}
+	got, ok := byNum[74]
+	if !ok || got.TeamB != "RealThird" {
+		t.Errorf("expected the Winner-E anchor to place the real third on slot 74, got %+v", got)
 	}
 }
 
