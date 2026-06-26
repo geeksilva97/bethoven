@@ -103,6 +103,77 @@ func TestPlayerCardsComputesStats(t *testing.T) {
 	}
 }
 
+// A card must distinguish a NO-PICK from a wrong pick, respect when a player joined,
+// and surface a give-up tail. Alice plays from the start then quits; Zoe joins after
+// the first match and quits before the last.
+func TestPlayerCardsParticipationAndTenure(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	admin, _ := svc.Register(adminFP, testInvite, "Admin")
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+
+	m1 := addMatch(t, store, svc.tournamentID, base.Add(2*time.Hour))  // 06-11
+	m2 := addMatch(t, store, svc.tournamentID, base.Add(26*time.Hour)) // 06-12
+	m3 := addMatch(t, store, svc.tournamentID, base.Add(50*time.Hour)) // 06-13
+	m4 := addMatch(t, store, svc.tournamentID, base.Add(74*time.Hour)) // 06-14
+
+	// Alice (registered at base) bets the first two, then gives up.
+	betOK(t, svc, alice.ID, m1, 1, 0)
+	betOK(t, svc, alice.ID, m2, 2, 2)
+
+	// Zoe joins after m1 has kicked off (joined late), bets m2 and m3, skips m4.
+	fc.T = base.Add(3 * time.Hour)
+	zoe, _ := svc.Register("SHA256:zoe", testInvite, "Zoe")
+	betOK(t, svc, zoe.ID, m2, 0, 0)
+	betOK(t, svc, zoe.ID, m3, 1, 1)
+
+	// Settle everything (clock well past the last kickoff).
+	fc.T = base.Add(200 * time.Hour)
+	for _, m := range []int64{m1, m2, m3, m4} {
+		if err := svc.EnterResult(admin, m, 1, 1); err != nil {
+			t.Fatalf("EnterResult m%d: %v", m, err)
+		}
+	}
+
+	cards, err := svc.PlayerCards(admin)
+	if err != nil {
+		t.Fatalf("PlayerCards: %v", err)
+	}
+
+	a := cardByName(t, cards, "Alice")
+	if a.JoinedLate {
+		t.Error("Alice registered before any match — not a late joiner")
+	}
+	if a.MatchesAvailable != 4 || a.MatchesBet != 2 || a.MatchesSkipped != 2 {
+		t.Errorf("Alice participation = avail %d bet %d skip %d; want 4/2/2", a.MatchesAvailable, a.MatchesBet, a.MatchesSkipped)
+	}
+	if a.MatchesBeforeJoining != 0 {
+		t.Errorf("Alice before-joining = %d; want 0", a.MatchesBeforeJoining)
+	}
+	if a.RecentSkips != 2 { // m3, m4 left blank after her last pick (m2)
+		t.Errorf("Alice recent skips = %d; want 2 (gave up after m2)", a.RecentSkips)
+	}
+
+	z := cardByName(t, cards, "Zoe")
+	if !z.JoinedLate || z.MatchesBeforeJoining != 1 {
+		t.Errorf("Zoe should be a late joiner with 1 pre-join match, got late=%v before=%d", z.JoinedLate, z.MatchesBeforeJoining)
+	}
+	if z.MatchesAvailable != 3 || z.MatchesBet != 2 || z.MatchesSkipped != 1 {
+		t.Errorf("Zoe participation = avail %d bet %d skip %d; want 3/2/1", z.MatchesAvailable, z.MatchesBet, z.MatchesSkipped)
+	}
+	if z.RecentSkips != 1 { // m4 left blank after her last pick (m3)
+		t.Errorf("Zoe recent skips = %d; want 1", z.RecentSkips)
+	}
+
+	// The digest carries these so BETanIA never reads a skip as a wrong pick.
+	d, err := svc.CardDigest(zoe.ID)
+	if err != nil {
+		t.Fatalf("CardDigest: %v", err)
+	}
+	if d.MatchesSkipped != 1 || !d.JoinedLate || d.RegisteredAt == "" || d.RecentSkips != 1 {
+		t.Errorf("Zoe digest = %+v; want skipped 1, late, a reg date, recent_skips 1", d)
+	}
+}
+
 // Cards (and the generate actions) are admin-only.
 func TestPlayerCardsRequireAdmin(t *testing.T) {
 	svc, _, alice, _ := seedTwoRoundPool(t)

@@ -42,6 +42,16 @@ type PlayerCard struct {
 	Narrative      string
 	NarratedAt     time.Time
 	IsSelf         bool // BETanIA's own card
+
+	// Participation & tenure — a NO-PICK is not a wrong pick, and a late joiner
+	// isn't accountable for games before they arrived. All over finished matches.
+	MatchesAvailable     int          // finished games open to them (kicked off after they joined)
+	MatchesBet           int          // of those, how many they actually predicted
+	MatchesSkipped       int          // available games left with no pick (absent, not wrong)
+	MatchesBeforeJoining int          // finished games played before they registered
+	JoinedLate           bool         // some matches finished before they registered
+	LastPick             *MatchResult // their most recent predicted finished game
+	RecentSkips          int          // available games after their last pick left blank (a "gave up" tail)
 }
 
 // timeouts bound the on-demand card generation (one no-web-search call per player).
@@ -93,8 +103,19 @@ func (s *Service) buildPlayerCards() ([]PlayerCard, error) {
 		if ps.Position <= 3 {
 			card.Medal = ps.Position
 		}
-		// Walk the whole history to build this player's trajectory + arc extremes.
-		for ri, r := range history {
+		// Walk this player's trajectory + arc extremes, but only from the round they
+		// JOINED (rounds before registration aren't their story — they'd otherwise show
+		// up artificially last and inflate a "climb from the bottom"). Round labels are
+		// UTC dates ("2006-01-02"), so they compare lexicographically.
+		regDate := ""
+		if !card.User.CreatedAt.IsZero() {
+			regDate = card.User.CreatedAt.UTC().Format("2006-01-02")
+		}
+		first := true
+		for _, r := range history {
+			if regDate != "" && r.Label < regDate {
+				continue
+			}
 			for _, p := range r.Ranks {
 				if p.UserID != ps.UserID {
 					continue
@@ -103,16 +124,19 @@ func (s *Service) buildPlayerCards() ([]PlayerCard, error) {
 					Label: r.Label, Position: p.Position, Total: p.Total,
 					Movement: p.Movement, PointsGained: p.PointsGained,
 				})
-				if ri == 0 {
+				if first {
 					card.StartRank = p.Position
 				}
 				if card.PeakRank == 0 || p.Position < card.PeakRank {
 					card.PeakRank = p.Position
 				}
-				if p.Movement > card.BiggestClimb {
+				// Skip the first kept round's movement: for a late joiner it's the
+				// artificial jump out of the pre-registration filler, not a real climb.
+				if !first && p.Movement > card.BiggestClimb {
 					card.BiggestClimb = p.Movement
 					card.ClimbRound = r.Label
 				}
+				first = false
 				break
 			}
 		}
@@ -129,25 +153,46 @@ func (s *Service) buildPlayerCards() ([]PlayerCard, error) {
 // fillCardPicks tallies the player's exact/correct hits and picks their best call
 // (highest-scoring finished pick) and worst miss (a finished pick that scored 0, the
 // one furthest off by goal distance) — all from finished matches only, so the card is
-// the stable "as if ended" snapshot.
+// the stable "as if ended" snapshot. It also folds in PARTICIPATION (a no-pick is not
+// a wrong pick), TENURE (a late joiner isn't blamed for games before they arrived),
+// and a GIVE-UP tail (available games left blank after their last pick). MyResults
+// returns matches chronologically (ListMatches is ORDER BY starts_at), so the
+// give-up tail is just the available games trailing the last bet.
 func (s *Service) fillCardPicks(card *PlayerCard) {
 	rows, _, err := s.MyResults(card.User.ID)
 	if err != nil {
 		return
 	}
+	reg := card.User.CreatedAt
+	availIdxLastBet := -1 // 1-based index, among available games, of the last one bet
 	worstDist := -1
 	for i := range rows {
 		r := rows[i]
-		if r.Bet == nil || !r.Match.Finished || r.Match.ScoreA == nil || r.Match.ScoreB == nil {
+		if !r.Match.Finished || r.Match.ScoreA == nil || r.Match.ScoreB == nil {
 			continue
 		}
+		// A game was open to this player only if they had registered before kickoff;
+		// one that had already started when they joined was never theirs to bet.
+		if !reg.IsZero() && !r.Match.StartsAt.After(reg) {
+			card.MatchesBeforeJoining++
+			continue
+		}
+		card.MatchesAvailable++
+		if r.Bet == nil {
+			card.MatchesSkipped++ // a NO-PICK — absent, not a wrong prediction
+			continue
+		}
+		card.MatchesBet++
+		row := r
+		card.LastPick = &row
+		availIdxLastBet = card.MatchesAvailable
+
 		if scoring.IsExact(*r.Bet, r.Match) {
 			card.ExactHits++
 		}
 		if scoring.IsCorrectResult(*r.Bet, r.Match) {
 			card.CorrectResults++
 		}
-		row := r
 		if card.BestPick == nil || r.Points > card.BestPick.Points {
 			card.BestPick = &row
 		}
@@ -158,6 +203,12 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 				card.WorstPick = &row
 			}
 		}
+	}
+	card.JoinedLate = card.MatchesBeforeJoining > 0
+	// A give-up tail only means something once they'd actually started picking; a
+	// player who never bet at all is "never started", not "gave up".
+	if availIdxLastBet > 0 {
+		card.RecentSkips = card.MatchesAvailable - availIdxLastBet
 	}
 	if card.BestPick != nil && card.BestPick.Points == 0 {
 		card.BestPick = nil // nothing actually scored — don't tout a 0 as a "best call"
@@ -273,6 +324,19 @@ func cardDigest(c PlayerCard, totalPlayers int, story string) ai.CardDigestData 
 		StartRank:      c.StartRank,
 		PeakRank:       c.PeakRank,
 		Story:          story,
+
+		MatchesAvailable:     c.MatchesAvailable,
+		MatchesBet:           c.MatchesBet,
+		MatchesSkipped:       c.MatchesSkipped,
+		MatchesBeforeJoining: c.MatchesBeforeJoining,
+		JoinedLate:           c.JoinedLate,
+		RecentSkips:          c.RecentSkips,
+	}
+	if !c.User.CreatedAt.IsZero() {
+		d.RegisteredAt = c.User.CreatedAt.UTC().Format("Jan 2")
+	}
+	if c.LastPick != nil {
+		d.LastPick = c.LastPick.Match.StartsAt.UTC().Format("Jan 2")
 	}
 	for _, t := range c.Trajectory {
 		d.Trajectory = append(d.Trajectory, ai.CardRound{

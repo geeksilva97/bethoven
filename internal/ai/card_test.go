@@ -56,6 +56,34 @@ func TestCardPromptIncludesMemoryTiers(t *testing.T) {
 	}
 }
 
+// cardPrompt must tell BETanIA that a no-pick is not a wrong pick, respect late
+// registration, and surface a give-up tail — and carry the participation/tenure data.
+func TestCardPromptDistinguishesNoPickAndTenure(t *testing.T) {
+	data := CardDigestData{
+		UserID: 1, Player: "Joao", FinalRank: 9, TotalPlayers: 10,
+		MatchesAvailable: 12, MatchesBet: 4, MatchesSkipped: 8,
+		JoinedLate: true, RegisteredAt: "Jun 18", MatchesBeforeJoining: 6,
+		LastPick: "Jun 24", RecentSkips: 7,
+	}
+	p := cardPrompt(data, CommentConfig{DefaultTone: "playful"})
+
+	if !strings.Contains(p, "NO-PICK IS NOT A WRONG PICK") {
+		t.Error("prompt must instruct that a skipped match is not a wrong prediction")
+	}
+	if !strings.Contains(p, "joined_late") || !strings.Contains(p, "registered_at") {
+		t.Error("prompt must steer the model to respect late registration")
+	}
+	if !strings.Contains(p, "recent_skips") {
+		t.Error("prompt must steer the model to recognise giving up")
+	}
+	// The participation/tenure numbers must reach the model as data.
+	for _, want := range []string{`"matches_skipped":8`, `"joined_late":true`, `"registered_at":"Jun 18"`, `"recent_skips":7`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("card data JSON missing %s", want)
+		}
+	}
+}
+
 // GenerateCards writes one narrative per player, sanitized, and persists each via the
 // SaveCard seam.
 func TestGenerateCardsWritesAndSanitizes(t *testing.T) {
