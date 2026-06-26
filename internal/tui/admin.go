@@ -32,7 +32,7 @@ func (m *Model) initAddMatch() {
 		teamA,
 		mk("team B"),
 		mk("group (optional, e.g. Group G)"),
-		mk("kickoff (local tz), e.g. 2026-06-20 18:00"),
+		mk("e.g. 2026-06-20 18:00"),
 	}
 	m.addFocus = 0
 	m.addPhase = models.PhaseRound32 // the first knockout round (48-team format) is the common admin add
@@ -129,7 +129,8 @@ func (m Model) viewAddMatch() string {
 		out += cur + labelStyle.Render(fmt.Sprintf("%-8s ", labels[i])) + m.addInputs[i].View() + "\n"
 	}
 	out += "\n  " + labelStyle.Render("Phase: ") + cursorOn.Render(string(m.addPhase)) +
-		helpStyle.Render("  (ctrl+p to cycle)") + "\n\n"
+		helpStyle.Render("  (ctrl+p to cycle)") + "\n"
+	out += "  " + helpStyle.Render("Kickoff is read in "+displayZoneName()+" (the pool timezone)") + "\n\n"
 	out += statusLine(m) + helpStyle.Render("tab: field · ctrl+p: phase · enter: add · esc: back")
 	return out
 }

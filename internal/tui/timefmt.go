@@ -15,6 +15,13 @@ func SetLocation(loc *time.Location) {
 	}
 }
 
+// displayZoneName is the human label for the current display zone — the IANA
+// name (e.g. "America/Sao_Paulo") or "UTC". Used so the admin time input names
+// the zone its input is interpreted in rather than a vague "local tz".
+func displayZoneName() string {
+	return displayLoc.String()
+}
+
 // fmtKickoff renders a stored (UTC) time in the display zone, with the zone's
 // abbreviation/offset so it's unambiguous — e.g. "Thu 18 Jun 16:00 -03".
 func fmtKickoff(t time.Time) string {
