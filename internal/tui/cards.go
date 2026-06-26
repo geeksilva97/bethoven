@@ -201,6 +201,35 @@ func (m Model) viewPlayerCard() string {
 	}
 	b.WriteString(labelStyle.Render(fmt.Sprintf("%d pts · %d exact · %d correct", c.Total, c.ExactHits, c.CorrectResults)) + "\n")
 
+	// Accuracy & momentum — only the parts that say something for this player.
+	stats := []string{fmt.Sprintf("bet %d/%d", c.MatchesBet, c.MatchesAvailable)}
+	if c.MatchesBet > 0 {
+		stats = append(stats, fmt.Sprintf("%d%% hit rate", c.HitRate))
+	}
+	if c.BestStreak >= 2 {
+		stats = append(stats, fmt.Sprintf("streak %d", c.BestStreak))
+	}
+	if c.RoundsAsLeader > 0 {
+		round := "round"
+		if c.RoundsAsLeader > 1 {
+			round = "rounds"
+		}
+		stats = append(stats, fmt.Sprintf("%d %s at #1", c.RoundsAsLeader, round))
+	}
+	b.WriteString(helpStyle.Render(strings.Join(stats, " · ")) + "\n")
+
+	// Tenure flags — late joiner or a give-up tail, only when they apply.
+	var notes []string
+	if c.JoinedLate {
+		notes = append(notes, fmt.Sprintf("joined late (missed %d before)", c.MatchesBeforeJoining))
+	}
+	if c.RecentSkips > 0 {
+		notes = append(notes, fmt.Sprintf("went quiet (last %d blank)", c.RecentSkips))
+	}
+	if len(notes) > 0 {
+		b.WriteString(helpStyle.Render(strings.Join(notes, " · ")) + "\n")
+	}
+
 	if c.BestPick != nil {
 		b.WriteString("\n" + okStyle.Render("Best call  ") + cardPickText(c.BestPick) + "\n")
 	}

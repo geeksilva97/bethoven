@@ -81,6 +81,11 @@ func TestPlayerCardsComputesStats(t *testing.T) {
 	if bob.WorstPick != nil {
 		t.Errorf("Bob never missed a finished bet, want nil WorstPick, got %+v", bob.WorstPick)
 	}
+	// Deterministic card metrics: Bob got both his bets right (streak 2, 100% hit
+	// rate) and led after round 2 (1 round at #1).
+	if bob.BestStreak != 2 || bob.HitRate != 100 || bob.RoundsAsLeader != 1 {
+		t.Errorf("Bob metrics = streak %d hit %d leader %d; want 2/100/1", bob.BestStreak, bob.HitRate, bob.RoundsAsLeader)
+	}
 
 	alice := cardByName(t, cards, "Alice")
 	if alice.FinalRank != 2 || alice.Medal != 2 {
@@ -100,6 +105,11 @@ func TestPlayerCardsComputesStats(t *testing.T) {
 	}
 	if len(alice.Trajectory) != 2 {
 		t.Errorf("expected a 2-round trajectory, got %d", len(alice.Trajectory))
+	}
+	// Alice nailed round 1 then missed round 2: streak 1, 1-of-2 = 50% hit rate, and
+	// she sat at #1 for one round before Bob overtook her.
+	if alice.BestStreak != 1 || alice.HitRate != 50 || alice.RoundsAsLeader != 1 {
+		t.Errorf("Alice metrics = streak %d hit %d leader %d; want 1/50/1", alice.BestStreak, alice.HitRate, alice.RoundsAsLeader)
 	}
 }
 

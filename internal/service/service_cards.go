@@ -36,6 +36,9 @@ type PlayerCard struct {
 	PeakRank       int
 	BiggestClimb   int    // best single-round rise (+places); 0 if they never climbed
 	ClimbRound     string // the round where the biggest climb happened
+	RoundsAsLeader int    // rounds (from when they joined) spent at #1
+	HitRate        int    // correct-result % of MatchesBet (0 when none bet) — skips never count against it
+	BestStreak     int    // longest run of consecutive correct-result picks (a skip or miss breaks it)
 	Trajectory     []CardPoint
 	BestPick       *MatchResult // highest-scoring finished pick (nil if none scored)
 	WorstPick      *MatchResult // a finished pick that scored 0, biggest goal-distance miss
@@ -130,6 +133,9 @@ func (s *Service) buildPlayerCards() ([]PlayerCard, error) {
 				if card.PeakRank == 0 || p.Position < card.PeakRank {
 					card.PeakRank = p.Position
 				}
+				if p.Position == 1 {
+					card.RoundsAsLeader++
+				}
 				// Skip the first kept round's movement: for a late joiner it's the
 				// artificial jump out of the pre-registration filler, not a real climb.
 				if !first && p.Movement > card.BiggestClimb {
@@ -166,6 +172,7 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 	reg := card.User.CreatedAt
 	availIdxLastBet := -1 // 1-based index, among available games, of the last one bet
 	worstDist := -1
+	streak := 0 // current run of consecutive correct-result picks (a skip or miss resets it)
 	for i := range rows {
 		r := rows[i]
 		if !r.Match.Finished || r.Match.ScoreA == nil || r.Match.ScoreB == nil {
@@ -180,6 +187,7 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 		card.MatchesAvailable++
 		if r.Bet == nil {
 			card.MatchesSkipped++ // a NO-PICK — absent, not a wrong prediction
+			streak = 0            // a blank breaks a hot streak
 			continue
 		}
 		card.MatchesBet++
@@ -192,6 +200,12 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 		}
 		if scoring.IsCorrectResult(*r.Bet, r.Match) {
 			card.CorrectResults++
+			streak++
+			if streak > card.BestStreak {
+				card.BestStreak = streak
+			}
+		} else {
+			streak = 0 // a wrong result ends the run
 		}
 		if card.BestPick == nil || r.Points > card.BestPick.Points {
 			card.BestPick = &row
@@ -203,6 +217,11 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 				card.WorstPick = &row
 			}
 		}
+	}
+	// Accuracy is over games they ACTUALLY bet — a skip is absence, not a miss, so it
+	// never drags the rate down (mirrors the no-pick-is-not-a-wrong-pick rule).
+	if card.MatchesBet > 0 {
+		card.HitRate = card.CorrectResults * 100 / card.MatchesBet
 	}
 	card.JoinedLate = card.MatchesBeforeJoining > 0
 	// A give-up tail only means something once they'd actually started picking; a

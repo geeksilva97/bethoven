@@ -84,6 +84,17 @@ func TestCardPromptDistinguishesNoPickAndTenure(t *testing.T) {
 	}
 }
 
+// Whatever the tone, the card prompt must ALWAYS instruct a genuine
+// thank-you-for-playing sendoff — even on a savage card.
+func TestCardPromptThanksForPlaying(t *testing.T) {
+	for _, tone := range []string{"playful", "savage"} {
+		p := cardPrompt(CardDigestData{Player: "Joao"}, CommentConfig{DefaultTone: tone})
+		if !strings.Contains(p, "THANKS FOR PLAYING") {
+			t.Errorf("%s card prompt must instruct a genuine thank-you-for-playing sendoff", tone)
+		}
+	}
+}
+
 // GenerateCards writes one narrative per player, sanitized, and persists each via the
 // SaveCard seam.
 func TestGenerateCardsWritesAndSanitizes(t *testing.T) {
