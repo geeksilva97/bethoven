@@ -89,6 +89,9 @@ type PlayerParticipation struct {
 	MatchesBeforeJoining int    `json:"matches_before_joining,omitempty"`
 	RegisteredAt         string `json:"registered_at,omitempty"`
 	RecentSkips          int    `json:"recent_skips,omitempty"`
+	// MiddleSkips is the run of available games left blank BETWEEN their first and last
+	// pick — in-and-out participation, distinct from the trailing give-up (RecentSkips).
+	MiddleSkips int `json:"middle_skips,omitempty"`
 }
 
 // CommentConfig carries everything the comment writer needs beyond the standings:

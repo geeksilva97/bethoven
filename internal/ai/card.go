@@ -62,4 +62,7 @@ type CardDigestData struct {
 	// means they stopped playing / checked out before the end).
 	LastPick    string `json:"last_pick,omitempty"`
 	RecentSkips int    `json:"recent_skips,omitempty"`
+	// MiddleSkips is the count of available games left blank BETWEEN their first and
+	// last pick — in-and-out participation, distinct from the trailing give-up tail.
+	MiddleSkips int `json:"middle_skips,omitempty"`
 }

@@ -16,7 +16,8 @@ type participation struct {
 	Bet           int
 	Skipped       int
 	BeforeJoining int
-	RecentSkips   int
+	RecentSkips   int // available games left blank AFTER the last pick (a "gave up" tail)
+	MiddleSkips   int // available games left blank BETWEEN the first and last pick (in-and-out)
 	JoinedLate    bool
 	NeverPicked   bool
 	LastBetIdx    int // index into the rows of the most recent finished bet, -1 if none
@@ -30,7 +31,9 @@ type participation struct {
 // card (fillCardPicks) and the comment participation digest.
 func computeParticipation(rows []MatchResult, reg time.Time) participation {
 	p := participation{LastBetIdx: -1}
-	availIdxLastBet := -1 // 1-based index, among available games, of the last one bet
+	availIdxLastBet := -1   // 1-based index, among available games, of the last one bet
+	firstBetSeen := false   // have we passed their first pick yet?
+	skipsAfterFirstBet := 0 // blanks once they'd started picking (middle + trailing)
 	for i := range rows {
 		r := rows[i]
 		if !r.Match.Finished || r.Match.ScoreA == nil || r.Match.ScoreB == nil {
@@ -45,9 +48,13 @@ func computeParticipation(rows []MatchResult, reg time.Time) participation {
 		p.Available++
 		if r.Bet == nil {
 			p.Skipped++ // a NO-PICK — absent, not a wrong prediction
+			if firstBetSeen {
+				skipsAfterFirstBet++
+			}
 			continue
 		}
 		p.Bet++
+		firstBetSeen = true
 		p.LastBetIdx = i
 		availIdxLastBet = p.Available
 	}
@@ -58,6 +65,9 @@ func computeParticipation(rows []MatchResult, reg time.Time) participation {
 	if availIdxLastBet > 0 {
 		p.RecentSkips = p.Available - availIdxLastBet
 	}
+	// Skips between their first and last pick (in-and-out): the blanks after they
+	// started, minus the trailing give-up tail.
+	p.MiddleSkips = skipsAfterFirstBet - p.RecentSkips
 	return p
 }
 
@@ -91,6 +101,7 @@ func (s *Service) participationDigest() []ai.PlayerParticipation {
 			JoinedLate:           p.JoinedLate,
 			MatchesBeforeJoining: p.BeforeJoining,
 			RecentSkips:          p.RecentSkips,
+			MiddleSkips:          p.MiddleSkips,
 		}
 		if !u.CreatedAt.IsZero() {
 			pp.RegisteredAt = u.CreatedAt.UTC().Format("Jan 2")

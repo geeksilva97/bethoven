@@ -240,6 +240,43 @@ func TestCommentConfigParticipation(t *testing.T) {
 	}
 }
 
+// A mid-run gap (skip between two picks) is counted as MiddleSkips, distinct from the
+// trailing give-up tail. Carlos bets m1, skips m2, bets m3, then skips m4+m5 (quits).
+func TestPlayerCardMiddleSkips(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	admin, _ := svc.Register(adminFP, testInvite, "Admin")
+	carlos, _ := svc.Register("SHA256:carlos", testInvite, "Carlos")
+
+	m := make([]int64, 5)
+	for i := range m {
+		m[i] = addMatch(t, store, svc.tournamentID, base.Add(time.Duration(2+24*i)*time.Hour))
+	}
+	betOK(t, svc, carlos.ID, m[0], 1, 0) // bet
+	betOK(t, svc, carlos.ID, m[2], 1, 0) // bet (m[1] skipped — a mid-run gap)
+
+	fc.T = base.Add(400 * time.Hour)
+	for _, id := range m {
+		if err := svc.EnterResult(admin, id, 1, 1); err != nil {
+			t.Fatalf("EnterResult: %v", err)
+		}
+	}
+
+	cards, err := svc.PlayerCards(admin)
+	if err != nil {
+		t.Fatalf("PlayerCards: %v", err)
+	}
+	c := cardByName(t, cards, "Carlos")
+	if c.MatchesAvailable != 5 || c.MatchesBet != 2 {
+		t.Fatalf("Carlos avail/bet = %d/%d; want 5/2", c.MatchesAvailable, c.MatchesBet)
+	}
+	if c.MiddleSkips != 1 { // m[1], between his m[0] and m[2] picks
+		t.Errorf("Carlos middle skips = %d; want 1", c.MiddleSkips)
+	}
+	if c.RecentSkips != 2 { // m[3], m[4] after his last pick
+		t.Errorf("Carlos recent skips = %d; want 2", c.RecentSkips)
+	}
+}
+
 // Cards (and the generate actions) are admin-only.
 func TestPlayerCardsRequireAdmin(t *testing.T) {
 	svc, _, alice, _ := seedTwoRoundPool(t)

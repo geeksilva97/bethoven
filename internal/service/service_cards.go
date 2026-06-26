@@ -55,6 +55,7 @@ type PlayerCard struct {
 	JoinedLate           bool         // some matches finished before they registered
 	LastPick             *MatchResult // their most recent predicted finished game
 	RecentSkips          int          // available games after their last pick left blank (a "gave up" tail)
+	MiddleSkips          int          // available games left blank between first and last pick (in-and-out)
 }
 
 // timeouts bound the on-demand card generation (one no-web-search call per player).
@@ -179,6 +180,7 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 	card.MatchesBeforeJoining = p.BeforeJoining
 	card.JoinedLate = p.JoinedLate
 	card.RecentSkips = p.RecentSkips
+	card.MiddleSkips = p.MiddleSkips
 	if p.LastBetIdx >= 0 {
 		row := rows[p.LastBetIdx]
 		card.LastPick = &row
@@ -351,6 +353,7 @@ func cardDigest(c PlayerCard, totalPlayers int, story string) ai.CardDigestData 
 		MatchesBeforeJoining: c.MatchesBeforeJoining,
 		JoinedLate:           c.JoinedLate,
 		RecentSkips:          c.RecentSkips,
+		MiddleSkips:          c.MiddleSkips,
 	}
 	if !c.User.CreatedAt.IsZero() {
 		d.RegisteredAt = c.User.CreatedAt.UTC().Format("Jan 2")

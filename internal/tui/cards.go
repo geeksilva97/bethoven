@@ -203,7 +203,10 @@ func (m Model) viewPlayerCard() string {
 
 	// Accuracy & momentum — only the parts that say something for this player. The
 	// VALUE is bright/bold and the word is dim, so the numbers read at a glance.
-	stats := []string{statVal.Render(fmt.Sprintf("%d/%d", c.MatchesBet, c.MatchesAvailable)) + helpStyle.Render(" bet")}
+	// Denominator is the WHOLE finished slate (before + after they joined), so a late
+	// joiner reads as "32/63 bet", not a misleading "32/32".
+	totalFinished := c.MatchesBeforeJoining + c.MatchesAvailable
+	stats := []string{statVal.Render(fmt.Sprintf("%d/%d", c.MatchesBet, totalFinished)) + helpStyle.Render(" bet")}
 	if c.MatchesBet > 0 {
 		stats = append(stats, statVal.Render(fmt.Sprintf("%d%%", c.HitRate))+helpStyle.Render(" hit rate"))
 	}
@@ -224,6 +227,9 @@ func (m Model) viewPlayerCard() string {
 	var notes []string
 	if c.JoinedLate {
 		notes = append(notes, fmt.Sprintf("joined late (missed %d before)", c.MatchesBeforeJoining))
+	}
+	if c.MiddleSkips > 0 {
+		notes = append(notes, fmt.Sprintf("in and out (%d mid-gaps)", c.MiddleSkips))
 	}
 	if c.RecentSkips > 0 {
 		notes = append(notes, fmt.Sprintf("went quiet (last %d blank)", c.RecentSkips))
