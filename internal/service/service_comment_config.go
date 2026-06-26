@@ -452,6 +452,7 @@ func (s *Service) CommentConfig() ai.CommentConfig {
 		Notes:          c.Notes,
 		PromptOverride: override,
 		Mood:           mood,
+		Participation:  s.participationDigest(),
 	}
 }
 

@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +104,63 @@ func TestLiveCommentWorkerPass(t *testing.T) {
 	}
 	if sig, hist := cache.snapshot(); sig != "" || len(hist) != 0 {
 		t.Errorf("game-over pass: cache not cleared (sig=%q hist=%v)", sig, hist)
+	}
+}
+
+// TestLiveCommentWorkerSnapshots verifies the leaderboard-dance capture: a frame is
+// logged on the first in-play pass, a goal that reorders the standings logs a NEW
+// frame EVEN inside the comment floor (snapshots are independent of it), an unchanged
+// tick logs nothing, and game-over resets so the next match starts fresh.
+func TestLiveCommentWorkerSnapshots(t *testing.T) {
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	sit := LiveSituation{
+		Matches:   []LiveMatchInfo{{TeamA: "Senegal", TeamB: "Brazil", ScoreA: 0, ScoreB: 0, Clock: "5'"}},
+		Standings: []LiveStanding{{Player: "Helton", Position: 1, Total: 10}, {Player: "Betânia", Position: 2, Total: 9}},
+	}
+	isLive := true
+	logPath := filepath.Join(t.TempDir(), "ai_comments.log")
+	kickoff := now.Add(-5 * time.Minute)
+
+	deps := LiveCommentDeps{
+		Situation: func() (LiveSituation, bool, error) { return sit, isLive, nil },
+		Config:    func() CommentConfig { return CommentConfig{DefaultTone: "playful"} },
+		Now:       func() time.Time { return now },
+	}
+	w := NewLiveCommentWorker(deps, &fakeLiveCommenter{}, NewLiveCommentCache(), "", 5*time.Minute, logPath)
+	ctx := context.Background()
+
+	// 1) First in-play pass logs the opening frame.
+	w.pass(ctx)
+	if n := len(RecentLiveSnapshots(logPath, kickoff, 50)); n != 1 {
+		t.Fatalf("first pass: frames = %d, want 1", n)
+	}
+
+	// 2) Unchanged situation: no new frame.
+	w.pass(ctx)
+	if n := len(RecentLiveSnapshots(logPath, kickoff, 50)); n != 1 {
+		t.Fatalf("unchanged pass: frames = %d, want still 1", n)
+	}
+
+	// 3) A goal flips the standings, still WITHIN the comment floor → the comment is
+	//    suppressed, but the snapshot is logged anyway (the dance is captured per goal).
+	sit.Matches[0].ScoreA = 1
+	sit.Standings = []LiveStanding{{Player: "Betânia", Position: 1, Total: 12, LivePoints: 3}, {Player: "Helton", Position: 2, Total: 10}}
+	now = now.Add(liveFloor / 2)
+	w.pass(ctx)
+	frames := RecentLiveSnapshots(logPath, kickoff, 50)
+	if len(frames) != 2 {
+		t.Fatalf("within-floor goal: frames = %d, want 2 (snapshot ignores the floor)", len(frames))
+	}
+	if frames[1].Standings[0].Player != "Betânia" || frames[1].Standings[0].Position != 1 {
+		t.Errorf("latest frame should show Betânia overtaking: %+v", frames[1].Standings)
+	}
+
+	// 4) Game over resets the dance; a fresh kickoff logs a baseline again.
+	isLive = false
+	now = now.Add(time.Minute)
+	w.pass(ctx)
+	if w.lastSnapSig != "" {
+		t.Error("game-over should reset lastSnapSig so the next match starts fresh")
 	}
 }
 

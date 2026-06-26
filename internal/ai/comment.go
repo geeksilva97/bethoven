@@ -70,6 +70,27 @@ type PlayerNote struct {
 	Text   string
 }
 
+// PlayerParticipation is one player's read-time participation/tenure summary, fed to
+// BETanIA's comment writer AND live director so she never reads a NO-PICK as a wrong
+// pick and never blames a late joiner for games before they arrived. The service only
+// emits an entry for players with something to caveat (a skip, a late join, or never
+// having picked) — a player who bet every available game is omitted, so a
+// fully-participating pool produces no participation block at all.
+type PlayerParticipation struct {
+	Name             string `json:"name"`
+	MatchesAvailable int    `json:"matches_available"` // finished games open to them since they joined
+	MatchesBet       int    `json:"matches_bet"`       // of those, how many they actually predicted
+	MatchesSkipped   int    `json:"matches_skipped"`   // available games left BLANK — absence, not a wrong pick
+	NeverPicked      bool   `json:"never_picked,omitempty"`
+	JoinedLate       bool   `json:"joined_late,omitempty"`
+	// MatchesBeforeJoining is how many finished before they registered (never theirs
+	// to play); RegisteredAt is a short date label ("Jun 18"); RecentSkips is the run
+	// of available games left blank after their last pick (a "gave up" tail).
+	MatchesBeforeJoining int    `json:"matches_before_joining,omitempty"`
+	RegisteredAt         string `json:"registered_at,omitempty"`
+	RecentSkips          int    `json:"recent_skips,omitempty"`
+}
+
 // CommentConfig carries everything the comment writer needs beyond the standings:
 // the default tone, per-player tone overrides (by display name), BETanIA's own
 // name (her line is first person), and admin context (rivalries + house notes).
@@ -84,6 +105,11 @@ type CommentConfig struct {
 	PlayerNotes []PlayerNote
 	// Notes are pool-wide house notes about nobody in particular (no player binding).
 	Notes []string
+	// Participation carries the per-player no-pick/tenure facts (only for players with
+	// something to caveat — see PlayerParticipation), so neither the per-player roasts
+	// nor the live commentary mistake a skipped game for a wrong prediction or blame a
+	// late joiner. Empty ⇒ no participation block (every player bet what was open).
+	Participation []PlayerParticipation
 	// DerivedNotes is BETanIA's own auto-generated "house notes" snapshot: a short
 	// condensation of recently finished matches and how the pool's picks fared,
 	// produced by DigestResults and refreshed when a match settles. It's a SEPARATE
@@ -186,6 +212,11 @@ type ResultsDigestData struct {
 	// LiveStory is BETanIA's own play-by-play from during the match (recovered
 	// from the comment log; oldest first). Optional grounding for the narrative.
 	LiveStory []string `json:"live_story,omitempty"`
+	// LiveSnapshots are the leaderboard "dance" frames captured as goals went in
+	// (recovered from the comment log; oldest first). Each frame is the pool standings
+	// at one moment, so the note can recount the table moving DURING the match —
+	// shrinking gaps, a rival overtaking another. Optional.
+	LiveSnapshots []LiveSnapshot `json:"live_snapshots,omitempty"`
 }
 
 // narrativeTypes is the closed vocabulary the detector may use (from the brief).
@@ -243,10 +274,13 @@ func normalizeTone(t string) string {
 // roast BETanIA writes, the comment-side sibling of logEntry.
 type commentLogEntry struct {
 	At     string `json:"at"`
-	Source string `json:"source"` // always "comment"
-	Player string `json:"player"`
+	Source string `json:"source"` // "comment" | "player_card" | "live_comment" | "live_snapshot"
+	Player string `json:"player,omitempty"`
 	Tone   string `json:"tone,omitempty"`
-	Text   string `json:"text"`
+	Text   string `json:"text,omitempty"`
+	// Snapshot carries a leaderboard "dance" frame (source:"live_snapshot"); it has no
+	// prose Text. Nil for every other entry kind.
+	Snapshot *LiveSnapshot `json:"snapshot,omitempty"`
 }
 
 // appendCommentLog appends one JSON line per comment to path. A logging failure is
@@ -291,6 +325,30 @@ func appendPlayerCardLog(path string, at time.Time, player, text string) error {
 		Source: "player_card",
 		Player: player,
 		Text:   text,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// appendLiveSnapshotLog appends one JSON line per leaderboard "dance" frame to path,
+// tagged source:"live_snapshot" so the post-match digest can recover the standings
+// movement during the game. A logging failure is non-fatal (the frame is throwaway).
+func appendLiveSnapshotLog(path string, at time.Time, snap LiveSnapshot) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	line, err := json.Marshal(commentLogEntry{
+		At:       at.UTC().Format(time.RFC3339),
+		Source:   "live_snapshot",
+		Snapshot: &snap,
 	})
 	if err != nil {
 		return err

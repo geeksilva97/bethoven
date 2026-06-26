@@ -201,24 +201,26 @@ func (m Model) viewPlayerCard() string {
 	}
 	b.WriteString(labelStyle.Render(fmt.Sprintf("%d pts · %d exact · %d correct", c.Total, c.ExactHits, c.CorrectResults)) + "\n")
 
-	// Accuracy & momentum — only the parts that say something for this player.
-	stats := []string{fmt.Sprintf("bet %d/%d", c.MatchesBet, c.MatchesAvailable)}
+	// Accuracy & momentum — only the parts that say something for this player. The
+	// VALUE is bright/bold and the word is dim, so the numbers read at a glance.
+	stats := []string{statVal.Render(fmt.Sprintf("%d/%d", c.MatchesBet, c.MatchesAvailable)) + helpStyle.Render(" bet")}
 	if c.MatchesBet > 0 {
-		stats = append(stats, fmt.Sprintf("%d%% hit rate", c.HitRate))
+		stats = append(stats, statVal.Render(fmt.Sprintf("%d%%", c.HitRate))+helpStyle.Render(" hit rate"))
 	}
 	if c.BestStreak >= 2 {
-		stats = append(stats, fmt.Sprintf("streak %d", c.BestStreak))
+		stats = append(stats, statVal.Render(fmt.Sprintf("%d", c.BestStreak))+helpStyle.Render(" streak"))
 	}
 	if c.RoundsAsLeader > 0 {
 		round := "round"
 		if c.RoundsAsLeader > 1 {
 			round = "rounds"
 		}
-		stats = append(stats, fmt.Sprintf("%d %s at #1", c.RoundsAsLeader, round))
+		stats = append(stats, statVal.Render(fmt.Sprintf("%d", c.RoundsAsLeader))+helpStyle.Render(" "+round+" at #1"))
 	}
-	b.WriteString(helpStyle.Render(strings.Join(stats, " · ")) + "\n")
+	b.WriteString(strings.Join(stats, helpStyle.Render(" · ")) + "\n")
 
-	// Tenure flags — late joiner or a give-up tail, only when they apply.
+	// Tenure flags — late joiner or a give-up tail, only when they apply. labelStyle
+	// (not help-grey) so the caveat is legible against the card border.
 	var notes []string
 	if c.JoinedLate {
 		notes = append(notes, fmt.Sprintf("joined late (missed %d before)", c.MatchesBeforeJoining))
@@ -227,7 +229,7 @@ func (m Model) viewPlayerCard() string {
 		notes = append(notes, fmt.Sprintf("went quiet (last %d blank)", c.RecentSkips))
 	}
 	if len(notes) > 0 {
-		b.WriteString(helpStyle.Render(strings.Join(notes, " · ")) + "\n")
+		b.WriteString(labelStyle.Render(strings.Join(notes, " · ")) + "\n")
 	}
 
 	if c.BestPick != nil {

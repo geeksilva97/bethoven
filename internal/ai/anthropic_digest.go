@@ -43,11 +43,12 @@ func digestPrompt(data ResultsDigestData, cfg CommentConfig) string {
 	}
 	b.WriteString("\nRULES:\n")
 	b.WriteString("1. Ground every claim ONLY in the data below — real scores, real picks, and the live commentary you already made. Never invent a result, a name, or a pick.\n")
-	b.WriteString("2. Tell the STORY of the game(s): condense into 2-5 short sentences covering the actual results, who nailed a scoreline, who whiffed, any upset versus what the pool mostly predicted, and the key moments from the live commentary (\"live_story\") if present.\n")
-	b.WriteString("3. This is a shared situational snapshot for the pool, not a message to one person. No emojis, no markdown, no headings — just the sentences.\n")
-	b.WriteString("4. Refer to players by their exact display names from the data.\n\n")
+	b.WriteString("2. Tell the STORY of the game(s): condense into 3-6 short sentences covering the actual results, who nailed a scoreline, who whiffed, any upset versus what the pool mostly predicted, and the key moments from the live commentary (\"live_story\") if present.\n")
+	b.WriteString("3. THE LEADERBOARD DANCE (the best part): \"live_snapshots\" are frozen frames of the POOL standings captured as the goals went in, oldest first — each frame has the scoreline, the match clock, and every player's provisional position/total at that instant. Trace how the table MOVED during the match and weave it in concretely: a gap shrinking goal by goal, a rival OVERTAKING another, someone sliding with each goal, the final margin between two close players (e.g. \"as Senegal pulled level Helton edged past Betânia, but a late goal restored a 4-point cushion\"). This standings movement is what makes the note come alive — prefer it over a flat result recap. Ground every position, total and gap ONLY in the frames; if there are no snapshots, skip this.\n")
+	b.WriteString("4. This is a shared situational snapshot for the pool, not a message to one person. No emojis, no markdown, no headings — just the sentences.\n")
+	b.WriteString("5. Refer to players by their exact display names from the data.\n\n")
 	b.WriteString(untrustedDataNote)
-	b.WriteString("FINISHED MATCHES + THE POOL'S PICKS + THE LIVE STORY (JSON, newest first):\n")
+	b.WriteString("FINISHED MATCHES + THE POOL'S PICKS + THE LIVE STORY + THE LEADERBOARD DANCE (\"live_snapshots\"; JSON):\n")
 	if out, err := json.Marshal(data); err == nil {
 		b.Write(out)
 	} else {
@@ -65,7 +66,7 @@ func digestTool() anthropic.ToolParam {
 			Properties: map[string]any{
 				"digest": map[string]any{
 					"type":        "string",
-					"description": "A short snapshot (2-5 sentences) of the finished matches and how the pool's picks fared. No emojis or line breaks.",
+					"description": "A short snapshot (3-6 sentences) of the finished match(es), how the pool's picks fared, and the leaderboard dance during the game. No emojis or line breaks.",
 				},
 			},
 			ExtraFields: map[string]any{"required": []string{"digest"}},

@@ -85,6 +85,27 @@ type LiveStanding struct {
 	LivePoints int    `json:"live_points,omitempty"`
 }
 
+// SnapStanding is one player's provisional position at a single live snapshot frame:
+// their live-adjusted total and rank at that instant, plus the points the in-play
+// match is currently earning them.
+type SnapStanding struct {
+	Player     string `json:"player"`
+	Position   int    `json:"position"`
+	Total      int    `json:"total"`                  // settled + provisional at this frame
+	LivePoints int    `json:"live_points,omitempty"`  // provisional gain from the live match
+}
+
+// LiveSnapshot is one frozen frame of the pool leaderboard captured DURING a live
+// match — taken when a goal moved the score (and thus the provisional standings) — so
+// the post-match derived note can recount the "dance": gaps shrinking or widening, a
+// rival overtaking another, who climbed or slid with each goal. Frames are oldest
+// first; Score is the live scoreline(s) and Clock the match clock at that instant.
+type LiveSnapshot struct {
+	Clock     string         `json:"clock,omitempty"`
+	Score     string         `json:"score,omitempty"`
+	Standings []SnapStanding `json:"standings"`
+}
+
 // LiveUpcoming is a match about to kick off — grounding for a "game about to
 // start" hype line. MinutesToKO is whole minutes until kickoff (>0).
 type LiveUpcoming struct {
@@ -326,6 +347,10 @@ type LiveCommentWorker struct {
 	// DIFFERENT pool dynamics instead of fixating on one hot player. Only the Run
 	// goroutine touches it (pass is sequential), so no lock is needed.
 	focusIdx int
+	// lastSnapSig is the last leaderboard-dance frame fingerprint logged, so a new
+	// snapshot is captured only when a goal actually shifts the provisional standings
+	// (not every tick). Reset when nothing is live. Run-goroutine-only, no lock.
+	lastSnapSig string
 }
 
 // liveFocus is one angle in the director's rotation: the directive text fed to the
@@ -417,10 +442,25 @@ func (w *LiveCommentWorker) pass(ctx context.Context) {
 		// Nothing in play, upcoming, or just-finished: throw the line + history away.
 		w.cache.clear()
 		w.lastGen = time.Time{}
+		w.lastSnapSig = "" // next live match starts the dance fresh
 		return
 	}
 
 	now := w.deps.Now()
+
+	// Leaderboard "dance" frame: capture a snapshot whenever an in-play score (and so
+	// the provisional standings) changed. Done BEFORE the heartbeat/floor returns and
+	// independent of whether a comment is written, so every goal's leaderboard shift is
+	// recorded for the post-match derived note (and, through it, rivalry detection).
+	if sit.inPlay() {
+		if snapSig := liveSnapSignature(sit); snapSig != w.lastSnapSig {
+			w.lastSnapSig = snapSig
+			if err := appendLiveSnapshotLog(w.logPath, now, liveSnapshotFrom(sit)); err != nil {
+				w.logger.Printf("ai: log live snapshot: %v", err)
+			}
+		}
+	}
+
 	prevSig, history := w.cache.snapshot()
 	sig := liveSignature(sit)
 
@@ -530,6 +570,49 @@ func (w *LiveCommentWorker) regenStaleRoasts(ctx context.Context, now time.Time,
 			break
 		}
 	}
+}
+
+// liveSnapshotFrom freezes the current leaderboard + live scoreline(s) into one
+// dance frame. Standings are copied as-is (already live-adjusted and rank-sorted by
+// the service builder); Score lists every live match, Clock takes the first.
+func liveSnapshotFrom(sit LiveSituation) LiveSnapshot {
+	snap := LiveSnapshot{}
+	parts := make([]string, 0, len(sit.Matches))
+	for _, m := range sit.Matches {
+		parts = append(parts, fmt.Sprintf("%s %d-%d %s", m.TeamA, m.ScoreA, m.ScoreB, m.TeamB))
+		if snap.Clock == "" {
+			snap.Clock = m.Clock
+		}
+	}
+	snap.Score = strings.Join(parts, "; ")
+	for _, s := range sit.Standings {
+		snap.Standings = append(snap.Standings, SnapStanding{
+			Player: s.Player, Position: s.Position, Total: s.Total, LivePoints: s.LivePoints,
+		})
+	}
+	return snap
+}
+
+// liveSnapSignature fingerprints just the dance-relevant state: the live scoreline(s)
+// and every player's provisional position+total. It changes only when a goal moves
+// the score (and therefore the standings), so a frame is logged once per real shift
+// rather than every tick.
+func liveSnapSignature(sit LiveSituation) string {
+	var b strings.Builder
+	ms := make([]string, 0, len(sit.Matches))
+	for _, m := range sit.Matches {
+		ms = append(ms, fmt.Sprintf("%s%d-%d%s", m.TeamA, m.ScoreA, m.ScoreB, m.TeamB))
+	}
+	sort.Strings(ms)
+	b.WriteString(strings.Join(ms, "|"))
+	b.WriteString("#")
+	ss := make([]string, 0, len(sit.Standings))
+	for _, s := range sit.Standings {
+		ss = append(ss, fmt.Sprintf("%s:%d:%d", s.Player, s.Position, s.Total))
+	}
+	sort.Strings(ss)
+	b.WriteString(strings.Join(ss, ","))
+	return b.String()
 }
 
 // liveSignature is a deterministic fingerprint of the parts of the situation that

@@ -336,6 +336,53 @@ func TestCommentPromptOverride(t *testing.T) {
 	}
 }
 
+// The per-player comment prompt must surface no-pick/tenure grounding when any player
+// has a caveat, telling BETanIA a blank isn't a wrong pick — and stay silent (no
+// block) for a fully-participating pool. Always appended, even under an override.
+func TestCommentPromptParticipation(t *testing.T) {
+	history := oneRound()
+	cfg := CommentConfig{
+		DefaultTone: "savage",
+		Participation: []PlayerParticipation{
+			{Name: "Zoe", MatchesAvailable: 8, MatchesBet: 2, MatchesSkipped: 6, JoinedLate: true, RegisteredAt: "Jun 18", MatchesBeforeJoining: 4, RecentSkips: 5},
+		},
+	}
+	p := commentPrompt(history, nil, cfg)
+	if !strings.Contains(p, "NO-PICK IS NOT A WRONG PICK") {
+		t.Error("comment prompt must instruct that a skipped game is not a wrong pick")
+	}
+	for _, want := range []string{`"matches_skipped":6`, `"joined_late":true`, `"registered_at":"Jun 18"`, `"recent_skips":5`} {
+		if !strings.Contains(p, want) {
+			t.Errorf("participation JSON missing %s", want)
+		}
+	}
+	// Survives an admin override (it's a correctness guard, not a style choice).
+	if !strings.Contains(commentPrompt(history, nil, CommentConfig{PromptOverride: "Talk like a pirate.", Participation: cfg.Participation}), "NO-PICK IS NOT A WRONG PICK") {
+		t.Error("participation grounding must persist under a prompt override")
+	}
+	// No caveats ⇒ no participation block at all.
+	if strings.Contains(commentPrompt(history, nil, CommentConfig{DefaultTone: "playful"}), "PARTICIPATION & TENURE") {
+		t.Error("a fully-participating pool must produce no participation block")
+	}
+}
+
+// The live director gets the same no-pick/tenure grounding, so it never roasts a
+// bottom-of-table or zero-points player as a bad predictor when they're sitting out.
+func TestLiveCommentPromptParticipation(t *testing.T) {
+	sit := LiveSituation{Matches: []LiveMatchInfo{{TeamA: "A", TeamB: "B", ScoreA: 1, ScoreB: 0, Clock: "30'"}}}
+	cfg := CommentConfig{
+		DefaultTone:   "playful",
+		Participation: []PlayerParticipation{{Name: "Ghost", MatchesAvailable: 10, MatchesBet: 0, MatchesSkipped: 10, NeverPicked: true}},
+	}
+	p := liveCommentPrompt(sit, nil, cfg)
+	if !strings.Contains(p, "NO-PICK IS NOT A WRONG PICK") || !strings.Contains(p, `"never_picked":true`) {
+		t.Error("live prompt must carry the no-pick/tenure grounding")
+	}
+	if strings.Contains(liveCommentPrompt(sit, nil, CommentConfig{DefaultTone: "playful"}), "PARTICIPATION & TENURE") {
+		t.Error("no participation ⇒ no block in the live prompt")
+	}
+}
+
 func TestRegenerateOneUpsertsJustThatPlayer(t *testing.T) {
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	fc := &fakeCommenter{comments: []Comment{

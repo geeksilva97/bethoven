@@ -25,6 +25,10 @@ var (
 	labelStyle = lipgloss.NewStyle().Foreground(subtle)
 	lockStyle  = lipgloss.NewStyle().Foreground(dim).Italic(true)
 
+	// statVal makes a card metric's VALUE pop against its dim label — the numbers
+	// were getting lost when the whole line was help-grey.
+	statVal = lipgloss.NewStyle().Foreground(subtle).Bold(true)
+
 	// drawStyle marks a draw in the recent-form strip. Help-grey (dim) is too
 	// faint to read on a dark terminal, so use the brighter neutral, bold — it
 	// stays clearly "neither win nor loss" without borrowing the red/green.

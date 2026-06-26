@@ -31,6 +31,11 @@ const derivedNoteFeedCap = 8
 // match's digest as its "story".
 const derivedLiveStoryCap = 30
 
+// derivedSnapshotCap bounds how many leaderboard "dance" frames are pulled into one
+// match's digest. A frame is logged per real standings shift (≈ per goal), so this
+// comfortably covers a whole match while keeping the digest prompt bounded.
+const derivedSnapshotCap = 40
+
 type derivedNote struct {
 	MatchID int64  `json:"match_id,omitempty"`
 	Text    string `json:"text"`
@@ -154,9 +159,12 @@ func (s *Service) matchDigestData(m models.Match, sc scorer) ai.ResultsDigestDat
 		}
 	}
 	data := ai.ResultsDigestData{MatchID: m.ID, Matches: []ai.FinishedMatchDigest{fm}}
-	// The live "story" of THIS game: lines logged from its kickoff onward.
+	// The live "story" of THIS game: lines logged from its kickoff onward, plus the
+	// leaderboard "dance" frames captured as the goals went in — so the note can recount
+	// both the play-by-play and how the pool table moved during the match.
 	if s.aiCommentLogPath != "" {
 		data.LiveStory = ai.RecentLiveComments(s.aiCommentLogPath, m.StartsAt, derivedLiveStoryCap)
+		data.LiveSnapshots = ai.RecentLiveSnapshots(s.aiCommentLogPath, m.StartsAt, derivedSnapshotCap)
 	}
 	return data
 }

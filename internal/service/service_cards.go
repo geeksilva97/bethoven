@@ -170,7 +170,23 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 		return
 	}
 	reg := card.User.CreatedAt
-	availIdxLastBet := -1 // 1-based index, among available games, of the last one bet
+	// Participation/tenure via the shared helper (one source of truth for the
+	// availability rule, also used by the comment participation digest).
+	p := computeParticipation(rows, reg)
+	card.MatchesAvailable = p.Available
+	card.MatchesBet = p.Bet
+	card.MatchesSkipped = p.Skipped
+	card.MatchesBeforeJoining = p.BeforeJoining
+	card.JoinedLate = p.JoinedLate
+	card.RecentSkips = p.RecentSkips
+	if p.LastBetIdx >= 0 {
+		row := rows[p.LastBetIdx]
+		card.LastPick = &row
+	}
+
+	// A second pass over the same rows for the SCORED picks (exact/correct/best/worst)
+	// and the correct-result streak — these need the per-game iteration, and the
+	// availability guard here mirrors computeParticipation's rule exactly.
 	worstDist := -1
 	streak := 0 // current run of consecutive correct-result picks (a skip or miss resets it)
 	for i := range rows {
@@ -178,23 +194,14 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 		if !r.Match.Finished || r.Match.ScoreA == nil || r.Match.ScoreB == nil {
 			continue
 		}
-		// A game was open to this player only if they had registered before kickoff;
-		// one that had already started when they joined was never theirs to bet.
 		if !reg.IsZero() && !r.Match.StartsAt.After(reg) {
-			card.MatchesBeforeJoining++
-			continue
+			continue // before they joined — not theirs to play
 		}
-		card.MatchesAvailable++
 		if r.Bet == nil {
-			card.MatchesSkipped++ // a NO-PICK — absent, not a wrong prediction
-			streak = 0            // a blank breaks a hot streak
+			streak = 0 // a blank breaks a hot streak
 			continue
 		}
-		card.MatchesBet++
 		row := r
-		card.LastPick = &row
-		availIdxLastBet = card.MatchesAvailable
-
 		if scoring.IsExact(*r.Bet, r.Match) {
 			card.ExactHits++
 		}
@@ -222,12 +229,6 @@ func (s *Service) fillCardPicks(card *PlayerCard) {
 	// never drags the rate down (mirrors the no-pick-is-not-a-wrong-pick rule).
 	if card.MatchesBet > 0 {
 		card.HitRate = card.CorrectResults * 100 / card.MatchesBet
-	}
-	card.JoinedLate = card.MatchesBeforeJoining > 0
-	// A give-up tail only means something once they'd actually started picking; a
-	// player who never bet at all is "never started", not "gave up".
-	if availIdxLastBet > 0 {
-		card.RecentSkips = card.MatchesAvailable - availIdxLastBet
 	}
 	if card.BestPick != nil && card.BestPick.Points == 0 {
 		card.BestPick = nil // nothing actually scored — don't tout a 0 as a "best call"

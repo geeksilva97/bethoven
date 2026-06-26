@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -124,5 +125,86 @@ func TestRecentLiveComments(t *testing.T) {
 	// Missing file ⇒ nil, no panic.
 	if RecentLiveComments(filepath.Join(t.TempDir(), "nope.log"), since, 10) != nil {
 		t.Error("missing file should give nil")
+	}
+}
+
+// A logged leaderboard frame round-trips: appendLiveSnapshotLog writes it, and
+// RecentLiveSnapshots recovers it (filtering by source + since), while prose
+// live_comment lines in the same file are ignored.
+func TestLiveSnapshotLogRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ai_comments.log")
+	base := time.Date(2026, 6, 20, 9, 0, 0, 0, time.UTC)
+
+	// An older frame (before `since`) and a prose line that must be skipped.
+	if err := appendLiveSnapshotLog(path, base.Add(-2*time.Hour), LiveSnapshot{Score: "A 0-0 B", Clock: "1'"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendLiveCommentLog(path, base, "prose, not a frame"); err != nil {
+		t.Fatal(err)
+	}
+	f1 := LiveSnapshot{Clock: "30'", Score: "Senegal 1-0 Brazil", Standings: []SnapStanding{{Player: "Helton", Position: 1, Total: 12, LivePoints: 3}, {Player: "Betânia", Position: 2, Total: 11}}}
+	f2 := LiveSnapshot{Clock: "70'", Score: "Senegal 2-1 Brazil", Standings: []SnapStanding{{Player: "Betânia", Position: 1, Total: 14}, {Player: "Helton", Position: 2, Total: 12}}}
+	if err := appendLiveSnapshotLog(path, base.Add(30*time.Minute), f1); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendLiveSnapshotLog(path, base.Add(70*time.Minute), f2); err != nil {
+		t.Fatal(err)
+	}
+
+	got := RecentLiveSnapshots(path, base, 10)
+	if len(got) != 2 {
+		t.Fatalf("want 2 frames since base (old one filtered), got %d: %+v", len(got), got)
+	}
+	if got[0].Score != "Senegal 1-0 Brazil" || got[1].Score != "Senegal 2-1 Brazil" {
+		t.Errorf("frames out of order or wrong: %+v", got)
+	}
+	if len(got[0].Standings) != 2 || got[1].Standings[0].Player != "Betânia" || got[1].Standings[0].Position != 1 {
+		t.Errorf("standings not preserved: %+v", got[1].Standings)
+	}
+	// Cap keeps the most recent.
+	if capped := RecentLiveSnapshots(path, base, 1); len(capped) != 1 || capped[0].Score != "Senegal 2-1 Brazil" {
+		t.Errorf("cap=1 gave %+v", capped)
+	}
+}
+
+// The digest prompt steers BETanIA to recount the leaderboard dance and carries the
+// snapshot frames as data the model can ground in.
+func TestDigestPromptCarriesDance(t *testing.T) {
+	data := ResultsDigestData{
+		Matches: []FinishedMatchDigest{{TeamA: "Senegal", TeamB: "Brazil", Score: "2-1"}},
+		LiveSnapshots: []LiveSnapshot{
+			{Clock: "30'", Score: "Senegal 1-0 Brazil", Standings: []SnapStanding{{Player: "Helton", Position: 1, Total: 12}}},
+			{Clock: "70'", Score: "Senegal 2-1 Brazil", Standings: []SnapStanding{{Player: "Betânia", Position: 1, Total: 14}}},
+		},
+	}
+	p := digestPrompt(data, CommentConfig{DefaultTone: "playful"})
+	if !strings.Contains(p, "LEADERBOARD DANCE") {
+		t.Error("digest prompt must instruct the model to recount the leaderboard dance")
+	}
+	if !strings.Contains(p, `"live_snapshots"`) || !strings.Contains(p, "Senegal 2-1 Brazil") {
+		t.Error("digest prompt must carry the snapshot frames as data")
+	}
+}
+
+// liveSnapSignature changes only when a live score or a standing position/total
+// moves — so a frame is logged once per real shift, not every tick.
+func TestLiveSnapSignature(t *testing.T) {
+	a := LiveSituation{
+		Matches:   []LiveMatchInfo{{TeamA: "A", TeamB: "B", ScoreA: 1, ScoreB: 0, Clock: "30'"}},
+		Standings: []LiveStanding{{Player: "X", Position: 1, Total: 10}, {Player: "Y", Position: 2, Total: 8}},
+	}
+	// Same scores + standings, only the clock advanced ⇒ unchanged signature.
+	b := a
+	b.Matches = []LiveMatchInfo{{TeamA: "A", TeamB: "B", ScoreA: 1, ScoreB: 0, Clock: "44'"}}
+	if liveSnapSignature(a) != liveSnapSignature(b) {
+		t.Error("a clock-only change must NOT alter the snapshot signature")
+	}
+	// A goal flips the standings ⇒ signature changes.
+	c := LiveSituation{
+		Matches:   []LiveMatchInfo{{TeamA: "A", TeamB: "B", ScoreA: 1, ScoreB: 1, Clock: "60'"}},
+		Standings: []LiveStanding{{Player: "Y", Position: 1, Total: 11}, {Player: "X", Position: 2, Total: 10}},
+	}
+	if liveSnapSignature(a) == liveSnapSignature(c) {
+		t.Error("a goal that reorders the standings must change the signature")
 	}
 }

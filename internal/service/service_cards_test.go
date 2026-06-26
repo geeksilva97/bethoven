@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"bethoven/internal/ai"
 	"bethoven/internal/models"
 )
 
@@ -181,6 +182,61 @@ func TestPlayerCardsParticipationAndTenure(t *testing.T) {
 	}
 	if d.MatchesSkipped != 1 || !d.JoinedLate || d.RegisteredAt == "" || d.RecentSkips != 1 {
 		t.Errorf("Zoe digest = %+v; want skipped 1, late, a reg date, recent_skips 1", d)
+	}
+}
+
+// CommentConfig carries per-player participation grounding so BETanIA's roasts and
+// live commentary never read a no-pick as a wrong pick — but ONLY for players with a
+// caveat (a skip, a late join, or never picking). Mirrors the card-tenure test setup.
+func TestCommentConfigParticipation(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	admin, _ := svc.Register(adminFP, testInvite, "Admin")
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	bob, _ := svc.Register("SHA256:bob", testInvite, "Bob")
+
+	m1 := addMatch(t, store, svc.tournamentID, base.Add(2*time.Hour))  // 06-11
+	m2 := addMatch(t, store, svc.tournamentID, base.Add(26*time.Hour)) // 06-12
+	m3 := addMatch(t, store, svc.tournamentID, base.Add(50*time.Hour)) // 06-13
+
+	// Bob bets every game — fully participating, so he must NOT appear in the digest.
+	betOK(t, svc, bob.ID, m1, 1, 0)
+	betOK(t, svc, bob.ID, m2, 1, 0)
+	betOK(t, svc, bob.ID, m3, 1, 0)
+	// Alice bets only the first, then goes quiet.
+	betOK(t, svc, alice.ID, m1, 2, 2)
+
+	// Zoe joins after m1 kicked off (late) and never picks at all.
+	fc.T = base.Add(3 * time.Hour)
+	svc.Register("SHA256:zoe", testInvite, "Zoe")
+
+	fc.T = base.Add(200 * time.Hour)
+	for _, m := range []int64{m1, m2, m3} {
+		if err := svc.EnterResult(admin, m, 1, 1); err != nil {
+			t.Fatalf("EnterResult: %v", err)
+		}
+	}
+
+	parts := svc.CommentConfig().Participation
+	byName := map[string]ai.PlayerParticipation{}
+	for _, p := range parts {
+		byName[p.Name] = p
+	}
+	if _, ok := byName["Bob"]; ok {
+		t.Error("Bob bet every game — he must not appear in the participation digest")
+	}
+	a, ok := byName["Alice"]
+	if !ok {
+		t.Fatal("Alice skipped games — she must appear in the digest")
+	}
+	if a.MatchesAvailable != 3 || a.MatchesBet != 1 || a.MatchesSkipped != 2 || a.RecentSkips != 2 || a.JoinedLate {
+		t.Errorf("Alice digest = %+v; want avail 3 bet 1 skip 2 recent 2, not late", a)
+	}
+	z, ok := byName["Zoe"]
+	if !ok {
+		t.Fatal("Zoe (late joiner, never picked) must appear in the digest")
+	}
+	if !z.JoinedLate || !z.NeverPicked || z.MatchesBeforeJoining != 1 || z.RegisteredAt == "" {
+		t.Errorf("Zoe digest = %+v; want late, never picked, 1 before joining, a reg date", z)
 	}
 }
 
