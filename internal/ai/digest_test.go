@@ -184,6 +184,11 @@ func TestDigestPromptCarriesDance(t *testing.T) {
 	if !strings.Contains(p, `"live_snapshots"`) || !strings.Contains(p, "Senegal 2-1 Brazil") {
 		t.Error("digest prompt must carry the snapshot frames as data")
 	}
+	// The final result must be ranked as the source of truth over the provisional
+	// live story/snapshots, so a since-overtaken scoreline isn't reported as "exact".
+	if !strings.Contains(p, "FINAL RESULT IS THE TRUTH") {
+		t.Error("digest prompt must mark the final score/points as authoritative over the in-play journey")
+	}
 }
 
 // liveSnapSignature changes only when a live score or a standing position/total
