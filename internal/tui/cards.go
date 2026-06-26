@@ -210,7 +210,7 @@ func (m Model) viewPlayerCard() string {
 
 	b.WriteString("\n")
 	if c.Narrative != "" {
-		b.WriteString(botMark.Render("🤖") + " " + commentStyle.Render(splitParagraphs(c.Narrative, 2)))
+		b.WriteString(botMark.Render("🤖") + " " + commentStyle.Render(splitParagraphs(c.Narrative, 1)))
 	} else {
 		b.WriteString(helpStyle.Render("No narrative yet — press r to generate this card."))
 	}
