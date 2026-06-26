@@ -128,6 +128,11 @@ type Service struct {
 	// consolidated note (admin "compact house notes"); nil when the comment worker
 	// isn't running, in which case CompactCommentNotes degrades to a lossless join.
 	aiHouseNotesCompactor func(ctx context.Context, notes []string) (string, error)
+	// aiCardGen / aiCardGenOne generate persisted end-of-tournament player-card
+	// narratives via BETanIA (admin "generate all" / per-card regen); nil when the
+	// comment worker isn't running, in which case the card actions return ErrAIOff.
+	aiCardGen    func(ctx context.Context) error
+	aiCardGenOne func(ctx context.Context, userID int64) (string, error)
 	// aiUsage is the optional persistent reader for BETanIA's Claude token usage and
 	// estimated cost (backed by the on-disk usage log); nil when BETanIA isn't running.
 	aiUsage AIUsageSource

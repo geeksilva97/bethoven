@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS leaderboard_comments (
     expires_at TEXT    NOT NULL DEFAULT ''
 );
 
+-- BETanIA's end-of-tournament "player cards": one persisted hero's-journey
+-- narrative per player, generated on demand by an admin. Only the AI narrative is
+-- stored; the trajectory and stats on the card are recomputed at read time. One
+-- row per user holds their latest narrative. Mirrors leaderboard_comments.
+CREATE TABLE IF NOT EXISTS player_cards (
+    user_id      INTEGER PRIMARY KEY REFERENCES users(id),
+    narrative    TEXT    NOT NULL,
+    generated_at TEXT    NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_matches_tournament ON matches(tournament_id);
 CREATE INDEX IF NOT EXISTS idx_bets_match ON bets(match_id);
 CREATE INDEX IF NOT EXISTS idx_bets_user ON bets(user_id);

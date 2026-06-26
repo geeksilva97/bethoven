@@ -38,6 +38,12 @@ type CommentDeps struct {
 	// comment. Both optional — nil ⇒ comments stay in-memory only (prior behaviour).
 	SaveComments func(comments []Comment) error
 	SaveComment  func(comment Comment) error
+	// CardDigests returns one card-digest input per player for the end-of-tournament
+	// "player cards" (admin "generate all"). CardDigest returns one player's. SaveCard
+	// persists a generated narrative. All optional — nil ⇒ the player-card tier is off.
+	CardDigests func() ([]CardDigestData, error)
+	CardDigest  func(userID int64) (CardDigestData, error)
+	SaveCard    func(userID int64, narrative string) error
 }
 
 // CommentWorker is BETanIA's per-player commentary worker. It has NO timer of its
@@ -389,4 +395,79 @@ func (w *CommentWorker) CompactHouseNotes(ctx context.Context, notes []string) (
 		return "", err
 	}
 	return sanitizeText(text), nil
+}
+
+// cardCallTimeout bounds ONE player-card model call (a single no-web-search call),
+// so a stall on one player can't hang the whole "generate all" pass.
+const cardCallTimeout = 90 * time.Second
+
+// GenerateCards writes an end-of-tournament card narrative for every player and
+// persists each via SaveCard (the admin "generate all" action). Best-effort per
+// player: a model or persist fault on one player is logged and the rest continue;
+// the first such error is returned so the caller can surface "some failed" while the
+// successful cards are already saved. No-op (nil) when the card seams aren't wired.
+// Text is sanitized at this boundary, like comments. Synchronous — the caller runs
+// it off the UI thread (a tea.Cmd).
+func (w *CommentWorker) GenerateCards(ctx context.Context) error {
+	if w.cmt == nil || w.deps.CardDigests == nil || w.deps.SaveCard == nil {
+		return nil
+	}
+	data, err := w.deps.CardDigests()
+	if err != nil {
+		return err
+	}
+	cfg := w.deps.Config()
+	cfg.Self = w.self // BETanIA's own card is first person
+	var firstErr error
+	n := 0
+	for _, d := range data {
+		if _, err := w.generateOne(ctx, d, cfg); err != nil {
+			w.logger.Printf("ai: player card (%s): %v", d.Player, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		n++
+	}
+	w.logger.Printf("ai: generated %d player cards", n)
+	return firstErr
+}
+
+// GenerateCard writes and persists ONE player's card narrative on demand (the admin
+// per-card "regenerate" action) and returns the text. Errors when the seams aren't
+// wired, the digest can't be built, or the model produced nothing.
+func (w *CommentWorker) GenerateCard(ctx context.Context, userID int64) (string, error) {
+	if w.cmt == nil || w.deps.CardDigest == nil || w.deps.SaveCard == nil {
+		return "", fmt.Errorf("player cards are off")
+	}
+	d, err := w.deps.CardDigest(userID)
+	if err != nil {
+		return "", err
+	}
+	cfg := w.deps.Config()
+	cfg.Self = w.self
+	return w.generateOne(ctx, d, cfg)
+}
+
+// generateOne runs the model call for one card, sanitizes, persists, and logs it.
+// Shared by the batch and single-player paths.
+func (w *CommentWorker) generateOne(ctx context.Context, d CardDigestData, cfg CommentConfig) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, cardCallTimeout)
+	defer cancel()
+	text, err := w.cmt.GeneratePlayerCard(cctx, d, cfg)
+	if err != nil {
+		return "", err
+	}
+	text = sanitizeText(text) // untrusted model output → same boundary as comments
+	if text == "" {
+		return "", fmt.Errorf("model produced no card")
+	}
+	if err := w.deps.SaveCard(d.UserID, text); err != nil {
+		return "", err
+	}
+	if err := appendPlayerCardLog(w.logPath, w.deps.Now(), d.Player, text); err != nil {
+		w.logger.Printf("ai: log player card (%s): %v", d.Player, err)
+	}
+	return text, nil
 }

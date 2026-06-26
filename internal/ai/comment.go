@@ -151,6 +151,11 @@ type Commenter interface {
 	// of replacing the set. Grounded only in the data; nil/empty ⇒ no rivalries worth
 	// tracking right now.
 	UpdateRivalries(ctx context.Context, history []RoundStanding, derivedNotes string, existing []Rivalry, cfg CommentConfig) ([]Rivalry, error)
+	// GeneratePlayerCard writes one player's end-of-tournament "hero's journey" card
+	// from their trajectory + stats + notable picks (the admin "generate cards" /
+	// per-card regen action). One grounded call, no web search. Returns "" when the
+	// model produced nothing.
+	GeneratePlayerCard(ctx context.Context, data CardDigestData, cfg CommentConfig) (string, error)
 }
 
 // DigestPick is one player's pick on a finished match, for the results snapshot.
@@ -261,6 +266,31 @@ func appendCommentLog(path, tone string, at time.Time, c Comment) error {
 		Player: c.Player,
 		Tone:   tone,
 		Text:   c.Text,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(append(line, '\n'))
+	return err
+}
+
+// appendPlayerCardLog appends one JSON line per generated player card to path,
+// tagged source:"player_card" so it's distinguishable from the roasts sharing the
+// same log file. A logging failure is non-fatal (the card is already persisted).
+func appendPlayerCardLog(path string, at time.Time, player, text string) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	line, err := json.Marshal(commentLogEntry{
+		At:     at.UTC().Format(time.RFC3339),
+		Source: "player_card",
+		Player: player,
+		Text:   text,
 	})
 	if err != nil {
 		return err

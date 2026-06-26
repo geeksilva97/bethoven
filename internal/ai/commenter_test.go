@@ -33,6 +33,11 @@ type fakeCommenter struct {
 	rivalriesErr error
 	rivalryCalls int
 	lastRivExist []Rivalry
+
+	card      string
+	cardErr   error
+	cardCalls int
+	lastCard  CardDigestData
 }
 
 func (f *fakeCommenter) DetectNarratives(ctx context.Context, h []RoundStanding) ([]Narrative, error) {
@@ -67,6 +72,12 @@ func (f *fakeCommenter) UpdateRivalries(ctx context.Context, h []RoundStanding, 
 	f.rivalryCalls++
 	f.lastRivExist = existing
 	return f.rivalries, f.rivalriesErr
+}
+
+func (f *fakeCommenter) GeneratePlayerCard(ctx context.Context, data CardDigestData, cfg CommentConfig) (string, error) {
+	f.cardCalls++
+	f.lastCard = data
+	return f.card, f.cardErr
 }
 
 func oneRound() []RoundStanding {

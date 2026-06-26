@@ -37,6 +37,7 @@ const (
 	EvMatchEdited    = "match_edited"    // admin edited a fixture's teams/phase/group/kickoff
 	EvMatchDeleted   = "match_deleted"   // admin removed a fixture
 	EvSettingChanged = "setting_changed" // admin changed a setting
+	EvCardGenerated  = "card_generated"  // admin generated BETanIA player card(s)
 )
 
 // Track records an event for callers that already hold the acting user (the

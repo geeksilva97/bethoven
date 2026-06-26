@@ -42,6 +42,8 @@ const (
 	screenAICommentDetail // admin-only: full text of a single BETanIA comment
 	screenAICommentRegen  // admin-only: optional steering prompt before regenerating one comment
 	screenAIPrompt        // admin-only: edit BETanIA's comment-prompt override
+	screenPlayerCards     // admin-only: end-of-tournament player-card list
+	screenPlayerCard      // admin-only: one player's full card
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -253,6 +255,14 @@ type Model struct {
 	// (optional) extra prompt; regenPlayer is the targeted player's display name.
 	regenArea   textarea.Model
 	regenPlayer string
+
+	// admin: end-of-tournament player cards. cards is the ranked set; cardCursor
+	// moves the list; cardSel is the card open in the detail view; cardBusy flags an
+	// in-flight generation so the views can show "generating…".
+	cards      []service.PlayerCard
+	cardCursor int
+	cardSel    int
+	cardBusy   bool
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -340,6 +350,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAICommentRegen(msg)
 	case screenAIPrompt:
 		return m.updateAIPrompt(msg)
+	case screenPlayerCards:
+		return m.updatePlayerCards(msg)
+	case screenPlayerCard:
+		return m.updatePlayerCard(msg)
 	}
 	return m, nil
 }
@@ -389,6 +403,10 @@ func (m Model) View() string {
 		return m.viewAICommentRegen()
 	case screenAIPrompt:
 		return m.viewAIPrompt()
+	case screenPlayerCards:
+		return m.viewPlayerCards()
+	case screenPlayerCard:
+		return m.viewPlayerCard()
 	}
 	return ""
 }

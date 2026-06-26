@@ -12,6 +12,11 @@ var (
 	subtle = lipgloss.Color("250")
 	cyan   = lipgloss.Color("45") // "live" accent — distinct from gold/green/red
 
+	// Podium accents for the player cards: gold (reuses the house gold), silver and
+	// bronze. Only used to colour a top-three card's border + medal.
+	silver = lipgloss.Color("#C0C0C0")
+	bronze = lipgloss.Color("#CD7F32")
+
 	titleStyle = lipgloss.NewStyle().Foreground(gold).Bold(true)
 	helpStyle  = lipgloss.NewStyle().Foreground(dim)
 	errStyle   = lipgloss.NewStyle().Foreground(red).Bold(true)

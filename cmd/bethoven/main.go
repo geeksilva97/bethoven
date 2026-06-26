@@ -203,11 +203,15 @@ func main() {
 					SetAutoRivalries: svc.SetAutoRivalries,
 					SaveComments:     svc.SaveComments,
 					SaveComment:      svc.SaveComment,
+					CardDigests:      svc.CardDigests,
+					CardDigest:       svc.CardDigest,
+					SaveCard:         svc.SavePlayerCardNarrative,
 				}, commenter, cache, cmon, u.DisplayName, cfg.AICommentLogPath)
 				svc.SetCommentTrigger(cw.Trigger)
 				svc.SetCommentRegen(cw.RegenerateOne)
 				svc.SetNotesCompactor(cw.CompactNotes)
 				svc.SetHouseNotesCompactor(cw.CompactHouseNotes)
+				svc.SetCardGen(cw.GenerateCards, cw.GenerateCard)
 				go cw.Run(ctx)
 				log.Printf("BETanIA commentary enabled (model=%s, cadence=on-demand: results + director)", cfg.AIModel)
 

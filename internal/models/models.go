@@ -127,6 +127,15 @@ type Bet struct {
 	UpdatedAt time.Time
 }
 
+// PlayerCardNarrative is BETanIA's persisted end-of-tournament "hero's journey"
+// recap for one player — the only stored part of a player card (the trajectory and
+// stats are recomputed at read time). Text is sanitized model output; At is when it
+// was generated. One row per user.
+type PlayerCardNarrative struct {
+	Text string
+	At   time.Time
+}
+
 // LeaderboardComment is BETanIA's persisted one-line take on a player's standing —
 // the durable backing store for the in-memory comment cache (one row per user, the
 // latest comment). Player is the display name the comment is about; ExpiresAt is the
