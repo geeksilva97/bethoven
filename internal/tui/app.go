@@ -29,6 +29,7 @@ const (
 	screenAdminMenu
 	screenAddMatch
 	screenEnterResult
+	screenConfirmDelete // admin-only: confirm removing a match (+ its bets)
 	screenAllBets
 	screenPublicBets // player-facing, kickoff-filtered; reuses the all-bets view
 	screenSettings
@@ -134,10 +135,12 @@ type Model struct {
 	rankPlayerSearch searchBox              // player filter within a game's ranking
 	rankBreakdown    *service.MatchStanding // set => showing one player's breakdown
 
-	// admin: add match
-	addInputs []textinput.Model
-	addFocus  int
-	addPhase  models.Phase
+	// admin: add match. editMatchID is 0 in add mode, or the id being edited when
+	// the add-match form was opened to correct an existing match.
+	addInputs   []textinput.Model
+	addFocus    int
+	addPhase    models.Phase
+	editMatchID int64
 
 	// admin: enter result
 	resCursor int
@@ -145,6 +148,10 @@ type Model struct {
 	resFocus  int
 	resMatch  *models.Match
 	resSearch searchBox
+
+	// admin: delete-match confirmation (reached with 'd' on the match list).
+	delMatch *models.Match
+	delBets  int
 
 	// all-bets grid + by-match drill-down. gridPublic marks the player-facing
 	// public view (kickoff-filtered, no admin framing) vs the admin grid.
@@ -309,6 +316,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAddMatch(msg)
 	case screenEnterResult:
 		return m.updateEnterResult(msg)
+	case screenConfirmDelete:
+		return m.updateConfirmDelete(msg)
 	case screenAllBets, screenPublicBets:
 		return m.updateAllBets(msg)
 	case screenSettings:
@@ -356,6 +365,8 @@ func (m Model) View() string {
 		return m.viewAddMatch()
 	case screenEnterResult:
 		return m.viewEnterResult()
+	case screenConfirmDelete:
+		return m.viewConfirmDelete()
 	case screenAllBets, screenPublicBets:
 		return m.viewAllBets()
 	case screenSettings:

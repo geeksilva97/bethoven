@@ -34,6 +34,8 @@ const (
 	EvBetPlaced      = "bet_placed"      // a pick was created or updated
 	EvResultEntered  = "result_entered"  // admin recorded a match result
 	EvMatchAdded     = "match_added"     // admin added a fixture
+	EvMatchEdited    = "match_edited"    // admin edited a fixture's teams/phase/group/kickoff
+	EvMatchDeleted   = "match_deleted"   // admin removed a fixture
 	EvSettingChanged = "setting_changed" // admin changed a setting
 )
 

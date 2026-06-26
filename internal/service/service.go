@@ -27,6 +27,8 @@ var (
 	ErrNameRequired = errors.New("a display name is required")
 	ErrBadName      = errors.New("display name has invalid characters")
 	ErrNameTaken    = errors.New("that display name is already taken")
+	ErrTeamRequired = errors.New("both team names are required")
+	ErrTeamInvalid  = errors.New("team name has invalid characters or is too long")
 )
 
 // maxNameLen bounds a display name (also guarded by the input widget).
@@ -50,6 +52,30 @@ func cleanName(raw string) (string, error) {
 		// Reject C0/C1 control codes (incl. ESC 0x1b) and unprintable runes.
 		if r < 0x20 || (r >= 0x7f && r <= 0x9f) || !unicode.IsPrint(r) {
 			return "", ErrBadName
+		}
+	}
+	return name, nil
+}
+
+// maxTeamLen bounds a team name. Generous vs maxNameLen — real names like
+// "Bosnia & Herzegovina" run long.
+const maxTeamLen = 40
+
+// cleanTeam validates an admin-entered team name. Team names render verbatim into
+// every player's terminal (fixtures, bracket, leaderboard, admin grid), so this
+// is the same ANSI-injection boundary as cleanName: reject control/escape runes
+// rather than silently strip, so the admin sees exactly what gets stored.
+func cleanTeam(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", ErrTeamRequired
+	}
+	if utf8.RuneCountInString(name) > maxTeamLen {
+		return "", ErrTeamInvalid
+	}
+	for _, r := range name {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) || !unicode.IsPrint(r) {
+			return "", ErrTeamInvalid
 		}
 	}
 	return name, nil

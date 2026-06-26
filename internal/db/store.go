@@ -124,6 +124,50 @@ func (s *Store) CreateMatch(m models.Match) (int64, error) {
 	return res.LastInsertId()
 }
 
+// UpdateMatch overwrites a match's editable fields (teams, phase, group, kickoff)
+// for admin corrections. The score/finished flag is left untouched — that's
+// SetResult's job. Returns ErrNotFound when no row matches.
+func (s *Store) UpdateMatch(m models.Match) error {
+	res, err := s.db.Exec(
+		`UPDATE matches SET team_a=?, team_b=?, phase=?, group_label=?, starts_at=? WHERE id=?`,
+		m.TeamA, m.TeamB, string(m.Phase), m.GroupLabel, m.StartsAt.UTC().Format(rfc), m.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update match: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteMatch removes a match and every bet on it, atomically, returning how many
+// bets were deleted (so the caller can report it). Returns ErrNotFound when the
+// match doesn't exist.
+func (s *Store) DeleteMatch(id int64) (int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("delete match: %w", err)
+	}
+	defer tx.Rollback()
+	br, err := tx.Exec(`DELETE FROM bets WHERE match_id=?`, id)
+	if err != nil {
+		return 0, fmt.Errorf("delete match bets: %w", err)
+	}
+	bets, _ := br.RowsAffected()
+	mr, err := tx.Exec(`DELETE FROM matches WHERE id=?`, id)
+	if err != nil {
+		return 0, fmt.Errorf("delete match: %w", err)
+	}
+	if n, _ := mr.RowsAffected(); n == 0 {
+		return 0, ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("delete match commit: %w", err)
+	}
+	return int(bets), nil
+}
+
 // CountMatches returns how many matches a tournament has (used for idempotent seeding).
 func (s *Store) CountMatches(tournamentID int64) (int, error) {
 	var n int

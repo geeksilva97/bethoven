@@ -60,6 +60,71 @@ func (s *Service) AddMatch(by *models.User, teamA, teamB string, phase models.Ph
 	return id, nil
 }
 
+// EditMatch corrects a match's teams, phase, group, and kickoff (e.g. a typo in a
+// hand-entered knockout fixture). The recorded result/score is untouched — use
+// EnterResult for that. Admin only. Team names are validated like display names
+// since they render into every player's terminal. Existing bets are unaffected:
+// they reference the match id, not the team strings.
+func (s *Service) EditMatch(by *models.User, matchID int64, teamA, teamB string, phase models.Phase, groupLabel string, startsAt time.Time) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	a, err := cleanTeam(teamA)
+	if err != nil {
+		return err
+	}
+	b, err := cleanTeam(teamB)
+	if err != nil {
+		return err
+	}
+	if err := s.store.UpdateMatch(models.Match{
+		ID:         matchID,
+		TeamA:      a,
+		TeamB:      b,
+		Phase:      phase,
+		GroupLabel: groupLabel,
+		StartsAt:   startsAt,
+	}); err != nil {
+		return ErrMatchNotFound
+	}
+	s.track(by, by.Fingerprint, EvMatchEdited, map[string]string{
+		"match_id": fmt.Sprintf("%d", matchID),
+		"match":    a + "-" + b,
+	})
+	return nil
+}
+
+// CountMatchBets returns how many bets ride on a match, so the admin delete flow
+// can warn before removing them. Admin only.
+func (s *Service) CountMatchBets(by *models.User, matchID int64) (int, error) {
+	if err := requireAdmin(by); err != nil {
+		return 0, err
+	}
+	bets, err := s.store.BetsForMatch(matchID)
+	if err != nil {
+		return 0, err
+	}
+	return len(bets), nil
+}
+
+// DeleteMatch removes a match and every bet on it, returning how many bets were
+// deleted. Admin only. Destructive and irreversible — the TUI gates it behind a
+// confirmation that surfaces the bet count.
+func (s *Service) DeleteMatch(by *models.User, matchID int64) (int, error) {
+	if err := requireAdmin(by); err != nil {
+		return 0, err
+	}
+	bets, err := s.store.DeleteMatch(matchID)
+	if err != nil {
+		return 0, ErrMatchNotFound
+	}
+	s.track(by, by.Fingerprint, EvMatchDeleted, map[string]string{
+		"match_id": fmt.Sprintf("%d", matchID),
+		"bets":     fmt.Sprintf("%d", bets),
+	})
+	return bets, nil
+}
+
 // EnterResult records a match's regulation result. Admin only.
 func (s *Service) EnterResult(by *models.User, matchID int64, scoreA, scoreB int) error {
 	if err := requireAdmin(by); err != nil {

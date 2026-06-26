@@ -36,6 +36,23 @@ func (m *Model) initAddMatch() {
 	}
 	m.addFocus = 0
 	m.addPhase = models.PhaseRound32 // the first knockout round (48-team format) is the common admin add
+	m.editMatchID = 0                // add mode (initEditMatch flips this)
+	m.focusAdd()
+}
+
+// initEditMatch opens the add-match form pre-filled with an existing match, so
+// the same screen edits in place. editMatchID drives submitAddMatch to call
+// EditMatch instead of AddMatch.
+func (m *Model) initEditMatch(mt models.Match) {
+	m.initAddMatch()
+	m.editMatchID = mt.ID
+	m.addInputs[0].SetValue(mt.TeamA)
+	m.addInputs[1].SetValue(mt.TeamB)
+	m.addInputs[2].SetValue(mt.GroupLabel)
+	// Kickoff is edited in the display timezone, same as it's entered/shown.
+	m.addInputs[3].SetValue(mt.StartsAt.In(displayLoc).Format("2006-01-02 15:04"))
+	m.addPhase = mt.Phase
+	m.addFocus = 0
 	m.focusAdd()
 }
 
@@ -48,6 +65,9 @@ func (m Model) updateAddMatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch key.String() {
 	case "esc":
+		if m.editMatchID > 0 { // editing: go back to the match list we came from
+			return m.reloadEnterResult("")
+		}
 		return m.goMenu(), nil
 	case "tab", "down":
 		m.addFocus = (m.addFocus + 1) % len(m.addInputs)
@@ -109,6 +129,13 @@ func (m Model) submitAddMatch() (tea.Model, tea.Cmd) {
 		m.setStatus("both team names are required", true)
 		return m, nil
 	}
+	if m.editMatchID > 0 { // edit mode: correct the match in place
+		if err := m.svc.EditMatch(m.user, m.editMatchID, teamA, teamB, m.addPhase, group, startsAt.UTC()); err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		return m.reloadEnterResult(fmt.Sprintf("updated %s v %s", teamA, teamB))
+	}
 	if _, err := m.svc.AddMatch(m.user, teamA, teamB, m.addPhase, group, startsAt.UTC()); err != nil {
 		m.setStatus(err.Error(), true)
 		return m, nil
@@ -119,7 +146,11 @@ func (m Model) submitAddMatch() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) viewAddMatch() string {
-	out := titleStyle.Render("⚙  Add match") + "\n\n"
+	title, action := "⚙  Add match", "enter: add"
+	if m.editMatchID > 0 {
+		title, action = "⚙  Edit match", "enter: save"
+	}
+	out := titleStyle.Render(title) + "\n\n"
 	labels := []string{"Team A", "Team B", "Group", "Kickoff"}
 	for i := range m.addInputs {
 		cur := "  "
@@ -131,7 +162,7 @@ func (m Model) viewAddMatch() string {
 	out += "\n  " + labelStyle.Render("Phase: ") + cursorOn.Render(string(m.addPhase)) +
 		helpStyle.Render("  (ctrl+p to cycle)") + "\n"
 	out += "  " + helpStyle.Render("Kickoff is read in "+displayZoneName()+" (the pool timezone)") + "\n\n"
-	out += statusLine(m) + helpStyle.Render("tab: field · ctrl+p: phase · enter: add · esc: back")
+	out += statusLine(m) + helpStyle.Render("tab: field · ctrl+p: phase · "+action+" · esc: back")
 	return out
 }
 
@@ -227,8 +258,102 @@ func (m Model) updateEnterResult(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.pickResult(vis)
+	case "e":
+		if len(vis) == 0 {
+			return m, nil
+		}
+		m.initEditMatch(vis[m.resCursor])
+		m.screen = screenAddMatch
+		return m, textinput.Blink
+	case "d":
+		if len(vis) == 0 {
+			return m, nil
+		}
+		mt := vis[m.resCursor]
+		n, err := m.svc.CountMatchBets(m.user, mt.ID)
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.delMatch, m.delBets, m.screen = &mt, n, screenConfirmDelete
+		return m, nil
 	}
 	return m, nil
+}
+
+// reloadEnterResult refetches fixtures and returns to the match list (after an
+// edit/delete changed it), clamping the cursor and clearing form state. A blank
+// status leaves the existing one untouched.
+func (m Model) reloadEnterResult(status string) (tea.Model, tea.Cmd) {
+	fx, err := m.svc.Fixtures()
+	if err != nil {
+		m.setStatus(err.Error(), true)
+		return m.goMenu(), nil
+	}
+	m.fixtures = fx
+	if m.resCursor >= len(fx) {
+		m.resCursor = len(fx) - 1
+	}
+	if m.resCursor < 0 {
+		m.resCursor = 0
+	}
+	m.resMatch, m.delMatch, m.editMatchID = nil, nil, 0
+	m.screen = screenEnterResult
+	if status != "" {
+		m.setStatus(status, false)
+	}
+	return m, nil
+}
+
+// updateConfirmDelete handles the delete-match confirmation: y/enter removes the
+// match (and its bets), esc/n cancels back to the list.
+func (m Model) updateConfirmDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch key.String() {
+	case "q":
+		return m, tea.Quit
+	case "esc", "n", "b":
+		m.delMatch = nil
+		m.screen = screenEnterResult
+		return m, nil
+	case "y", "enter":
+		if m.delMatch == nil {
+			m.screen = screenEnterResult
+			return m, nil
+		}
+		team := m.delMatch.TeamA + " v " + m.delMatch.TeamB
+		if _, err := m.svc.DeleteMatch(m.user, m.delMatch.ID); err != nil {
+			m.delMatch = nil
+			m.setStatus(err.Error(), true)
+			m.screen = screenEnterResult
+			return m, nil
+		}
+		return m.reloadEnterResult("deleted " + team)
+	}
+	return m, nil
+}
+
+func (m Model) viewConfirmDelete() string {
+	if m.delMatch == nil {
+		return ""
+	}
+	mt := *m.delMatch
+	out := titleStyle.Render("⚙  Delete match") + "\n\n"
+	out += "  " + labelStyle.Render(withFlag(mt.TeamA)+" v "+withFlag(mt.TeamB)) +
+		helpStyle.Render("  "+fmtKickoff(mt.StartsAt)) + "\n\n"
+	warn := "Permanently removes this match."
+	if m.delBets > 0 {
+		warn = fmt.Sprintf("Permanently removes this match AND %d bet(s) on it.", m.delBets)
+	}
+	out += "  " + warn + "\n"
+	if mt.Finished {
+		out += "  " + helpStyle.Render("note: this match already has a recorded result.") + "\n"
+	}
+	out += "\n" + statusLine(m) + helpStyle.Render("y: delete · esc: cancel")
+	return out
 }
 
 // pickResult opens the score-entry form for the highlighted match, pre-filling
@@ -275,9 +400,9 @@ func (m Model) viewEnterResult() string {
 		} else {
 			out += m.renderList(vis, m.resCursor)
 		}
-		help := "↑/↓: move · enter: pick · /: search · b: back"
+		help := "↑/↓: move · enter: result · e: edit · d: delete · /: search · b: back"
 		if m.resSearch.active {
-			help = "type to filter · ↑/↓: move · enter: pick · esc: clear"
+			help = "type to filter · ↑/↓: move · enter: result · esc: clear"
 		}
 		out += "\n" + statusLine(m) + helpStyle.Render(help)
 		return out
