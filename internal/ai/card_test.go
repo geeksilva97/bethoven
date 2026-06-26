@@ -2,9 +2,59 @@ package ai
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
+
+// cardPrompt must weave in every memory tier relevant to the player: their derived
+// "story", a rivalry they're in, a house note about them, a pool-wide note, and their
+// PER-PLAYER tone (not just the pool default).
+func TestCardPromptIncludesMemoryTiers(t *testing.T) {
+	data := CardDigestData{
+		UserID: 1, Player: "Joao", FinalRank: 1, TotalPlayers: 4,
+		Story: "On Jun 14 Joao nailed the Spain upset.",
+	}
+	cfg := CommentConfig{
+		DefaultTone: "playful",
+		ToneByName:  map[string]string{"Joao": "savage"},
+		Rivalries: []Rivalry{
+			{A: "Joao", B: "Ana", Note: "office derby"},
+			{A: "Bob", B: "Carl", Note: "unrelated pair"},
+		},
+		PlayerNotes: []PlayerNote{
+			{Player: "Joao", Text: "the reigning champion"},
+			{Player: "Ana", Text: "someone else's note"},
+		},
+		Notes: []string{"played in the break room"},
+	}
+	p := cardPrompt(data, cfg)
+
+	if !strings.Contains(p, "TONE: savage") {
+		t.Error("per-player tone override (savage) not applied to the card")
+	}
+	if !strings.Contains(p, "office derby") {
+		t.Error("the player's rivalry note is missing")
+	}
+	if !strings.Contains(p, "Rivalry with Ana") {
+		t.Error("rivalry should name the OTHER player")
+	}
+	if strings.Contains(p, "unrelated pair") {
+		t.Error("a rivalry not involving the player must be excluded")
+	}
+	if !strings.Contains(p, "the reigning champion") {
+		t.Error("the house note about the player is missing")
+	}
+	if strings.Contains(p, "someone else's note") {
+		t.Error("another player's note must not leak into this card")
+	}
+	if !strings.Contains(p, "played in the break room") {
+		t.Error("the pool-wide note is missing")
+	}
+	if !strings.Contains(p, "On Jun 14 Joao nailed the Spain upset.") {
+		t.Error("the derived-notes story is missing")
+	}
+}
 
 // GenerateCards writes one narrative per player, sanitized, and persists each via the
 // SaveCard seam.

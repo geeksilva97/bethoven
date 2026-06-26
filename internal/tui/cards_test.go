@@ -53,6 +53,28 @@ func TestSparkline(t *testing.T) {
 	}
 }
 
+func TestSplitParagraphs(t *testing.T) {
+	// Short text (≤ perPara sentences) stays one block, no blank lines.
+	if got := splitParagraphs("You won. Nicely done.", 2); strings.Contains(got, "\n") {
+		t.Errorf("short text should not break: %q", got)
+	}
+	// Four sentences at 2/para ⇒ two paragraphs separated by a blank line.
+	in := "You started cold. You climbed fast. Then you stalled. But you held on."
+	got := splitParagraphs(in, 2)
+	if parts := strings.Split(got, "\n\n"); len(parts) != 2 {
+		t.Fatalf("expected 2 paragraphs, got %d: %q", len(parts), got)
+	}
+	// Mid-sentence tokens with punctuation must NOT trigger a break.
+	noBreak := "You called it 5-0 and the odds were 2.5 to one all night long no break here."
+	if strings.Contains(splitParagraphs(noBreak, 1), "\n") {
+		t.Errorf("scores/decimals must not split a sentence: %q", splitParagraphs(noBreak, 1))
+	}
+	// A terminator followed by a lowercase word (e.g. an abbreviation) is not a break.
+	if strings.Contains(splitParagraphs("seeded no. one for the title run here.", 1), "\n") {
+		t.Error("abbreviation 'no.' followed by lowercase should not split")
+	}
+}
+
 func TestCardBorderColor(t *testing.T) {
 	if cardBorderColor(1) != gold || cardBorderColor(2) != silver || cardBorderColor(3) != bronze {
 		t.Error("podium border colors wrong")

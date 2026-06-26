@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -209,7 +210,7 @@ func (m Model) viewPlayerCard() string {
 
 	b.WriteString("\n")
 	if c.Narrative != "" {
-		b.WriteString(botMark.Render("🤖") + " " + commentStyle.Render(c.Narrative))
+		b.WriteString(botMark.Render("🤖") + " " + commentStyle.Render(splitParagraphs(c.Narrative, 2)))
 	} else {
 		b.WriteString(helpStyle.Render("No narrative yet — press r to generate this card."))
 	}
@@ -303,6 +304,67 @@ func cardOrdinal(n int) string {
 		return fmt.Sprintf("%drd", n)
 	}
 	return fmt.Sprintf("%dth", n)
+}
+
+// splitParagraphs regroups a long prose narrative into paragraphs of about perPara
+// sentences each (separated by a blank line), so a card narrative reads as a few
+// blocks instead of one wall of text. Sentence-aware: it breaks on . ! ? followed by
+// a space and the start of a new sentence (uppercase / opening quote / digit), so
+// mid-sentence tokens like "5-0" or odds "2.5" never trigger a break. Returns the
+// text as one block when it's already short.
+func splitParagraphs(text string, perPara int) string {
+	text = strings.TrimSpace(text)
+	if text == "" || perPara < 1 {
+		return text
+	}
+	runes := []rune(text)
+	var sentences []string
+	start := 0
+	for i := 0; i < len(runes); i++ {
+		switch runes[i] {
+		case '.', '!', '?':
+		default:
+			continue
+		}
+		// Consume any closing quotes/brackets right after the terminator.
+		j := i + 1
+		for j < len(runes) && (runes[j] == '"' || runes[j] == '\'' || runes[j] == ')' || runes[j] == ']') {
+			j++
+		}
+		if j >= len(runes) || runes[j] != ' ' {
+			continue // end of text (flushed below) or a token like "2.5" — no break
+		}
+		// Peek the first non-space rune; only break before a genuine new sentence.
+		k := j
+		for k < len(runes) && runes[k] == ' ' {
+			k++
+		}
+		if k >= len(runes) {
+			break
+		}
+		if nr := runes[k]; !(unicode.IsUpper(nr) || unicode.IsDigit(nr) || nr == '"' || nr == '\'') {
+			continue
+		}
+		sentences = append(sentences, strings.TrimSpace(string(runes[start:j])))
+		start, i = k, k-1
+	}
+	if start < len(runes) {
+		if tail := strings.TrimSpace(string(runes[start:])); tail != "" {
+			sentences = append(sentences, tail)
+		}
+	}
+	if len(sentences) <= perPara {
+		return strings.Join(sentences, " ")
+	}
+	var paras []string
+	for i := 0; i < len(sentences); i += perPara {
+		end := i + perPara
+		if end > len(sentences) {
+			end = len(sentences)
+		}
+		paras = append(paras, strings.Join(sentences[i:end], " "))
+	}
+	return strings.Join(paras, "\n\n")
 }
 
 // sparkline renders a row of block glyphs, scaling the values so the largest is the
