@@ -117,6 +117,26 @@ func overlayEnteredR32(projected []standings.ProjMatch, entered []models.Match) 
 			out[i].HomeTeam, out[i].AwayTeam = e.TeamA, e.TeamB
 		}
 	}
+	// An entered tie places its teams authoritatively. The overlay's anchor pass
+	// can land a team on a slot OTHER than the one the projection guessed for it, so
+	// any non-entered slot still showing a now-claimed team is a stale guess — reset
+	// it to its descriptor, otherwise that team appears twice in the tree.
+	claimed := map[string]bool{}
+	for _, e := range byNum {
+		claimed[e.TeamA] = true
+		claimed[e.TeamB] = true
+	}
+	for i := range out {
+		if _, entered := byNum[out[i].Match]; entered {
+			continue // this slot IS the authoritative source — leave it
+		}
+		if out[i].HomeTeam != "" && claimed[out[i].HomeTeam] {
+			out[i].HomeTeam = ""
+		}
+		if out[i].AwayTeam != "" && claimed[out[i].AwayTeam] {
+			out[i].AwayTeam = ""
+		}
+	}
 	return out, byNum
 }
 

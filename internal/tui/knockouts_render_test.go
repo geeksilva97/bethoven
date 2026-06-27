@@ -172,6 +172,50 @@ func TestOverlayEnteredR32(t *testing.T) {
 	}
 }
 
+// A team an entered tie places must not also linger in its stale projected slot.
+// Regression: Sweden was projected to face Switzerland (slot 76), but the admin
+// entered the official France v Sweden tie, which the anchor pass overlaid onto
+// France's slot — leaving Sweden in BOTH, so it appeared twice in the tree.
+func TestOverlayClearsStaleDuplicate(t *testing.T) {
+	proj := []standings.ProjMatch{
+		{Match: 75, HomeTeam: "France", HomeDesc: "Winner F", AwayTeam: "Croatia", AwayDesc: "Runner-up C"},
+		// Sweden is projected here as a third-placed team — the uncertain slot kind
+		// the anchor pass exists for, so France v Sweden anchors on France (slot 75)
+		// unambiguously, leaving this stale Sweden behind.
+		{Match: 76, HomeTeam: "Switzerland", HomeDesc: "Winner C", AwayTeam: "Sweden", AwayDesc: "3rd F"},
+	}
+	entered := []models.Match{
+		{TeamA: "France", TeamB: "Sweden"}, // anchor on France → slot 75, displacing Croatia
+	}
+	out, byNum := overlayEnteredR32(proj, entered)
+	if _, ok := byNum[75]; !ok {
+		t.Fatalf("expected France v Sweden overlaid onto slot 75")
+	}
+	bySlot := map[int]standings.ProjMatch{}
+	for _, p := range out {
+		bySlot[p.Match] = p
+	}
+	// Slot 76 still says "Switzerland v Sweden" → Sweden would render twice. The
+	// stale Sweden must be cleared back to its descriptor.
+	if got := bySlot[76]; got.AwayTeam == "Sweden" {
+		t.Errorf("slot 76 should no longer carry the stale Sweden, got %+v", got)
+	}
+	// The non-claimed side of the stale slot is untouched.
+	if got := bySlot[76]; got.HomeTeam != "Switzerland" {
+		t.Errorf("slot 76 home (Switzerland, unclaimed) should be preserved, got %+v", got)
+	}
+	// Sweden now appears exactly once across all leaf names.
+	count := 0
+	for _, name := range koTeamNames(out) {
+		if name == "Sweden" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("Sweden should appear exactly once in the bracket, got %d", count)
+	}
+}
+
 // The screen opens on the bracket once a knockout match exists, else on groups.
 func TestBracketDrawn(t *testing.T) {
 	if !bracketDrawn(koTestPicture()) {
