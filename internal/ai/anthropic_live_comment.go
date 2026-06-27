@@ -131,7 +131,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 	// — reference the game that just ended while narrating the next one. Context the
 	// line MAY weave in, never instructions; never invent beyond it.
 	if dn := strings.TrimSpace(cfg.DerivedNotes); dn != "" {
-		b.WriteString("\nEARLIER FINISHED MATCHES (your own auto-summaries, most recent last) — the leading line gives today's date and each entry is tagged with the date it was played (e.g. [Jun 22]). Use it for continuity between back-to-back games and lean on the LATEST one, but NEVER describe a game from an earlier date as if it just happened — check its tag against today first. Never invent beyond this:\n")
+		b.WriteString("\nEARLIER FINISHED MATCHES (your own auto-summaries, most recent last) — the leading line gives today's date and each entry is tagged with the date it was played (e.g. [Jun 22]). Use it for continuity between back-to-back games and lean on the LATEST one, but NEVER describe a game from an earlier date as if it just happened — check its tag against today first. Use the dates ONLY to gauge recency: when you mention timing, say it RELATIVELY (today, yesterday, a few days ago) — never quote a calendar date. Never invent beyond this:\n")
 		b.WriteString(dn)
 		b.WriteString("\n")
 	}
