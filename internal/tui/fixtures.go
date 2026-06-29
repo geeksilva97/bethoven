@@ -23,6 +23,13 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 		label += "  " + mt.GroupLabel
 	}
 
+	// Round-weight chip: only when the active scheme actually multiplies this
+	// match's points (>1) — flat pools and group games show nothing.
+	chip := ""
+	if w := m.roundWeights.Weight(mt.Phase); w > 1 {
+		chip = fmt.Sprintf("  ×%d", w)
+	}
+
 	locked := !m.svc.Now().Before(mt.StartsAt.UTC())
 	// The "your pick" marker only makes sense on the betting list, where myBets
 	// is freshly loaded; other screens reuse matchLine with a stale/empty map.
@@ -48,8 +55,8 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 	}
 
 	if selected {
-		// One uniform bar covers cursor + label + tag.
-		return selBar.Render("▸ " + label + tag)
+		// One uniform bar covers cursor + label + chip + tag.
+		return selBar.Render("▸ " + label + chip + tag)
 	}
 
 	styledTag := ""
@@ -63,7 +70,7 @@ func (m Model) matchLine(mt models.Match, selected bool) string {
 	case hasBet:
 		styledTag = okStyle.Render(tag)
 	}
-	return "  " + labelStyle.Render(label) + styledTag
+	return "  " + labelStyle.Render(label) + weightStyle.Render(chip) + styledTag
 }
 
 // resetFixFilter clears the fixtures view back to its default (next-24h window,

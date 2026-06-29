@@ -53,6 +53,11 @@ var (
 	// both backgrounds (it's the same accent live scores use).
 	botMark = lipgloss.NewStyle().Foreground(cyan).Bold(true)
 
+	// weightStyle accents a round-weight multiplier chip (e.g. "×2") so the raised
+	// stakes of a knockout round pop where a player places the pick. Gold bold is the
+	// house "this matters" accent, matching the selected-row bar it sits inside.
+	weightStyle = lipgloss.NewStyle().Foreground(gold).Bold(true)
+
 	// selBar is the unmistakable "you are here" highlight: dark text on a solid
 	// gold bar. Used for the selected row in lists and the focused form field —
 	// a full-width background reads at a glance where a foreground tint doesn't.

@@ -90,6 +90,7 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.fixtures, m.myBets, m.screen = fx, bets, screenFixtures
+		m.roundWeights, _ = m.svc.RoundWeights() // so the list/bet form can show the ×N stakes
 		m.resetFixFilter()
 	case screenMyResults:
 		rows, total, err := m.svc.MyResults(m.user.ID)

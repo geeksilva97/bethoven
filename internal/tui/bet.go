@@ -122,6 +122,12 @@ func (m Model) viewBet() string {
 	}
 	out += "\n"
 
+	// Make the raised stakes plain right where the pick is placed: this round's
+	// points are multiplied. Only shown when the active scheme weights it above ×1.
+	if w := m.roundWeights.Weight(mt.Phase); w > 1 {
+		out += weightStyle.Render(fmt.Sprintf("  %s — points ×%d", mt.Phase.Label(), w)) + "\n"
+	}
+
 	// Recent-form strip: TeamA marks left, TeamB right (same order as the header
 	// and the score fields below), so no flags/names need repeating. The legend
 	// lives at the bottom (next to the help line) to keep the form area uncluttered.
