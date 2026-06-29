@@ -334,7 +334,7 @@ func (m Model) viewKnockoutBracket() string {
 			continue
 		}
 		for _, mt := range rd.Matches {
-			out += "  " + koMatchLine(mt) + "\n"
+			out += "  " + koMatchLine(mt, m.ko.Eliminated) + "\n"
 		}
 		out += "\n"
 	}
@@ -350,7 +350,7 @@ func (m Model) viewBracketTree() string {
 	overlaid, byNum := overlayEnteredR32(m.ko.Projected, r32Entered(m.ko))
 	leaves := standings.BracketLeaves(overlaid)
 	scores := bracketScores(leaves, byNum)
-	lines := bracketLines(leaves, m.koTraceIdx, scores)
+	lines := bracketLines(leaves, m.koTraceIdx, scores, m.ko.Eliminated)
 
 	sub := "  projected, if the group stage ended now"
 	switch {
@@ -408,7 +408,7 @@ func (m Model) viewEnteredLaterRounds() string {
 		}
 		out += "\n" + labelStyle.Render(rd.Label) + "\n"
 		for _, mt := range rd.Matches {
-			out += "  " + koMatchLine(mt) + "\n"
+			out += "  " + koMatchLine(mt, m.ko.Eliminated) + "\n"
 		}
 	}
 	return out
@@ -444,7 +444,7 @@ func bracketScores(leaves []standings.ProjMatch, byNum map[int]models.Match) map
 // its tie has been played. When trace is in 0..31 the leaf at that team index and
 // the connector cells carrying its slot up to the Champion box are lit in the
 // traced-path accent.
-func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string) []string {
+func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string, elim map[string]bool) []string {
 	if len(leaves) != 16 {
 		return []string{helpStyle.Render("  bracket unavailable (incomplete projection)")}
 	}
@@ -478,12 +478,17 @@ func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string
 
 	// Level-0 leaves: the two teams of each R32 tie, with a goals suffix once played.
 	teams := koTeamNames(leaves)
+	elimRow := make([]bool, height) // leaf rows whose club has been knocked out
 	for i, name := range teams {
 		label := truncate(name, nameW-1)
 		if sc := scores[i]; sc != "" {
 			label = truncate(name, nameW-2-len(sc)) + " " + sc
 		}
-		put(rowLevel(0, i), 0, label)
+		r := rowLevel(0, i)
+		put(r, 0, label)
+		if elim[name] {
+			elimRow[r] = true
+		}
 	}
 
 	for mlvl := 0; mlvl < nMerges; mlvl++ {
@@ -584,11 +589,16 @@ func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string
 		}
 	}
 
-	// Style: traced path bright gold, team names bright, connector skeleton dim.
+	// Style: traced path bright gold, team names bright (a knocked-out club's name
+	// darker), connector skeleton dim.
 	out := make([]string, 0, height+1)
 	out = append(out, helpStyle.Render(string(hdr)))
 	for r := 0; r < height; r++ {
-		out = append(out, styleBracketRow(grid[r], lit[r], nameW))
+		nameStyle := labelStyle
+		if elimRow[r] {
+			nameStyle = koOutStyle
+		}
+		out = append(out, styleBracketRow(grid[r], lit[r], nameW, nameStyle))
 	}
 	return out
 }
@@ -612,10 +622,11 @@ func koTeamNames(leaves []standings.ProjMatch) []string {
 }
 
 // styleBracketRow renders one bracket grid row, coalescing runs of equally-styled
-// cells: lit cells in the traced-path accent, otherwise team names (left of nameW)
-// bright and the connector skeleton (right) dim.
-func styleBracketRow(row []rune, lit []bool, nameW int) string {
-	styles := []lipgloss.Style{labelStyle, helpStyle, bracketPathStyle}
+// cells: lit cells in the traced-path accent, otherwise the team name (left of
+// nameW) in nameStyle (dimmed for a knocked-out club) and the connector skeleton
+// (right) dim.
+func styleBracketRow(row []rune, lit []bool, nameW int, nameStyle lipgloss.Style) string {
+	styles := []lipgloss.Style{nameStyle, helpStyle, bracketPathStyle}
 	kind := func(c int) int {
 		switch {
 		case lit[c]:
@@ -640,13 +651,21 @@ func styleBracketRow(row []rune, lit []bool, nameW int) string {
 }
 
 // koMatchLine renders one bracket match: the final score if played, the live
-// score if in play, otherwise the kickoff time.
-func koMatchLine(mt models.Match) string {
+// score if in play, otherwise the kickoff time. A knocked-out club (in elim) is
+// dimmed, so the loser of a settled tie reads as out.
+func koMatchLine(mt models.Match, elim map[string]bool) string {
+	team := func(name string) string {
+		t := truncate(name, 16)
+		if elim[name] {
+			return koOutStyle.Render(t)
+		}
+		return t
+	}
 	switch {
 	case mt.Finished && mt.ScoreA != nil:
-		return fmt.Sprintf("%s %s %s", truncate(mt.TeamA, 16), okStyle.Render(fmtResult(mt)), truncate(mt.TeamB, 16))
+		return fmt.Sprintf("%s %s %s", team(mt.TeamA), okStyle.Render(fmtResult(mt)), team(mt.TeamB))
 	case mt.Live:
-		return fmt.Sprintf("%s %s %s", truncate(mt.TeamA, 16), liveScore(mt), truncate(mt.TeamB, 16))
+		return fmt.Sprintf("%s %s %s", team(mt.TeamA), liveScore(mt), team(mt.TeamB))
 	default:
 		return labelStyle.Render(fmt.Sprintf("%s v %s", truncate(mt.TeamA, 16), truncate(mt.TeamB, 16))) +
 			helpStyle.Render("  "+fmtKickoff(mt.StartsAt))

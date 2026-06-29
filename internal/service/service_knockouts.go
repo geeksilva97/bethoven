@@ -33,6 +33,9 @@ type KnockoutPicture struct {
 	// slots from current standings; the UI shows it only until real knockout
 	// matchups are entered. A projection, not necessarily FIFA's official table.
 	Projected []standings.ProjMatch
+	// Eliminated is the set of knockout teams that are out, so the UI can dim
+	// them. Conservative and never inferred from a 90' draw — see eliminatedTeams.
+	Eliminated map[string]bool
 }
 
 // BracketRound is one knockout phase and the matches entered for it (live scores
@@ -66,12 +69,56 @@ func (s *Service) KnockoutPicture() (KnockoutPicture, error) {
 	groups := standings.GroupStandings(groupInput)
 	thirds := standings.ThirdPlaceRace(groups)
 
+	bracket := buildBracket(matches, snap)
 	return KnockoutPicture{
 		Groups:     groups,
 		ThirdPlace: thirds,
-		Bracket:    buildBracket(matches, snap),
+		Bracket:    bracket,
 		Projected:  standings.ProjectR32(groups, thirds),
+		Eliminated: eliminatedTeams(bracket),
 	}, nil
+}
+
+// eliminatedTeams returns the set of knockout clubs that are out. Advancement is
+// never inferred (a 90' draw can't reveal a shootout winner), so a team is marked
+// eliminated only when we know it for sure:
+//   - it lost a finished tie by a decisive 90' score (the lower-scored side), or
+//   - it failed to reach the furthest round that has been drawn (so a penalty
+//     loser is flagged once the next round is entered, never from the draw alone).
+//
+// The two rules complement each other: the "didn't reach the furthest round" rule
+// can't catch the loser of the latest round (or the final), which the decisive-90'
+// rule does; the decisive-90' rule can't catch a penalty loser, which the other
+// does once the next round is drawn.
+func eliminatedTeams(bracket []BracketRound) map[string]bool {
+	out := map[string]bool{}
+	lastRound := map[string]int{} // team -> furthest ladder index it appears in
+	maxDrawn := -1
+	for i, rd := range bracket {
+		if len(rd.Matches) == 0 {
+			continue
+		}
+		if i > maxDrawn {
+			maxDrawn = i
+		}
+		for _, mt := range rd.Matches {
+			lastRound[mt.TeamA] = i // rounds are in ladder order, so the last write wins
+			lastRound[mt.TeamB] = i
+			if mt.Finished && mt.ScoreA != nil && mt.ScoreB != nil && *mt.ScoreA != *mt.ScoreB {
+				if *mt.ScoreA < *mt.ScoreB {
+					out[mt.TeamA] = true
+				} else {
+					out[mt.TeamB] = true
+				}
+			}
+		}
+	}
+	for team, lr := range lastRound {
+		if lr < maxDrawn {
+			out[team] = true
+		}
+	}
+	return out
 }
 
 // liveFinal returns a copy of m with the in-play score baked in as the final

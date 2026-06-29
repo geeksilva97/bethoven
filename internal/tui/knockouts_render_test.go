@@ -88,7 +88,7 @@ func TestViewBracketTree(t *testing.T) {
 
 	// Header + 63 rows for a 16-leaf bracket.
 	leaves := standings.BracketLeaves(proj)
-	if got := len(bracketLines(leaves, -1, nil)); got != 64 {
+	if got := len(bracketLines(leaves, -1, nil, nil)); got != 64 {
 		t.Errorf("want 64 bracket lines, got %d", got)
 	}
 
@@ -98,8 +98,8 @@ func TestViewBracketTree(t *testing.T) {
 	// is observable — tests otherwise run under lipgloss's Ascii (no-colour) profile.
 	defer lipgloss.SetColorProfile(lipgloss.ColorProfile())
 	lipgloss.SetColorProfile(termenv.TrueColor)
-	plain := bracketLines(leaves, -1, nil)
-	traced := bracketLines(leaves, 0, nil)
+	plain := bracketLines(leaves, -1, nil, nil)
+	traced := bracketLines(leaves, 0, nil, nil)
 	if traced[1] == plain[1] {
 		t.Errorf("traced leaf row should differ from the untraced render")
 	}

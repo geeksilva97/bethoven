@@ -38,6 +38,12 @@ var (
 	// leaderboard points) so it's never mistaken for a settled value.
 	liveStyle = lipgloss.NewStyle().Foreground(cyan).Bold(true)
 
+	// koOutStyle dims a knocked-out club in the bracket — a notch darker than the
+	// help-grey skeleton (238 vs 241) so an eliminated team reads as "out" without
+	// vanishing entirely. Used for losers of a finished tie and teams that didn't
+	// reach the furthest drawn round.
+	koOutStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+
 	// bracketPathStyle lights the bracket-tree path of the team a player is
 	// tracing (leaf name + connector skeleton up to the Champion box). Gold bold
 	// is the existing "focus / you are here" accent and isn't used elsewhere in

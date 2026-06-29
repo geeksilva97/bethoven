@@ -86,3 +86,46 @@ func TestKnockoutPicture(t *testing.T) {
 		t.Errorf("Round of 16 should be empty, got %+v", pic.Bracket[1].Matches)
 	}
 }
+
+func TestEliminatedTeams(t *testing.T) {
+	score := func(n int) *int { return &n }
+	fin := func(a, b string, sa, sb int) models.Match {
+		return models.Match{TeamA: a, TeamB: b, Finished: true, ScoreA: score(sa), ScoreB: score(sb)}
+	}
+	// R32 settled (one decisive, one 1-1 draw decided on penalties), R16 drawn with
+	// the penalty winner (PenWin) in it.
+	bracket := []BracketRound{
+		{Phase: models.PhaseRound32, Matches: []models.Match{
+			fin("WinA", "OutB", 2, 0),  // decisive: OutB out
+			fin("PenWin", "PenLose", 1, 1), // draw: only resolvable once R16 is drawn
+		}},
+		{Phase: models.PhaseRound16, Matches: []models.Match{
+			{TeamA: "WinA", TeamB: "PenWin"}, // not played yet, just drawn
+		}},
+	}
+	elim := eliminatedTeams(bracket)
+
+	if !elim["OutB"] {
+		t.Error("decisive 90' loser OutB should be eliminated")
+	}
+	if !elim["PenLose"] {
+		t.Error("penalty loser PenLose should be eliminated once R16 is drawn without it")
+	}
+	if elim["WinA"] || elim["PenWin"] {
+		t.Errorf("teams in the furthest drawn round must not be eliminated: %v", elim)
+	}
+}
+
+func TestEliminatedTeamsNoInferenceFromDraw(t *testing.T) {
+	score := func(n int) *int { return &n }
+	// A 1-1 draw with NO later round drawn: the shootout winner is unknown, so
+	// neither side may be flagged — advancement is never inferred from 90'.
+	bracket := []BracketRound{
+		{Phase: models.PhaseRound32, Matches: []models.Match{
+			{TeamA: "X", TeamB: "Y", Finished: true, ScoreA: score(1), ScoreB: score(1)},
+		}},
+	}
+	if elim := eliminatedTeams(bracket); elim["X"] || elim["Y"] {
+		t.Errorf("a 90' draw with no next round must eliminate nobody, got %v", elim)
+	}
+}
