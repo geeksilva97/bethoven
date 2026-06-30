@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS matches (
     starts_at     TEXT    NOT NULL,
     score_a       INTEGER,
     score_b       INTEGER,
+    -- Penalty-shootout score for a knockout tie drawn at 90'. NULL otherwise.
+    -- Decides advancement only; never affects scoring (regulation 90' is scored).
+    -- Added to existing DBs by the ALTER migration in db.Open (see migrate()).
+    penalty_a     INTEGER,
+    penalty_b     INTEGER,
     finished      INTEGER NOT NULL DEFAULT 0
 );
 

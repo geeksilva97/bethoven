@@ -76,7 +76,13 @@ type Match struct {
 	StartsAt     time.Time
 	ScoreA       *int
 	ScoreB       *int
-	Finished     bool
+	// PenA/PenB hold the penalty-shootout score for a knockout tie that finished
+	// level at 90' (nil otherwise — including every group match). They decide
+	// ADVANCEMENT only and NEVER affect points: a 1-1 a.e.t. still scores as a 1-1
+	// draw (see internal/scoring). Persisted, unlike the Live* fields below.
+	PenA     *int
+	PenB     *int
+	Finished bool
 
 	// Live presentation fields, populated at read time from the in-memory live
 	// feed and NEVER persisted (the store reads/writes only the columns above).

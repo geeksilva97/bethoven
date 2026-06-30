@@ -343,9 +343,10 @@ func (m Model) viewKnockoutBracket() string {
 
 // viewBracketTree draws the R32→Final bracket as a scrollable tree. The R32
 // leaves come from the group-table projection, with any entered R32 matches
-// overlaid (real teams + score). Later rounds can't be placed in the tree
-// without inferring winners (penalties aren't stored), so entered R16+ ties are
-// listed beneath it.
+// overlaid (real teams + score, plus the shootout total when drawn at 90'). The
+// tree still doesn't auto-advance winners into later rounds — entered R16+ ties
+// are listed beneath it — but a settled R32 tie now dims its loser (incl. the
+// penalty loser once the shootout is recorded), so who went through is visible.
 func (m Model) viewBracketTree() string {
 	overlaid, byNum := overlayEnteredR32(m.ko.Projected, r32Entered(m.ko))
 	leaves := standings.BracketLeaves(overlaid)
@@ -426,8 +427,15 @@ func bracketScores(leaves []standings.ProjMatch, byNum map[int]models.Match) map
 		}
 		switch {
 		case mt.Finished && mt.ScoreA != nil && mt.ScoreB != nil:
-			scores[2*i] = fmt.Sprintf("%d", *mt.ScoreA)
-			scores[2*i+1] = fmt.Sprintf("%d", *mt.ScoreB)
+			// A penalty shootout (drawn at 90') appends the shootout total in
+			// parens, e.g. "1 (4)" / "1 (2)", so the winner is visible in the tree.
+			if mt.PenA != nil && mt.PenB != nil {
+				scores[2*i] = fmt.Sprintf("%d (%d)", *mt.ScoreA, *mt.PenA)
+				scores[2*i+1] = fmt.Sprintf("%d (%d)", *mt.ScoreB, *mt.PenB)
+			} else {
+				scores[2*i] = fmt.Sprintf("%d", *mt.ScoreA)
+				scores[2*i+1] = fmt.Sprintf("%d", *mt.ScoreB)
+			}
 		case mt.Live:
 			scores[2*i] = fmt.Sprintf("%d", mt.LiveScoreA)
 			scores[2*i+1] = fmt.Sprintf("%d", mt.LiveScoreB)
@@ -663,7 +671,11 @@ func koMatchLine(mt models.Match, elim map[string]bool) string {
 	}
 	switch {
 	case mt.Finished && mt.ScoreA != nil:
-		return fmt.Sprintf("%s %s %s", team(mt.TeamA), okStyle.Render(fmtResult(mt)), team(mt.TeamB))
+		pens := ""
+		if mt.PenA != nil && mt.PenB != nil {
+			pens = helpStyle.Render(fmt.Sprintf("  (pens %d-%d)", *mt.PenA, *mt.PenB))
+		}
+		return fmt.Sprintf("%s %s %s", team(mt.TeamA), okStyle.Render(fmtResult(mt)), team(mt.TeamB)) + pens
 	case mt.Live:
 		return fmt.Sprintf("%s %s %s", team(mt.TeamA), liveScore(mt), team(mt.TeamB))
 	default:

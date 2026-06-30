@@ -126,3 +126,53 @@ func TestSetResultAndScores(t *testing.T) {
 		t.Errorf("expected ErrNotFound for missing match, got %v", err)
 	}
 }
+
+func TestSetPenaltiesRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	tid, _ := s.CreateTournament("T", true, testNow)
+	mid, _ := s.CreateMatch(models.Match{
+		TournamentID: tid, TeamA: "Germany", TeamB: "Paraguay",
+		Phase: models.PhaseRound32, StartsAt: testNow,
+	})
+	if err := s.SetResult(mid, 1, 1); err != nil {
+		t.Fatalf("SetResult: %v", err)
+	}
+	if err := s.SetPenalties(mid, 4, 2); err != nil {
+		t.Fatalf("SetPenalties: %v", err)
+	}
+	m, _ := s.MatchByID(mid)
+	if m.PenA == nil || m.PenB == nil || *m.PenA != 4 || *m.PenB != 2 {
+		t.Fatalf("penalties not stored: %+v", m)
+	}
+	// 90' result is untouched.
+	if *m.ScoreA != 1 || *m.ScoreB != 1 {
+		t.Errorf("penalties should not change the 90' score: %+v", m)
+	}
+	// Re-recording the result clears the shootout.
+	if err := s.SetResult(mid, 2, 1); err != nil {
+		t.Fatalf("SetResult: %v", err)
+	}
+	m, _ = s.MatchByID(mid)
+	if m.PenA != nil || m.PenB != nil {
+		t.Errorf("SetResult should clear penalties, got %v-%v", m.PenA, m.PenB)
+	}
+	if err := s.SetPenalties(999, 1, 0); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing match: want ErrNotFound, got %v", err)
+	}
+}
+
+// Opening an existing DB again must be a no-op for the additive column
+// migrations (the ALTERs tolerate "duplicate column name").
+func TestMigrateIsIdempotent(t *testing.T) {
+	path := t.TempDir() + "/idem.db"
+	c1, err := Open(path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	c1.Close()
+	c2, err := Open(path)
+	if err != nil {
+		t.Fatalf("second open (re-migrate): %v", err)
+	}
+	c2.Close()
+}

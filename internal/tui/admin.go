@@ -186,7 +186,7 @@ func (m Model) updateEnterResult(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resMatch = nil
 			return m, nil
 		case "tab", "up", "down", "left", "right":
-			m.resFocus = (m.resFocus + 1) % 2
+			m.resFocus = (m.resFocus + 1) % len(m.resInputs)
 			for i := range m.resInputs {
 				if i == m.resFocus {
 					m.resInputs[i].Focus()
@@ -368,6 +368,17 @@ func (m Model) pickResult(vis []models.Match) (tea.Model, tea.Cmd) {
 	}
 	a.Focus()
 	m.resInputs = []textinput.Model{a, b}
+	// Knockout ties can be decided on penalties when level at 90', so offer two
+	// more fields for the shootout score (left blank for a decisive result, or a
+	// draw whose shootout isn't known yet). Group matches never have them.
+	if mt.Phase != models.PhaseGroup {
+		pa, pb := scoreInput(""), scoreInput("")
+		if mt.PenA != nil && mt.PenB != nil {
+			pa.SetValue(strconv.Itoa(*mt.PenA))
+			pb.SetValue(strconv.Itoa(*mt.PenB))
+		}
+		m.resInputs = append(m.resInputs, pa, pb)
+	}
 	m.resFocus = 0
 	return m, textinput.Blink
 }
@@ -379,11 +390,34 @@ func (m Model) submitResult() (tea.Model, tea.Cmd) {
 		m.setStatus("enter whole numbers for both scores", true)
 		return m, nil
 	}
+	// Penalty fields are present only for knockouts; they apply only to a 90' draw.
+	penA, penB, hasPens := "", "", false
+	if len(m.resInputs) == 4 {
+		penA, penB = strings.TrimSpace(m.resInputs[2].Value()), strings.TrimSpace(m.resInputs[3].Value())
+		hasPens = penA != "" || penB != ""
+		if hasPens && a != b {
+			m.setStatus("penalties apply only when the 90' score is a draw — clear them", true)
+			return m, nil
+		}
+	}
 	if err := m.svc.EnterResult(m.user, m.resMatch.ID, a, b); err != nil {
 		m.setStatus(err.Error(), true)
 		return m, nil
 	}
 	team := fmt.Sprintf("%s %d-%d %s", m.resMatch.TeamA, a, b, m.resMatch.TeamB)
+	if hasPens && a == b {
+		pa, errPA := strconv.Atoi(penA)
+		pb, errPB := strconv.Atoi(penB)
+		if errPA != nil || errPB != nil {
+			m.setStatus("90' result saved — but enter whole numbers for the penalty scores", true)
+			return m, nil
+		}
+		if err := m.svc.EnterPenalties(m.user, m.resMatch.ID, pa, pb); err != nil {
+			m.setStatus("90' result saved — "+err.Error(), true)
+			return m, nil
+		}
+		team += fmt.Sprintf(" (pens %d-%d)", pa, pb)
+	}
 	m.resMatch = nil
 	mdl := m.goMenu()
 	mdl.setStatus("result recorded: "+team, false)
@@ -409,10 +443,15 @@ func (m Model) viewEnterResult() string {
 	}
 	mt := *m.resMatch
 	out := titleStyle.Render("⚙  Result: "+withFlag(mt.TeamA)+" v "+withFlag(mt.TeamB)) + "\n"
-	out += helpStyle.Render("Enter the regulation (90') score — penalties/ET are ignored.") + "\n\n"
+	out += helpStyle.Render("Enter the regulation (90') score — it's what's scored; ET is ignored.") + "\n\n"
 	out += "  " + scoreField(m.resInputs[0], withFlag(mt.TeamA), m.resFocus == 0) + "   " +
-		scoreField(m.resInputs[1], withFlag(mt.TeamB), m.resFocus == 1) + "\n\n"
-	out += statusLine(m) + helpStyle.Render("tab: switch · enter: save · esc: back to list")
+		scoreField(m.resInputs[1], withFlag(mt.TeamB), m.resFocus == 1) + "\n"
+	if len(m.resInputs) == 4 {
+		out += "\n" + helpStyle.Render("  Penalty shootout — only if drawn at 90' (leave blank otherwise). Decides who advances; never scored.") + "\n\n"
+		out += "  " + scoreField(m.resInputs[2], "pens "+withFlag(mt.TeamA), m.resFocus == 2) + "   " +
+			scoreField(m.resInputs[3], "pens "+withFlag(mt.TeamB), m.resFocus == 3) + "\n"
+	}
+	out += "\n" + statusLine(m) + helpStyle.Render("tab: switch · enter: save · esc: back to list")
 	return out
 }
 

@@ -80,16 +80,18 @@ func (s *Service) KnockoutPicture() (KnockoutPicture, error) {
 }
 
 // eliminatedTeams returns the set of knockout clubs that are out. Advancement is
-// never inferred (a 90' draw can't reveal a shootout winner), so a team is marked
-// eliminated only when we know it for sure:
-//   - it lost a finished tie by a decisive 90' score (the lower-scored side), or
+// never inferred from a 90' draw alone, so a team is marked eliminated only when
+// we know it for sure:
+//   - it lost a finished tie outright — a decisive 90' score, or a recorded
+//     penalty-shootout score on a 90' draw (see koLoser), or
 //   - it failed to reach the furthest round that has been drawn (so a penalty
-//     loser is flagged once the next round is entered, never from the draw alone).
+//     loser is flagged once the next round is entered, even before the shootout
+//     score is recorded).
 //
 // The two rules complement each other: the "didn't reach the furthest round" rule
-// can't catch the loser of the latest round (or the final), which the decisive-90'
-// rule does; the decisive-90' rule can't catch a penalty loser, which the other
-// does once the next round is drawn.
+// can't catch the loser of the latest round (or the final), which koLoser does;
+// koLoser can't catch a still-unrecorded penalty loser, which the other does once
+// the next round is drawn.
 func eliminatedTeams(bracket []BracketRound) map[string]bool {
 	out := map[string]bool{}
 	lastRound := map[string]int{} // team -> furthest ladder index it appears in
@@ -104,12 +106,8 @@ func eliminatedTeams(bracket []BracketRound) map[string]bool {
 		for _, mt := range rd.Matches {
 			lastRound[mt.TeamA] = i // rounds are in ladder order, so the last write wins
 			lastRound[mt.TeamB] = i
-			if mt.Finished && mt.ScoreA != nil && mt.ScoreB != nil && *mt.ScoreA != *mt.ScoreB {
-				if *mt.ScoreA < *mt.ScoreB {
-					out[mt.TeamA] = true
-				} else {
-					out[mt.TeamB] = true
-				}
+			if loser := koLoser(mt); loser != "" {
+				out[loser] = true
 			}
 		}
 	}
@@ -119,6 +117,28 @@ func eliminatedTeams(bracket []BracketRound) map[string]bool {
 		}
 	}
 	return out
+}
+
+// koLoser names the losing club of a finished knockout tie, or "" if it can't be
+// decided yet. A decisive 90' score names the loser directly; a 90' draw names it
+// only once a penalty shootout has been recorded (PenA/PenB) — advancement is
+// never inferred from the level 90' score alone.
+func koLoser(mt models.Match) string {
+	if !mt.Finished || mt.ScoreA == nil || mt.ScoreB == nil {
+		return ""
+	}
+	switch {
+	case *mt.ScoreA < *mt.ScoreB:
+		return mt.TeamA
+	case *mt.ScoreB < *mt.ScoreA:
+		return mt.TeamB
+	case mt.PenA != nil && mt.PenB != nil && *mt.PenA != *mt.PenB:
+		if *mt.PenA < *mt.PenB {
+			return mt.TeamA
+		}
+		return mt.TeamB
+	}
+	return ""
 }
 
 // liveFinal returns a copy of m with the in-play score baked in as the final

@@ -144,6 +144,38 @@ func (s *Service) EnterResult(by *models.User, matchID int64, scoreA, scoreB int
 	return nil
 }
 
+// EnterPenalties records the penalty-shootout score for a knockout tie that
+// finished level at 90'. Admin only. It decides advancement — who the bracket
+// shows going through, and which club dims as eliminated — but NEVER affects
+// points: the 90' draw still scores as a draw (the scoring package never reads
+// PenA/PenB). Re-entering the 90' result via EnterResult clears the shootout.
+func (s *Service) EnterPenalties(by *models.User, matchID int64, penA, penB int) error {
+	if err := requireAdmin(by); err != nil {
+		return err
+	}
+	if penA < 0 || penA > 99 || penB < 0 || penB > 99 {
+		return ErrInvalidScore
+	}
+	if penA == penB {
+		return ErrPenaltiesTied
+	}
+	m, err := s.Match(matchID)
+	if err != nil {
+		return err
+	}
+	if m.Phase == models.PhaseGroup || !m.Finished || m.ScoreA == nil || m.ScoreB == nil || *m.ScoreA != *m.ScoreB {
+		return ErrPenaltiesNotApplicable
+	}
+	if err := s.store.SetPenalties(matchID, penA, penB); err != nil {
+		return ErrMatchNotFound
+	}
+	s.track(by, by.Fingerprint, EvResultEntered, map[string]string{
+		"match_id":  fmt.Sprintf("%d", matchID),
+		"penalties": fmt.Sprintf("%d-%d", penA, penB),
+	})
+	return nil
+}
+
 // onMatchSettled fires whenever a match transitions to finished (admin entry or
 // the feed). It (1) remembers the match for a short window so the director can
 // react to the fresh result, and (2) nudges the comment worker to regenerate —

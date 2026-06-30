@@ -129,3 +129,65 @@ func TestEliminatedTeamsNoInferenceFromDraw(t *testing.T) {
 		t.Errorf("a 90' draw with no next round must eliminate nobody, got %v", elim)
 	}
 }
+
+func TestEnterPenaltiesResolvesDraw(t *testing.T) {
+	svc, store, _ := newTestService(t)
+	admin, err := store.CreateUser(adminFP, "Admin", models.RoleAdmin, base)
+	if err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	id, err := svc.AddMatch(admin, "Germany", "Paraguay", models.PhaseRound32, "", base.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("add knockout: %v", err)
+	}
+
+	// Penalties before a result exists: not applicable.
+	if err := svc.EnterPenalties(admin, id, 4, 2); err != ErrPenaltiesNotApplicable {
+		t.Fatalf("pens before result: want ErrPenaltiesNotApplicable, got %v", err)
+	}
+
+	if err := svc.EnterResult(admin, id, 1, 1); err != nil {
+		t.Fatalf("enter draw: %v", err)
+	}
+
+	// A 90' draw alone eliminates nobody — advancement is unknown.
+	pic, _ := svc.KnockoutPicture()
+	if pic.Eliminated["Germany"] || pic.Eliminated["Paraguay"] {
+		t.Fatalf("draw with no pens must eliminate nobody, got %v", pic.Eliminated)
+	}
+
+	// Validation: tied pens and non-admin are rejected.
+	if err := svc.EnterPenalties(admin, id, 3, 3); err != ErrPenaltiesTied {
+		t.Fatalf("tied pens: want ErrPenaltiesTied, got %v", err)
+	}
+	if err := svc.EnterPenalties(nil, id, 4, 2); err != ErrForbidden {
+		t.Fatalf("non-admin pens: want ErrForbidden, got %v", err)
+	}
+
+	// Germany wins the shootout 4-2 → Paraguay is eliminated, Germany is not.
+	if err := svc.EnterPenalties(admin, id, 4, 2); err != nil {
+		t.Fatalf("enter pens: %v", err)
+	}
+	pic, _ = svc.KnockoutPicture()
+	if !pic.Eliminated["Paraguay"] {
+		t.Error("shootout loser Paraguay should be eliminated")
+	}
+	if pic.Eliminated["Germany"] {
+		t.Error("shootout winner Germany must not be eliminated")
+	}
+
+	// The shootout never changes the scored 90' result.
+	m, _ := svc.Match(id)
+	if *m.ScoreA != 1 || *m.ScoreB != 1 || *m.PenA != 4 || *m.PenB != 2 {
+		t.Errorf("unexpected stored match: 90'=%d-%d pens=%v-%v", *m.ScoreA, *m.ScoreB, m.PenA, m.PenB)
+	}
+
+	// Re-entering a decisive 90' result clears the stale shootout.
+	if err := svc.EnterResult(admin, id, 2, 1); err != nil {
+		t.Fatalf("correct result: %v", err)
+	}
+	m, _ = svc.Match(id)
+	if m.PenA != nil || m.PenB != nil {
+		t.Errorf("re-entering a result should clear penalties, got %v-%v", m.PenA, m.PenB)
+	}
+}

@@ -181,7 +181,7 @@ func (s *Store) CountMatches(tournamentID int64) (int, error) {
 // MatchByID returns a single match or ErrNotFound.
 func (s *Store) MatchByID(id int64) (*models.Match, error) {
 	row := s.db.QueryRow(
-		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, finished
+		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, penalty_a, penalty_b, finished
 		 FROM matches WHERE id=?`, id)
 	return scanMatch(rowScanner{row})
 }
@@ -189,7 +189,7 @@ func (s *Store) MatchByID(id int64) (*models.Match, error) {
 // ListMatches returns a tournament's matches ordered by kickoff time.
 func (s *Store) ListMatches(tournamentID int64) ([]models.Match, error) {
 	rows, err := s.db.Query(
-		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, finished
+		`SELECT id, tournament_id, team_a, team_b, phase, group_label, starts_at, score_a, score_b, penalty_a, penalty_b, finished
 		 FROM matches WHERE tournament_id=? ORDER BY starts_at, id`, tournamentID)
 	if err != nil {
 		return nil, fmt.Errorf("list matches: %w", err)
@@ -206,13 +206,32 @@ func (s *Store) ListMatches(tournamentID int64) ([]models.Match, error) {
 	return out, rows.Err()
 }
 
-// SetResult records a match's regulation result and marks it finished.
+// SetResult records a match's regulation result and marks it finished. It also
+// clears any penalty-shootout score, so re-entering a result (e.g. correcting a
+// draw to a decisive score) never leaves a stale shootout behind; the admin
+// re-enters penalties via SetPenalties if the corrected result is still a draw.
 func (s *Store) SetResult(matchID int64, scoreA, scoreB int) error {
 	res, err := s.db.Exec(
-		`UPDATE matches SET score_a=?, score_b=?, finished=1 WHERE id=?`,
+		`UPDATE matches SET score_a=?, score_b=?, penalty_a=NULL, penalty_b=NULL, finished=1 WHERE id=?`,
 		scoreA, scoreB, matchID)
 	if err != nil {
 		return fmt.Errorf("set result: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetPenalties records the penalty-shootout score for a knockout tie drawn at
+// 90'. It leaves the 90' score and finished flag untouched — penalties decide
+// advancement only, never the scored result. Returns ErrNotFound if no such match.
+func (s *Store) SetPenalties(matchID int64, penA, penB int) error {
+	res, err := s.db.Exec(
+		`UPDATE matches SET penalty_a=?, penalty_b=? WHERE id=?`,
+		penA, penB, matchID)
+	if err != nil {
+		return fmt.Errorf("set penalties: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
@@ -245,9 +264,9 @@ func (s rowsScanner) Scan(d ...any) error { return s.r.Scan(d...) }
 func scanMatch(sc scanner) (*models.Match, error) {
 	var m models.Match
 	var phase, group, starts string
-	var sa, sb sql.NullInt64
+	var sa, sb, pa, pb sql.NullInt64
 	var finished int
-	switch err := sc.Scan(&m.ID, &m.TournamentID, &m.TeamA, &m.TeamB, &phase, &group, &starts, &sa, &sb, &finished); {
+	switch err := sc.Scan(&m.ID, &m.TournamentID, &m.TeamA, &m.TeamB, &phase, &group, &starts, &sa, &sb, &pa, &pb, &finished); {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil, ErrNotFound
 	case err != nil:
@@ -263,6 +282,14 @@ func scanMatch(sc scanner) (*models.Match, error) {
 	if sb.Valid {
 		v := int(sb.Int64)
 		m.ScoreB = &v
+	}
+	if pa.Valid {
+		v := int(pa.Int64)
+		m.PenA = &v
+	}
+	if pb.Valid {
+		v := int(pb.Int64)
+		m.PenB = &v
 	}
 	m.Finished = finished != 0
 	return &m, nil

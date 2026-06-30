@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 )
@@ -31,5 +32,27 @@ func Open(path string) (*sql.DB, error) {
 		conn.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := migrate(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
 	return conn, nil
+}
+
+// migrate applies additive column migrations that the embedded schema's
+// CREATE TABLE IF NOT EXISTS can't reach on a DB that already exists. Each
+// ADD COLUMN is idempotent: a "duplicate column name" error means a prior boot
+// (or a freshly-created schema) already has the column, so it's ignored. Keep
+// every migration here additive and nullable — never a destructive change.
+func migrate(conn *sql.DB) error {
+	stmts := []string{
+		`ALTER TABLE matches ADD COLUMN penalty_a INTEGER`,
+		`ALTER TABLE matches ADD COLUMN penalty_b INTEGER`,
+	}
+	for _, q := range stmts {
+		if _, err := conn.Exec(q); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migrate %q: %w", q, err)
+		}
+	}
+	return nil
 }

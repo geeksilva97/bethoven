@@ -13,6 +13,11 @@ var (
 	ErrMatchNotFound = errors.New("match not found")
 	ErrMatchLocked   = errors.New("betting closed: match has kicked off")
 	ErrInvalidScore  = errors.New("scores must be between 0 and 99")
+	// ErrPenaltiesNotApplicable: penalties only resolve a knockout tie that
+	// finished level at 90'. ErrPenaltiesTied: a shootout has a winner, so the
+	// two penalty totals must differ.
+	ErrPenaltiesNotApplicable = errors.New("penalties apply only to a knockout tie drawn at 90'")
+	ErrPenaltiesTied          = errors.New("penalty scores must differ — a shootout has a winner")
 )
 
 // Match returns a single match by id (for rendering the bet form).
