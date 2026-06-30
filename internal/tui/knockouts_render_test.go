@@ -88,7 +88,7 @@ func TestViewBracketTree(t *testing.T) {
 
 	// Header + 63 rows for a 16-leaf bracket.
 	leaves := standings.BracketLeaves(proj)
-	if got := len(bracketLines(leaves, -1, nil, nil)); got != 64 {
+	if got := len(bracketLines(bracketInput{leaves: leaves, trace: -1})); got != 64 {
 		t.Errorf("want 64 bracket lines, got %d", got)
 	}
 
@@ -98,8 +98,8 @@ func TestViewBracketTree(t *testing.T) {
 	// is observable — tests otherwise run under lipgloss's Ascii (no-colour) profile.
 	defer lipgloss.SetColorProfile(lipgloss.ColorProfile())
 	lipgloss.SetColorProfile(termenv.TrueColor)
-	plain := bracketLines(leaves, -1, nil, nil)
-	traced := bracketLines(leaves, 0, nil, nil)
+	plain := bracketLines(bracketInput{leaves: leaves, trace: -1})
+	traced := bracketLines(bracketInput{leaves: leaves, trace: 0})
 	if traced[1] == plain[1] {
 		t.Errorf("traced leaf row should differ from the untraced render")
 	}
@@ -224,5 +224,67 @@ func TestBracketDrawn(t *testing.T) {
 	empty := service.KnockoutPicture{Bracket: []service.BracketRound{{Phase: models.PhaseRound32, Label: "Round of 32"}}}
 	if bracketDrawn(empty) {
 		t.Error("picture with no entered matches should not report bracket drawn")
+	}
+}
+
+// Settled ties advance their winner into the next column as a flag (or an
+// abbreviation when the club has no flag), including a penalty-decided draw and
+// a second-round (R16→QF) advance. Loser stays put; only the winner moves on.
+func TestBracketAdvancesWinners(t *testing.T) {
+	defer lipgloss.SetColorProfile(lipgloss.ColorProfile())
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	ip := func(n int) *int { return &n }
+	r32fin := func(a, b string, sa, sb int) models.Match {
+		return models.Match{TeamA: a, TeamB: b, Phase: models.PhaseRound32, Finished: true, ScoreA: ip(sa), ScoreB: ip(sb)}
+	}
+
+	// 16 leaves; the first four ties are decided, the rest placeholders.
+	leaves := make([]standings.ProjMatch, 16)
+	for i := range leaves {
+		leaves[i] = standings.ProjMatch{Match: i + 1, HomeTeam: fmt.Sprintf("Home%d", i+1), AwayTeam: fmt.Sprintf("Away%d", i+1)}
+	}
+	leaves[0] = standings.ProjMatch{Match: 1, HomeTeam: "Brazil", AwayTeam: "Argentina"}
+	leaves[1] = standings.ProjMatch{Match: 2, HomeTeam: "Mexico", AwayTeam: "Japan"}
+	leaves[3] = standings.ProjMatch{Match: 4, HomeTeam: "Spain", AwayTeam: "Croatia"}
+
+	pens := r32fin("Spain", "Croatia", 1, 1) // drawn at 90', Spain win the shootout 5-4
+	pens.PenA, pens.PenB = ip(5), ip(4)
+	r32 := map[int]models.Match{
+		1: r32fin("Brazil", "Argentina", 2, 1),
+		2: r32fin("Mexico", "Japan", 3, 0),
+		3: r32fin("Home3", "Away3", 2, 0), // no flag → abbreviation
+		4: pens,
+	}
+	// R16: the Brazil–Mexico winner advances to the quarter-final.
+	later := [][]models.Match{{
+		{TeamA: "Brazil", TeamB: "Mexico", Phase: models.PhaseRound16, Finished: true, ScoreA: ip(1), ScoreB: ip(0)},
+	}}
+
+	lines := bracketLines(bracketInput{leaves: leaves, trace: -1, r32: r32, later: later})
+
+	// Row of node[lvl][j] is rowLevel(lvl,j) = (1<<lvl)-1 + j*(1<<(lvl+1));
+	// output line index is that +1 (header row at index 0).
+	checks := []struct {
+		line int
+		want string
+		what string
+	}{
+		{2, flagFor("Brazil"), "Brazil advances R32→R16"},     // rowLevel(1,0)=1
+		{6, flagFor("Mexico"), "Mexico advances R32→R16"},     // rowLevel(1,1)=5
+		{10, "HOM", "flagless Home3 advances as abbreviation"}, // rowLevel(1,2)=9
+		{14, flagFor("Spain"), "Spain advances on penalties"}, // rowLevel(1,3)=13
+		{4, flagFor("Brazil"), "Brazil advances R16→QF"},      // rowLevel(2,0)=3
+	}
+	for _, c := range checks {
+		if !strings.Contains(lines[c.line], c.want) {
+			t.Errorf("%s: line %d should contain %q\n%s", c.what, c.line, c.want, lines[c.line])
+		}
+	}
+	// The losing side never advances: Argentina's flag appears nowhere.
+	for i, ln := range lines {
+		if strings.Contains(ln, flagFor("Argentina")) {
+			t.Errorf("loser Argentina should not advance, but its flag is on line %d: %s", i, ln)
+		}
 	}
 }

@@ -119,26 +119,34 @@ func eliminatedTeams(bracket []BracketRound) map[string]bool {
 	return out
 }
 
-// koLoser names the losing club of a finished knockout tie, or "" if it can't be
-// decided yet. A decisive 90' score names the loser directly; a 90' draw names it
-// only once a penalty shootout has been recorded (PenA/PenB) — advancement is
-// never inferred from the level 90' score alone.
-func koLoser(mt models.Match) string {
+// KOResult reports the winner and loser of a finished knockout tie. decided is
+// false when the tie can't be resolved yet: it's unfinished, or it ended level
+// at 90' with no penalty shootout recorded — advancement is never inferred from
+// the level 90' score alone. A decisive 90' score names the winner directly; a
+// 90' draw is resolved by the recorded shootout (PenA/PenB).
+func KOResult(mt models.Match) (winner, loser string, decided bool) {
 	if !mt.Finished || mt.ScoreA == nil || mt.ScoreB == nil {
-		return ""
+		return "", "", false
 	}
 	switch {
-	case *mt.ScoreA < *mt.ScoreB:
-		return mt.TeamA
-	case *mt.ScoreB < *mt.ScoreA:
-		return mt.TeamB
+	case *mt.ScoreA > *mt.ScoreB:
+		return mt.TeamA, mt.TeamB, true
+	case *mt.ScoreB > *mt.ScoreA:
+		return mt.TeamB, mt.TeamA, true
 	case mt.PenA != nil && mt.PenB != nil && *mt.PenA != *mt.PenB:
-		if *mt.PenA < *mt.PenB {
-			return mt.TeamA
+		if *mt.PenA > *mt.PenB {
+			return mt.TeamA, mt.TeamB, true
 		}
-		return mt.TeamB
+		return mt.TeamB, mt.TeamA, true
 	}
-	return ""
+	return "", "", false
+}
+
+// koLoser names the losing club of a finished knockout tie, or "" if it can't be
+// decided yet (see KOResult). Used by eliminatedTeams to dim the club that's out.
+func koLoser(mt models.Match) string {
+	_, loser, _ := KOResult(mt)
+	return loser
 }
 
 // liveFinal returns a copy of m with the in-play score baked in as the final

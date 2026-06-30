@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -35,6 +36,20 @@ func bracketDrawn(pic service.KnockoutPicture) bool {
 // matches are overlaid onto it rather than collapsing it to a flat list.
 func treeShown(pic service.KnockoutPicture) bool {
 	return len(standings.BracketLeaves(pic.Projected)) == 16
+}
+
+// laterRoundMatches returns the entered ties for the rounds above R32 (R16, QF,
+// SF, Final) in ladder order, so bracketLines can advance winners forward. R32 is
+// excluded — it's the leaf layer, fed in separately via the projection.
+func laterRoundMatches(pic service.KnockoutPicture) [][]models.Match {
+	out := make([][]models.Match, 0, len(pic.Bracket))
+	for _, rd := range pic.Bracket {
+		if rd.Phase == models.PhaseRound32 {
+			continue
+		}
+		out = append(out, rd.Matches)
+	}
+	return out
 }
 
 // r32Entered returns the entered Round-of-32 matches from the bracket.
@@ -351,7 +366,14 @@ func (m Model) viewBracketTree() string {
 	overlaid, byNum := overlayEnteredR32(m.ko.Projected, r32Entered(m.ko))
 	leaves := standings.BracketLeaves(overlaid)
 	scores := bracketScores(leaves, byNum)
-	lines := bracketLines(leaves, m.koTraceIdx, scores, m.ko.Eliminated)
+	lines := bracketLines(bracketInput{
+		leaves: leaves,
+		trace:  m.koTraceIdx,
+		scores: scores,
+		elim:   m.ko.Eliminated,
+		r32:    byNum,
+		later:  laterRoundMatches(m.ko),
+	})
 
 	sub := "  projected, if the group stage ended now"
 	switch {
@@ -444,15 +466,34 @@ func bracketScores(leaves []standings.ProjMatch, byNum map[int]models.Match) map
 	return scores
 }
 
+// bracketInput is everything bracketLines needs to draw the tree.
+type bracketInput struct {
+	leaves []standings.ProjMatch  // the 16 R32 ties in bracket position order
+	trace  int                    // team index whose path to light, or <0 for none
+	scores map[int]string         // teamIdx -> goals suffix for a played R32 leaf
+	elim   map[string]bool        // clubs that are out (dimmed)
+	r32    map[int]models.Match   // R32 match-number -> entered match (winner source)
+	later  [][]models.Match       // entered R16,QF,SF,Final ties (ladder order)
+}
+
+// flagOverlay is a winner token (flag emoji or abbreviation) spliced onto a row
+// at col, occupying width display columns — see styleBracketRow.
+type flagOverlay struct {
+	col, width int
+	text       string // already styled, ready to print
+}
+
 // bracketLines renders the 16-leaf balanced bracket (R32→Final) as fixed-width
-// lines. Only the Round-of-32 teams are known (projected, with entered matches
-// overlaid), so the inner rounds are drawn as the connector skeleton — the path
-// each team would follow. leaves must be in bracket position order (see
-// standings.BracketLeaves); scores[teamIdx] adds a goals suffix to a leaf when
-// its tie has been played. When trace is in 0..31 the leaf at that team index and
-// the connector cells carrying its slot up to the Champion box are lit in the
-// traced-path accent.
-func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string, elim map[string]bool) []string {
+// lines. The Round-of-32 teams are the known leaves (projected, with entered
+// matches overlaid); later rounds are filled in as each tie settles — the winner
+// of a decided tie advances into the next column as a flag (or a short
+// abbreviation when it has no flag). Undecided ties leave the connector skeleton
+// bare. leaves must be in bracket position order (see standings.BracketLeaves);
+// scores[teamIdx] adds a goals suffix to a leaf when its tie has been played.
+// When trace is in 0..31 the leaf at that team index and the connector cells
+// carrying its slot up to the Champion box are lit in the traced-path accent.
+func bracketLines(in bracketInput) []string {
+	leaves, trace, scores, elim := in.leaves, in.trace, in.scores, in.elim
 	if len(leaves) != 16 {
 		return []string{helpStyle.Render("  bracket unavailable (incomplete projection)")}
 	}
@@ -533,6 +574,34 @@ func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string
 	}
 	put(rowLevel(nMerges, 0), xv(nMerges-1)+segW, "Champion")
 
+	// Fill winners forward, round by round. node[lvl][j] is the club that reached
+	// that node ("" if undecided). Level 0 is the R32 leaves; each merge resolves a
+	// tie into its parent: the R32 leaf tie via the entered R32 match, later rounds
+	// via the entered tie pairing the two known children. Advancement is never
+	// inferred — a tie only fills its parent once KOResult decides it (incl. on
+	// penalties). The traced path doesn't depend on this; it lights the slot a team
+	// WOULD follow regardless of results.
+	node := make([][]string, nMerges+1)
+	node[0] = teams
+	for mlvl := 0; mlvl < nMerges; mlvl++ {
+		parents := (32 >> mlvl) / 2
+		node[mlvl+1] = make([]string, parents)
+		for j := 0; j < parents; j++ {
+			var mt *models.Match
+			if mlvl == 0 {
+				if m, ok := in.r32[leaves[j].Match]; ok {
+					mt = &m
+				}
+			} else if ca, cb := node[mlvl][2*j], node[mlvl][2*j+1]; ca != "" && cb != "" && mlvl-1 < len(in.later) {
+				mt = findKOTie(in.later[mlvl-1], ca, cb)
+			}
+			if mt != nil {
+				if w, _, decided := service.KOResult(*mt); decided {
+					node[mlvl+1][j] = w
+				}
+			}
+		}
+	}
 	// Light the traced team's path, mirroring the draw loop above: its leaf name,
 	// then at each merge level its corner, the vertical down to the junction, and
 	// the line carrying the winner rightward — up to the Champion box.
@@ -597,8 +666,30 @@ func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string
 		}
 	}
 
+	// Place each decided winner as a flag on its node row, just past the corner
+	// that produced it (overwriting two connector cells — see styleBracketRow).
+	// Done after lighting so a flag on the traced path picks up the accent.
+	overlayRow := make([]flagOverlay, height)
+	for lvl := 1; lvl <= nMerges; lvl++ {
+		for j, team := range node[lvl] {
+			if team == "" {
+				continue
+			}
+			r, c := rowLevel(lvl, j), xv(lvl-1)+1
+			token, w := koNodeToken(team)
+			st := labelStyle
+			switch {
+			case c < width && lit[r][c]:
+				st = bracketPathStyle
+			case elim[team]:
+				st = koOutStyle
+			}
+			overlayRow[r] = flagOverlay{col: c, width: w, text: st.Render(token)}
+		}
+	}
+
 	// Style: traced path bright gold, team names bright (a knocked-out club's name
-	// darker), connector skeleton dim.
+	// darker), connector skeleton dim, and a settled tie's winner advanced as a flag.
 	out := make([]string, 0, height+1)
 	out = append(out, helpStyle.Render(string(hdr)))
 	for r := 0; r < height; r++ {
@@ -606,7 +697,7 @@ func bracketLines(leaves []standings.ProjMatch, trace int, scores map[int]string
 		if elimRow[r] {
 			nameStyle = koOutStyle
 		}
-		out = append(out, styleBracketRow(grid[r], lit[r], nameW, nameStyle))
+		out = append(out, styleBracketRow(grid[r], lit[r], nameW, nameStyle, overlayRow[r]))
 	}
 	return out
 }
@@ -632,8 +723,10 @@ func koTeamNames(leaves []standings.ProjMatch) []string {
 // styleBracketRow renders one bracket grid row, coalescing runs of equally-styled
 // cells: lit cells in the traced-path accent, otherwise the team name (left of
 // nameW) in nameStyle (dimmed for a knocked-out club) and the connector skeleton
-// (right) dim.
-func styleBracketRow(row []rune, lit []bool, nameW int, nameStyle lipgloss.Style) string {
+// (right) dim. ov, when non-zero, splices a pre-styled winner token in at ov.col,
+// consuming ov.width grid cells so the token's display width replaces that many
+// connector cells and the row stays aligned.
+func styleBracketRow(row []rune, lit []bool, nameW int, nameStyle lipgloss.Style, ov flagOverlay) string {
 	styles := []lipgloss.Style{nameStyle, helpStyle, bracketPathStyle}
 	kind := func(c int) int {
 		switch {
@@ -645,17 +738,65 @@ func styleBracketRow(row []rune, lit []bool, nameW int, nameStyle lipgloss.Style
 			return 1
 		}
 	}
+	hasOverlay := ov.text != ""
 	var b strings.Builder
 	for c := 0; c < len(row); {
+		if hasOverlay && c == ov.col {
+			b.WriteString(ov.text)
+			c += ov.width
+			continue
+		}
 		k := kind(c)
 		j := c
-		for j < len(row) && kind(j) == k {
+		for j < len(row) && kind(j) == k && !(hasOverlay && j == ov.col) {
 			j++
 		}
 		b.WriteString(styles[k].Render(string(row[c:j])))
 		c = j
 	}
 	return b.String()
+}
+
+// findKOTie returns the entered match in ms whose two teams are exactly {a, b}
+// (either home/away order), or nil — used to advance a bracket node once both its
+// feeder winners are known.
+func findKOTie(ms []models.Match, a, b string) *models.Match {
+	for i := range ms {
+		if (ms[i].TeamA == a && ms[i].TeamB == b) || (ms[i].TeamA == b && ms[i].TeamB == a) {
+			return &ms[i]
+		}
+	}
+	return nil
+}
+
+// koNodeToken renders a club advanced into an inner bracket node as a compact
+// token plus its display width: the flag emoji (2 columns) when known, otherwise
+// a short letters-only abbreviation so an unmapped club is still identifiable.
+func koNodeToken(team string) (string, int) {
+	if f, ok := teamFlags[team]; ok {
+		return f, 2
+	}
+	ab := koAbbrev(team)
+	return ab, len([]rune(ab))
+}
+
+// koAbbrev is the up-to-three-letter uppercase fallback for a club with no flag
+// (e.g. "DR Congo" -> "DRC"), so inner-round nodes never render a meaningless
+// white flag.
+func koAbbrev(team string) string {
+	letters := make([]rune, 0, 3)
+	for _, r := range team {
+		if unicode.IsLetter(r) {
+			letters = append(letters, unicode.ToUpper(r))
+			if len(letters) == 3 {
+				break
+			}
+		}
+	}
+	if len(letters) == 0 {
+		return "??"
+	}
+	return string(letters)
 }
 
 // koMatchLine renders one bracket match: the final score if played, the live
