@@ -79,41 +79,58 @@ func (s *Service) KnockoutPicture() (KnockoutPicture, error) {
 	}, nil
 }
 
-// eliminatedTeams returns the set of knockout clubs that are out. Advancement is
-// never inferred from a 90' draw alone, so a team is marked eliminated only when
-// we know it for sure:
-//   - it lost a finished tie outright — a decisive 90' score, or a recorded
-//     penalty-shootout score on a 90' draw (see koLoser), or
-//   - it failed to reach the furthest round that has been drawn (so a penalty
-//     loser is flagged once the next round is entered, even before the shootout
-//     score is recorded).
+// eliminatedTeams returns the set of knockout clubs that are out. A club is dimmed
+// only on hard evidence from a FINISHED tie — never from an upcoming one, so a club
+// still waiting to play its round is never greyed out:
+//   - it lost a finished tie with a known winner — a decisive 90' score or a
+//     recorded penalty shootout on a 90' draw (see koLoser); or
+//   - it drew a finished tie at 90' with NO shootout recorded yet, but its opponent
+//     has since been drawn into a later round (so the opponent advanced and this
+//     club is out). If neither side of an unresolved draw has advanced yet, the
+//     winner is unknown and neither is dimmed.
 //
-// The two rules complement each other: the "didn't reach the furthest round" rule
-// can't catch the loser of the latest round (or the final), which koLoser does;
-// koLoser can't catch a still-unrecorded penalty loser, which the other does once
-// the next round is drawn.
+// Advancement is never inferred from an UNFINISHED match — only finished ties feed
+// either rule. (This is the fix for the bug where entering the first R16 matchup
+// greyed out every R32 club whose own tie had not yet been played: the old rule
+// dimmed any club absent from the furthest drawn round, ignoring whether its own
+// tie was even over.)
 func eliminatedTeams(bracket []BracketRound) map[string]bool {
 	out := map[string]bool{}
-	lastRound := map[string]int{} // team -> furthest ladder index it appears in
-	maxDrawn := -1
+	// Which clubs appear in each round's ENTERED matches, by ladder index.
+	inRound := make([]map[string]bool, len(bracket))
 	for i, rd := range bracket {
-		if len(rd.Matches) == 0 {
-			continue
-		}
-		if i > maxDrawn {
-			maxDrawn = i
-		}
+		inRound[i] = make(map[string]bool, len(rd.Matches)*2)
 		for _, mt := range rd.Matches {
-			lastRound[mt.TeamA] = i // rounds are in ladder order, so the last write wins
-			lastRound[mt.TeamB] = i
-			if loser := koLoser(mt); loser != "" {
-				out[loser] = true
-			}
+			inRound[i][mt.TeamA] = true
+			inRound[i][mt.TeamB] = true
 		}
 	}
-	for team, lr := range lastRound {
-		if lr < maxDrawn {
-			out[team] = true
+	appearsLater := func(team string, after int) bool {
+		for j := after + 1; j < len(bracket); j++ {
+			if inRound[j][team] {
+				return true
+			}
+		}
+		return false
+	}
+	for i, rd := range bracket {
+		for _, mt := range rd.Matches {
+			if loser := koLoser(mt); loser != "" {
+				out[loser] = true // decisive 90' or recorded shootout
+				continue
+			}
+			// A finished, still-level tie (shootout not entered yet): resolve by
+			// advancement — whichever side was drawn into a later round won, so the
+			// other is out. An UNFINISHED tie falls through and eliminates nobody.
+			if mt.Finished && mt.ScoreA != nil && mt.ScoreB != nil && *mt.ScoreA == *mt.ScoreB {
+				aLater, bLater := appearsLater(mt.TeamA, i), appearsLater(mt.TeamB, i)
+				switch {
+				case aLater && !bLater:
+					out[mt.TeamB] = true
+				case bLater && !aLater:
+					out[mt.TeamA] = true
+				}
+			}
 		}
 	}
 	return out

@@ -116,6 +116,35 @@ func TestEliminatedTeams(t *testing.T) {
 	}
 }
 
+// TestEliminatedTeamsUpcomingTieNotDimmed is the regression for the production bug:
+// entering the first R16 matchup must NOT grey out R32 clubs whose own tie hasn't
+// been played yet. Only finished ties feed elimination.
+func TestEliminatedTeamsUpcomingTieNotDimmed(t *testing.T) {
+	score := func(n int) *int { return &n }
+	bracket := []BracketRound{
+		{Phase: models.PhaseRound32, Matches: []models.Match{
+			// Played and decided → SouthAfrica out, Canada advances.
+			{TeamA: "SouthAfrica", TeamB: "Canada", Finished: true, ScoreA: score(0), ScoreB: score(1)},
+			// NOT played yet — both clubs are still alive.
+			{TeamA: "France", TeamB: "Sweden"},
+			{TeamA: "Portugal", TeamB: "Croatia"},
+		}},
+		// One R16 matchup entered, which used to drag every absent R32 club down.
+		{Phase: models.PhaseRound16, Matches: []models.Match{
+			{TeamA: "Canada", TeamB: "Morocco"},
+		}},
+	}
+	elim := eliminatedTeams(bracket)
+	if !elim["SouthAfrica"] {
+		t.Error("the decisive 90' loser SouthAfrica should be eliminated")
+	}
+	for _, alive := range []string{"France", "Sweden", "Portugal", "Croatia", "Canada", "Morocco"} {
+		if elim[alive] {
+			t.Errorf("%s has an unfinished/won tie and must stay bright, got eliminated; full set: %v", alive, elim)
+		}
+	}
+}
+
 func TestEliminatedTeamsNoInferenceFromDraw(t *testing.T) {
 	score := func(n int) *int { return &n }
 	// A 1-1 draw with NO later round drawn: the shootout winner is unknown, so
