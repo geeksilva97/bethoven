@@ -31,6 +31,12 @@ func (m *Model) buildMenu() {
 	if m.publicBets && !isAdmin {
 		items = append(items, menuItem{"All players' bets", screenPublicBets})
 	}
+	// "My card" unlocks for players once the tournament is over — their own
+	// end-of-tournament card, with one-key PNG save. Admins reach every card via
+	// the "⚙ Admin: player cards" entry, so they skip this one.
+	if m.cardReady && !isAdmin {
+		items = append(items, menuItem{"🏆  My card", screenPlayerCard})
+	}
 	if isAdmin {
 		items = append(items,
 			menuItem{"⚙  Admin: add match", screenAddMatch},
@@ -232,7 +238,16 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 			m.setStatus(err.Error(), true)
 			return m, nil
 		}
-		m.cards, m.cardCursor, m.cardBusy, m.screen = cards, 0, false, screenPlayerCards
+		m.cards, m.cardCursor, m.cardBusy, m.cardSolo, m.screen = cards, 0, false, false, screenPlayerCards
+	case screenPlayerCard:
+		// Player-facing "My card": only the viewer's own card, solo mode.
+		card, err := m.svc.MyCard(m.user)
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.cards = []service.PlayerCard{card}
+		m.cardSel, m.cardCursor, m.cardBusy, m.cardSolo, m.screen = 0, 0, false, true, screenPlayerCard
 	}
 	return m, nil
 }
@@ -268,6 +283,8 @@ func screenName(s screen) string {
 		return "admin_betania"
 	case screenPlayerCards:
 		return "admin_player_cards"
+	case screenPlayerCard:
+		return "my_card"
 	default:
 		return "menu"
 	}

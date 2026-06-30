@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,6 +10,10 @@ import (
 	"bethoven/internal/models"
 	"bethoven/internal/scoring"
 )
+
+// ErrCardNotReady is returned by MyCard before the tournament is over. A player's
+// card unlocks only once the final has been played — see TournamentComplete.
+var ErrCardNotReady = errors.New("your card unlocks when the tournament is over")
 
 // CardPoint is one round of a player's personal trajectory on their card: where
 // they sat, with how many points, and how they moved that round. Mirrors
@@ -72,6 +77,52 @@ func (s *Service) PlayerCards(by *models.User) ([]PlayerCard, error) {
 		return nil, err
 	}
 	return s.buildPlayerCards()
+}
+
+// TournamentComplete reports whether the tournament has finished — i.e. a final
+// has been entered and played. It's the gate for player-facing cards: the
+// "hero's journey" recap only makes sense once the champion is known. True iff a
+// PhaseFinal match exists and is Finished.
+func (s *Service) TournamentComplete() (bool, error) {
+	matches, err := s.store.ListMatches(s.tournamentID)
+	if err != nil {
+		return false, err
+	}
+	for _, m := range matches {
+		if m.Phase == models.PhaseFinal && m.Finished {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// MyCard returns the caller's OWN end-of-tournament card — and only theirs, so the
+// own-bets-only privacy boundary holds (a card exposes that player's best/worst
+// picks). Ungated by role, but gated by TIME: it returns ErrCardNotReady until the
+// tournament is over (TournamentComplete), mirroring the admin-only preview that
+// lets cards be reviewed before launch. Errors with ErrCardNotReady when the caller
+// has no card yet (e.g. registered but never appeared in the standings history).
+func (s *Service) MyCard(by *models.User) (PlayerCard, error) {
+	if by == nil {
+		return PlayerCard{}, ErrForbidden
+	}
+	done, err := s.TournamentComplete()
+	if err != nil {
+		return PlayerCard{}, err
+	}
+	if !done {
+		return PlayerCard{}, ErrCardNotReady
+	}
+	cards, err := s.buildPlayerCards()
+	if err != nil {
+		return PlayerCard{}, err
+	}
+	for _, c := range cards {
+		if c.User.ID == by.ID {
+			return c, nil
+		}
+	}
+	return PlayerCard{}, ErrCardNotReady
 }
 
 // buildPlayerCards is the ungated core: it folds the standings history into a card

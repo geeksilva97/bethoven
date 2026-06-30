@@ -50,6 +50,52 @@ func seedTwoRoundPool(t *testing.T) (*Service, models.User, models.User, models.
 	return svc, *admin, *alice, *bob
 }
 
+// TestMyCardGatedUntilTournamentOver covers the player-facing own-card path: it's
+// locked (ErrCardNotReady) until a final has been played, then returns ONLY the
+// caller's own card — never another player's.
+func TestMyCardGatedUntilTournamentOver(t *testing.T) {
+	svc, admin, alice, bob := seedTwoRoundPool(t)
+	store := svc.store
+
+	// Before any final exists, the tournament isn't over and cards are locked.
+	if done, err := svc.TournamentComplete(); err != nil || done {
+		t.Fatalf("TournamentComplete before final = %v, %v; want false", done, err)
+	}
+	if _, err := svc.MyCard(&alice); !errors.Is(err, ErrCardNotReady) {
+		t.Fatalf("MyCard before final = %v; want ErrCardNotReady", err)
+	}
+
+	// Add and settle the final → tournament complete.
+	fin := addTeamMatch(t, store, svc.tournamentID, "X", "Y", models.PhaseFinal, base.Add(48*time.Hour))
+	if err := svc.EnterResult(&admin, fin, 1, 0); err != nil {
+		t.Fatalf("EnterResult final: %v", err)
+	}
+	if done, err := svc.TournamentComplete(); err != nil || !done {
+		t.Fatalf("TournamentComplete after final = %v, %v; want true", done, err)
+	}
+
+	// Each player gets their OWN card — and only theirs.
+	ac, err := svc.MyCard(&alice)
+	if err != nil {
+		t.Fatalf("MyCard(alice): %v", err)
+	}
+	if ac.User.ID != alice.ID || ac.User.DisplayName != "Alice" {
+		t.Errorf("MyCard(alice) returned %q (id %d); want Alice (%d)", ac.User.DisplayName, ac.User.ID, alice.ID)
+	}
+	bc, err := svc.MyCard(&bob)
+	if err != nil {
+		t.Fatalf("MyCard(bob): %v", err)
+	}
+	if bc.User.ID != bob.ID {
+		t.Errorf("MyCard(bob) returned id %d; want %d", bc.User.ID, bob.ID)
+	}
+
+	// A nil caller is forbidden, not a card.
+	if _, err := svc.MyCard(nil); !errors.Is(err, ErrForbidden) {
+		t.Errorf("MyCard(nil) = %v; want ErrForbidden", err)
+	}
+}
+
 // PlayerCards folds the standings history into a card per player: final rank, medal,
 // tallies, trajectory extremes, and best/worst pick — all read-time, no new storage.
 func TestPlayerCardsComputesStats(t *testing.T) {

@@ -258,11 +258,17 @@ type Model struct {
 
 	// admin: end-of-tournament player cards. cards is the ranked set; cardCursor
 	// moves the list; cardSel is the card open in the detail view; cardBusy flags an
-	// in-flight generation so the views can show "generating…".
+	// in-flight generation/PNG render so the views can show "working…".
 	cards      []service.PlayerCard
 	cardCursor int
 	cardSel    int
 	cardBusy   bool
+	// cardSolo marks the player-facing "My card" path: the detail view shows only the
+	// viewer's OWN single card (esc → menu, no prev/next, no admin framing) and offers
+	// the one-key PNG save. cardReady caches TournamentComplete so the menu shows the
+	// "My card" entry only once the tournament is over (mirrors the publicBets gate).
+	cardSolo  bool
+	cardReady bool
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -279,6 +285,7 @@ func New(svc *service.Service, fingerprint string, isAdminKey bool, user *models
 	} else {
 		m.screen = screenMenu
 		m.publicBets, _ = svc.PublicBetsEnabled()
+		m.cardReady, _ = svc.TournamentComplete()
 		m.buildMenu()
 	}
 	return m
@@ -434,7 +441,9 @@ func (m Model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) goMenu() Model {
 	m.status = ""
 	m.screen = screenMenu
+	m.cardSolo = false
 	m.publicBets, _ = m.svc.PublicBetsEnabled()
+	m.cardReady, _ = m.svc.TournamentComplete()
 	m.buildMenu()
 	return m
 }

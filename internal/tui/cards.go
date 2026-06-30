@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"encoding/base64"
 	"fmt"
+	"io"
 	"strings"
 	"unicode"
 
@@ -9,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"bethoven/internal/cardimg"
 	"bethoven/internal/service"
 )
 
@@ -118,8 +121,109 @@ func (m Model) regenCardCmd(userID int64) tea.Cmd {
 	}
 }
 
+// --- one-key PNG save (the "collect your card" feature) -------------------------
+
+// cardImageReadyMsg carries the rendered card as a ready-to-write terminal
+// file-transfer escape (or an error from the PNG render). cardSavedMsg reports the
+// outcome of writing that escape to the client terminal.
+type (
+	cardImageReadyMsg struct {
+		osc []byte
+		err error
+	}
+	cardSavedMsg struct{ err error }
+)
+
+// oscSave writes a pre-built terminal escape to the client. It satisfies
+// tea.ExecCommand so tea.Exec hands it the program's output writer (the wish SSH
+// session) AFTER pausing the renderer — the only safe way to emit a raw control
+// sequence past Bubble Tea's alt-screen without it being diffed/garbled.
+type oscSave struct {
+	data []byte
+	w    io.Writer
+}
+
+func (o *oscSave) Run() error            { _, err := o.w.Write(o.data); return err }
+func (o *oscSave) SetStdin(io.Reader)    {}
+func (o *oscSave) SetStdout(w io.Writer) { o.w = w }
+func (o *oscSave) SetStderr(io.Writer)   {}
+
+// buildCardImageCmd renders the open card to a PNG off the UI thread and wraps it
+// in the iTerm2 file-transfer escape.
+func (m Model) buildCardImageCmd() tea.Cmd {
+	if m.cardSel < 0 || m.cardSel >= len(m.cards) {
+		return nil
+	}
+	card := m.cards[m.cardSel]
+	return func() tea.Msg {
+		png, err := cardimg.Render(card)
+		if err != nil {
+			return cardImageReadyMsg{err: err}
+		}
+		return cardImageReadyMsg{osc: itermFileTransfer(cardFilename(card.User.DisplayName), png)}
+	}
+}
+
+// itermFileTransfer builds the iTerm2 inline-file escape (also honoured by WezTerm
+// and Ghostty): OSC 1337 ; File=name=<b64>;size=<n>;inline=0 : <b64 data> BEL. With
+// inline=0 the terminal SAVES the file to the user's Downloads rather than
+// displaying it. A terminal that doesn't understand the sequence silently ignores
+// it — nothing is rendered, so there's no garbage on screen. (No tmux/screen
+// passthrough wrapping: the client's multiplexer isn't reliably detectable over SSH.)
+func itermFileTransfer(name string, data []byte) []byte {
+	var b strings.Builder
+	b.WriteString("\x1b]1337;File=name=")
+	b.WriteString(base64.StdEncoding.EncodeToString([]byte(name)))
+	b.WriteString(fmt.Sprintf(";size=%d;inline=0:", len(data)))
+	b.WriteString(base64.StdEncoding.EncodeToString(data))
+	b.WriteByte(0x07) // BEL terminates the OSC
+	return []byte(b.String())
+}
+
+// cardFilename turns a display name into a safe download filename, e.g.
+// "Ada Lovelace" -> "ada-lovelace-bethoven-2026.png".
+func cardFilename(displayName string) string {
+	var b strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(displayName) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash && b.Len() > 0 {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		slug = "player"
+	}
+	return slug + "-bethoven-2026.png"
+}
+
 func (m Model) updatePlayerCard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case cardImageReadyMsg:
+		if msg.err != nil {
+			m.cardBusy = false
+			m.setStatus("couldn't build image: "+msg.err.Error(), true)
+			return m, nil
+		}
+		// Renderer paused → write the escape to the client → renderer resumed.
+		return m, tea.Exec(&oscSave{data: msg.osc}, func(err error) tea.Msg {
+			return cardSavedMsg{err: err}
+		})
+	case cardSavedMsg:
+		m.cardBusy = false
+		if msg.err != nil {
+			m.setStatus("save failed: "+msg.err.Error(), true)
+			return m, nil
+		}
+		m.setStatus("saved to your Downloads (iTerm2/WezTerm/Ghostty)", false)
+		return m, nil
 	case regenCardMsg:
 		m.cardBusy = false
 		if msg.err != nil {
@@ -137,9 +241,25 @@ func (m Model) updatePlayerCard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m, tea.Quit
 		case "esc", "b":
+			// Solo (player) path goes back to the main menu; the admin reached this
+			// from the cards LIST, so it returns there.
+			if m.cardSolo {
+				return m.goMenu(), nil
+			}
 			m.status, m.screen = "", screenPlayerCards
 			return m, nil
+		case "s":
+			// Save the open card as a PNG to the user's own computer.
+			if m.cardBusy || m.cardSel < 0 || m.cardSel >= len(m.cards) {
+				return m, nil
+			}
+			m.cardBusy = true
+			m.setStatus("preparing image…", false)
+			return m, m.buildCardImageCmd()
 		case "left", "h", "p":
+			if m.cardSolo {
+				return m, nil // only the viewer's own card — nothing to page through
+			}
 			if n := len(m.cards); n > 0 {
 				m.cardSel = (m.cardSel - 1 + n) % n
 				m.cardCursor = m.cardSel // keep the list cursor in sync for when we go back
@@ -147,6 +267,9 @@ func (m Model) updatePlayerCard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "right", "l", "n", " ":
+			if m.cardSolo {
+				return m, nil
+			}
 			if n := len(m.cards); n > 0 {
 				m.cardSel = (m.cardSel + 1) % n
 				m.cardCursor = m.cardSel
@@ -154,7 +277,9 @@ func (m Model) updatePlayerCard(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "r":
-			if m.cardBusy || m.cardSel < 0 || m.cardSel >= len(m.cards) {
+			// Regenerating the narrative is an admin action (RegeneratePlayerCard is
+			// gated); players only save their own card.
+			if m.cardSolo || m.cardBusy || m.cardSel < 0 || m.cardSel >= len(m.cards) {
 				return m, nil
 			}
 			m.cardBusy = true
@@ -266,8 +391,11 @@ func (m Model) viewPlayerCard() string {
 		Width(cardW)
 
 	out := box.Render(b.String()) + "\n\n"
+	if m.cardSolo {
+		return out + statusLine(m) + helpStyle.Render("s: save to your computer · esc: back · q: quit")
+	}
 	pos := helpStyle.Render(fmt.Sprintf("card %d/%d  ", m.cardSel+1, len(m.cards)))
-	return out + statusLine(m) + pos + helpStyle.Render("←/→: prev/next · r: regenerate · esc: back · q: quit")
+	return out + statusLine(m) + pos + helpStyle.Render("←/→: prev/next · s: save · r: regenerate · esc: back · q: quit")
 }
 
 // --- helpers --------------------------------------------------------------------
