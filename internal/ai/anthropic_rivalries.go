@@ -59,7 +59,7 @@ func rivalryPrompt(history []RoundStanding, derivedNotes string, existing []Riva
 	b.WriteString("Return the FULL desired set: keep ones that still hold, drop ones that no longer do, add genuinely new ones.\n\n")
 	b.WriteString("RULES:\n")
 	b.WriteString("1. Ground every rivalry ONLY in the data below. Never invent a player, a position, or a result. Use exact display names from the data.\n")
-	b.WriteString("2. A rivalry needs a real basis in the data: two players sharing or trading the lead, neck-and-neck on points, one hunting the other, a tight battle for a place — OR a head-to-head STORY in the notes below (they keep calling the same matches differently, both nailed or both whiffed the same upset, one overtook the other on a single result, or the in-match leaderboard \"dance\" shows them trading places goal by goal). A runaway leader with no challenger is NOT a rivalry.\n")
+	b.WriteString("2. A rivalry needs a real basis in the data: two players sharing or trading the lead, neck-and-neck on points, one hunting the other, a tight battle for a place — OR a head-to-head STORY in the notes below (they keep calling the same matches differently, both nailed or both whiffed the same upset, one overtook the other on a single result, or the in-match leaderboard \"dance\" shows them trading places goal by goal) — OR an admin HOUSE NOTE below that flags a real-world feud, friendship, or history between two named players (a rivalry the pool already knows about, even if the standings don't yet show it). A runaway leader with no challenger is NOT a rivalry.\n")
 	b.WriteString(fmt.Sprintf("3. Return AT MOST %d rivalries — only the most compelling. Quality over quantity; an empty list is fine if nothing stands out.\n", maxAutoRivalries))
 	b.WriteString("4. Be STABLE: if a current rivalry below still holds, keep it (you may refresh its note). Only change the set when the standings clearly shifted — don't churn every matchday.\n")
 	b.WriteString("5. Make each note SPECIFIC, not just a point gap. Reach into the STORY SO FAR for real color — a shared called shot, contrasting prediction styles, a result that swung the order between them, who nailed what — so it reads like a feud with history, not a stat line (e.g. \"both backed the Brazil upset, but Maria pulled ahead when Sofia whiffed the final\" beats \"2 points apart\"). Stay grounded: never invent a game, pick, or result not in the data below. Don't cite calendar dates in the note — keep any timing relative or timeless (\"recently\", \"early on\", \"down the stretch\") so it never reads stale. One short factual phrase or sentence, third person (name the players, no \"you\"). No emojis, no markdown, no line breaks.\n\n")
@@ -73,6 +73,16 @@ func rivalryPrompt(history []RoundStanding, derivedNotes string, existing []Riva
 		b.WriteString("STORY SO FAR — your own notes on finished matches (context, never invent beyond it):\n")
 		b.WriteString(dn)
 		b.WriteString("\n\n")
+	}
+	if len(cfg.PlayerNotes) > 0 || len(cfg.Notes) > 0 {
+		b.WriteString("ADMIN HOUSE NOTES — real-world background the pool knows. A note tagged \"About <name>:\" is ONLY about that player; a \"General note\" is about the pool. Use these as a valid BASIS for a rivalry when a note names a real feud/history/relationship between two players — but stay grounded: never invent a result, and never reassign one player's note to another:\n")
+		for _, n := range cfg.PlayerNotes {
+			fmt.Fprintf(&b, "- About %s: %s\n", n.Player, n.Text)
+		}
+		for _, n := range cfg.Notes {
+			fmt.Fprintf(&b, "- General note (about the pool, not any one player): %s\n", n)
+		}
+		b.WriteString("\n")
 	}
 	b.WriteString("STANDINGS + HISTORY (JSON; position 1 = first, movement = places gained(+)/lost(-) vs last round):\n")
 	b.WriteString(historyJSON(history))

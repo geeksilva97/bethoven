@@ -177,6 +177,31 @@ func TestCommentWorkerRefreshesAutoRivalries(t *testing.T) {
 	}
 }
 
+// TestRivalryPromptCarriesHouseNotes verifies the admin's per-player and pool house
+// notes reach the auto-rivalry detection prompt, so BETanIA can seed a rivalry from a
+// real-world feud the admin flagged even before the standings reflect it.
+func TestRivalryPromptCarriesHouseNotes(t *testing.T) {
+	cfg := CommentConfig{
+		DefaultTone: "playful",
+		PlayerNotes: []PlayerNote{{Player: "Joao", Text: "office nemesis of Ana since the Copa office pool"}},
+		Notes:       []string{"the pool splits into Rio vs Sao Paulo camps"},
+	}
+	p := rivalryPrompt(oneRound(), "", nil, cfg)
+	if !strings.Contains(p, "ADMIN HOUSE NOTES") {
+		t.Error("rivalry prompt must include the admin house-notes block")
+	}
+	if !strings.Contains(p, "About Joao: office nemesis of Ana") {
+		t.Error("rivalry prompt must carry per-player notes with attribution")
+	}
+	if !strings.Contains(p, "Rio vs Sao Paulo") {
+		t.Error("rivalry prompt must carry pool-wide general notes")
+	}
+	// With no notes set, the block is omitted entirely (no empty header).
+	if bare := rivalryPrompt(oneRound(), "", nil, CommentConfig{DefaultTone: "playful"}); strings.Contains(bare, "ADMIN HOUSE NOTES") {
+		t.Error("rivalry prompt must omit the house-notes block when there are none")
+	}
+}
+
 func TestCommentWorkerPassPersistsComments(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	fc := &fakeCommenter{comments: []Comment{{UserID: 1, Player: "Joao", Text: "you \x1b[31mfell\x1b[0m"}}}
