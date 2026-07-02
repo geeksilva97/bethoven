@@ -62,12 +62,23 @@ func rivalryPrompt(history []RoundStanding, derivedNotes string, existing []Riva
 	b.WriteString("2. A rivalry needs a real basis in the data: two players sharing or trading the lead, neck-and-neck on points, one hunting the other, a tight battle for a place — OR a head-to-head STORY in the notes below (they keep calling the same matches differently, both nailed or both whiffed the same upset, one overtook the other on a single result, or the in-match leaderboard \"dance\" shows them trading places goal by goal) — OR an admin HOUSE NOTE below that flags a real-world feud, friendship, or history between two named players (a rivalry the pool already knows about, even if the standings don't yet show it). A runaway leader with no challenger is NOT a rivalry.\n")
 	b.WriteString(fmt.Sprintf("3. Return AT MOST %d rivalries — only the most compelling. Quality over quantity; an empty list is fine if nothing stands out.\n", maxAutoRivalries))
 	b.WriteString("4. Be STABLE: if a current rivalry below still holds, keep it (you may refresh its note). Only change the set when the standings clearly shifted — don't churn every matchday.\n")
-	b.WriteString("5. Make each note SPECIFIC, not just a point gap. Reach into the STORY SO FAR for real color — a shared called shot, contrasting prediction styles, a result that swung the order between them, who nailed what — so it reads like a feud with history, not a stat line (e.g. \"both backed the Brazil upset, but Maria pulled ahead when Sofia whiffed the final\" beats \"2 points apart\"). Stay grounded: never invent a game, pick, or result not in the data below. Don't cite calendar dates in the note — keep any timing relative or timeless (\"recently\", \"early on\", \"down the stretch\") so it never reads stale. One short factual phrase or sentence, third person (name the players, no \"you\"). No emojis, no markdown, no line breaks.\n\n")
+	b.WriteString("5. Make each note SPECIFIC, not just a point gap. Reach into the STORY SO FAR for real color — a shared called shot, contrasting prediction styles, a result that swung the order between them, who nailed what — so it reads like a feud with history, not a stat line (e.g. \"both backed the Brazil upset, but Maria pulled ahead when Sofia whiffed the final\" beats \"2 points apart\"). Stay grounded: never invent a game, pick, or result not in the data below. Don't cite calendar dates in the note — keep any timing relative or timeless (\"recently\", \"early on\", \"down the stretch\") so it never reads stale. One short factual phrase or sentence, third person (name the players, no \"you\"). No emojis, no markdown, no line breaks.\n")
+	b.WriteString("6. The ADMIN-CURATED RIVALRIES below (if any) are LOCKED and managed separately from yours: treat them as established context you can build around, but do NOT return any of those same pairs in your set — focus on OTHER pairings.\n\n")
 	b.WriteString(untrustedDataNote)
 	if cur, _ := json.Marshal(existing); len(existing) > 0 {
 		b.WriteString("YOUR CURRENT RIVALRIES (JSON — keep the ones that still hold):\n")
 		b.Write(cur)
 		b.WriteString("\n\n")
+	}
+	// Admin-curated rivalries the model must be aware of (so it complements rather than
+	// duplicates them). cfg.Rivalries is the merged admin+auto set; subtract the auto
+	// pairs (existing) to isolate the admin-owned ones.
+	if admin := adminRivalries(existing, cfg.Rivalries); len(admin) > 0 {
+		b.WriteString("ADMIN-CURATED RIVALRIES — locked feuds the admin tracks, real context you may build around; do NOT re-propose these pairs:\n")
+		for _, r := range admin {
+			fmt.Fprintf(&b, "- %s vs %s: %s\n", r.A, r.B, r.Note)
+		}
+		b.WriteString("\n")
 	}
 	if dn := strings.TrimSpace(derivedNotes); dn != "" {
 		b.WriteString("STORY SO FAR — your own notes on finished matches (context, never invent beyond it):\n")
@@ -88,6 +99,34 @@ func rivalryPrompt(history []RoundStanding, derivedNotes string, existing []Riva
 	b.WriteString(historyJSON(history))
 	b.WriteString("\n\nCall submit_rivalries with the rivalries worth tracking. a and b must be exact player names from the data.")
 	return b.String()
+}
+
+// adminRivalries isolates the admin-curated rivalries from the merged set that
+// CommentConfig produces (admin + BETanIA's own auto tier). It returns the merged
+// entries whose unordered name-pair isn't in the auto set, so the detection prompt can
+// show BETanIA the admin's feuds as locked context without double-listing her own.
+func adminRivalries(auto, merged []Rivalry) []Rivalry {
+	autoSet := make(map[string]bool, len(auto))
+	for _, r := range auto {
+		autoSet[rivalPairKey(r.A, r.B)] = true
+	}
+	out := make([]Rivalry, 0, len(merged))
+	for _, r := range merged {
+		if !autoSet[rivalPairKey(r.A, r.B)] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// rivalPairKey is an order- and case-independent key for a player-name pair, so
+// {A,B} and {b,a} collapse to the same key.
+func rivalPairKey(a, b string) string {
+	a, b = strings.ToLower(strings.TrimSpace(a)), strings.ToLower(strings.TrimSpace(b))
+	if a > b {
+		a, b = b, a
+	}
+	return a + "\x00" + b
 }
 
 func rivalryTool() anthropic.ToolParam {

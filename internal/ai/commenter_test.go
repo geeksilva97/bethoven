@@ -202,6 +202,65 @@ func TestRivalryPromptCarriesHouseNotes(t *testing.T) {
 	}
 }
 
+// TestRivalryPromptCarriesAdminRivalries verifies the auto-rivalry DETECTION prompt
+// loads the admin's curated rivalries as locked context (so BETanIA complements rather
+// than re-proposes them), while NOT double-listing her own auto pairs.
+func TestRivalryPromptCarriesAdminRivalries(t *testing.T) {
+	existing := []Rivalry{{A: "Joao", B: "Ana", Note: "her own auto feud"}} // BETanIA's auto tier
+	cfg := CommentConfig{
+		// The merged set CommentConfig produces: an admin pair + the auto pair.
+		Rivalries: []Rivalry{
+			{A: "Bruno", B: "Carla", Note: "admin-declared office rivalry"},
+			{A: "Joao", B: "Ana", Note: "her own auto feud"},
+		},
+	}
+	// "locked feuds the admin tracks" is unique to the rendered block (the phrase
+	// "ADMIN-CURATED RIVALRIES" also appears in rule 6, so it's not a reliable marker).
+	const blockMarker = "locked feuds the admin tracks"
+	p := rivalryPrompt(oneRound(), "", existing, cfg)
+	if !strings.Contains(p, blockMarker) || !strings.Contains(p, "Bruno vs Carla: admin-declared office rivalry") {
+		t.Error("detection prompt must load admin-curated rivalries as locked context")
+	}
+	if !strings.Contains(p, "do NOT re-propose these pairs") {
+		t.Error("detection prompt must instruct BETanIA not to duplicate admin pairs")
+	}
+	// The auto pair (Joao/Ana) must appear under YOUR CURRENT RIVALRIES, not be
+	// re-listed as an admin one.
+	if strings.Contains(p, "Joao vs Ana: her own auto feud") {
+		t.Error("BETanIA's own auto pair must not be double-listed as an admin rivalry")
+	}
+	// No admin-only rivalries ⇒ no locked block (rule 6's mention doesn't count).
+	autoOnly := CommentConfig{Rivalries: existing}
+	if bare := rivalryPrompt(oneRound(), "", existing, autoOnly); strings.Contains(bare, blockMarker) {
+		t.Error("detection prompt must omit the admin-rivalry block when there are none")
+	}
+}
+
+// TestSavageStyleIsGervais verifies the SAVAGE tone injects the genuinely-cutting
+// Ricky Gervais roast style — whenever savage is the pool default OR any single player
+// is overridden to savage — and stays absent for a purely playful pool.
+func TestSavageStyleIsGervais(t *testing.T) {
+	history := oneRound()
+
+	// Pool default savage ⇒ style present.
+	if p := commentPrompt(history, nil, CommentConfig{DefaultTone: "savage"}); !strings.Contains(p, "SAVAGE STYLE") || !strings.Contains(p, "Ricky Gervais") {
+		t.Error("default-savage prompt must carry the Gervais SAVAGE STYLE block")
+	}
+	// A single per-player savage override on an otherwise playful pool ⇒ still present.
+	perPlayer := CommentConfig{DefaultTone: "playful", ToneByName: map[string]string{"Joao": "savage"}}
+	if p := commentPrompt(history, nil, perPlayer); !strings.Contains(p, "SAVAGE STYLE") {
+		t.Error("a per-player savage override must trigger the SAVAGE STYLE block")
+	}
+	// Purely playful ⇒ no savage style at all.
+	if p := commentPrompt(history, nil, CommentConfig{DefaultTone: "playful"}); strings.Contains(p, "SAVAGE STYLE") {
+		t.Error("a fully-playful pool must not carry the savage style block")
+	}
+	// The roast must keep the hard target boundary (game behaviour, not the person).
+	if p := commentPrompt(history, nil, CommentConfig{DefaultTone: "savage"}); !strings.Contains(p, "POOL LIFE ONLY") {
+		t.Error("savage style must keep the game-behaviour-only target boundary")
+	}
+}
+
 func TestCommentWorkerPassPersistsComments(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	fc := &fakeCommenter{comments: []Comment{{UserID: 1, Player: "Joao", Text: "you \x1b[31mfell\x1b[0m"}}}
@@ -358,6 +417,47 @@ func TestCommentPromptOverride(t *testing.T) {
 	}
 	if !strings.Contains(ov, "STANDINGS + HISTORY (JSON)") {
 		t.Error("override prompt missing the standings JSON block")
+	}
+}
+
+// TestAdminContextAlwaysAppendedFresh guards the fix for the bug where house notes were
+// baked into the stored prompt override (and so never updated): the admin context is a
+// fresh, always-appended tier — present under an override, and NOT part of the persona
+// body that seeds the override editor (DefaultCommentPrompt).
+func TestAdminContextAlwaysAppendedFresh(t *testing.T) {
+	history := oneRound()
+	cfg := CommentConfig{
+		DefaultTone: "playful",
+		PlayerNotes: []PlayerNote{{Player: "Joao", Text: "always bets on Brazil no matter what"}},
+		Notes:       []string{"the pool started as an office bet"},
+		Rivalries:   []Rivalry{{A: "Joao", B: "Ana", Note: "trading the lead all tournament"}},
+	}
+
+	// Fresh in the built-in (no override) path.
+	def := commentPrompt(history, nil, cfg)
+	for _, want := range []string{"ADMIN-PROVIDED CONTEXT", "About Joao: always bets on Brazil", "office bet", "Rivalry between Joao and Ana"} {
+		if !strings.Contains(def, want) {
+			t.Errorf("default prompt missing admin context %q", want)
+		}
+	}
+
+	// Still present under a prompt override — loaded at generation time, not frozen.
+	ovCfg := cfg
+	ovCfg.PromptOverride = "Talk like a pirate."
+	ov := commentPrompt(history, nil, ovCfg)
+	for _, want := range []string{"About Joao: always bets on Brazil", "Rivalry between Joao and Ana"} {
+		if !strings.Contains(ov, want) {
+			t.Errorf("override prompt must still carry fresh admin context %q", want)
+		}
+	}
+
+	// The override-editor seed must NOT bake the notes in — else editing the persona
+	// freezes a stale snapshot of them into the stored prompt (the reported bug).
+	seed := DefaultCommentPrompt(cfg)
+	for _, notWant := range []string{"About Joao", "office bet", "Rivalry between Joao and Ana", "ADMIN-PROVIDED CONTEXT"} {
+		if strings.Contains(seed, notWant) {
+			t.Errorf("DefaultCommentPrompt must not bake in admin context, but contained %q", notWant)
+		}
 	}
 }
 
