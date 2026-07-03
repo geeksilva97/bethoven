@@ -186,7 +186,7 @@ func (m Model) updateKnockouts(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.koView, m.koScroll, m.koTraceIdx = toggleKoView(m.koView), 0, -1
 		return m, nil
 	case "down", "j":
-		if m.koView == koViewBracket {
+		if m.koView == koViewBracket && m.koScroll < m.koMaxScroll() {
 			m.koScroll++
 		}
 		return m, nil
@@ -362,18 +362,45 @@ func (m Model) viewKnockoutBracket() string {
 // tree still doesn't auto-advance winners into later rounds — entered R16+ ties
 // are listed beneath it — but a settled R32 tie now dims its loser (incl. the
 // penalty loser once the shootout is recorded), so who went through is visible.
-func (m Model) viewBracketTree() string {
+// bracketScrollView returns the rendered tree lines and the scroll-window height
+// for the current picture + terminal. The view and the scroll handler both call it,
+// so they agree on the max offset — otherwise koScroll runs away past the end.
+func (m Model) bracketScrollView() (lines []string, capH int) {
 	overlaid, byNum := overlayEnteredR32(m.ko.Projected, r32Entered(m.ko))
 	leaves := standings.BracketLeaves(overlaid)
-	scores := bracketScores(leaves, byNum)
-	lines := bracketLines(bracketInput{
+	lines = bracketLines(bracketInput{
 		leaves: leaves,
 		trace:  m.koTraceIdx,
-		scores: scores,
+		scores: bracketScores(leaves, byNum),
 		elim:   m.ko.Eliminated,
 		r32:    byNum,
 		later:  laterRoundMatches(m.ko),
 	})
+	capH = m.height - 9 - lineCount(m.viewEnteredLaterRounds()) // see viewBracketTree
+	if capH < 6 {
+		capH = 6
+	}
+	return lines, capH
+}
+
+// koMaxScroll is the largest valid koScroll for the current tree + terminal. The
+// down handler clamps to it so pressing j past the end doesn't keep counting (which
+// would then make scrolling back up lag by every extra press).
+func (m Model) koMaxScroll() int {
+	if m.koView != koViewBracket || !treeShown(m.ko) {
+		return 0
+	}
+	lines, capH := m.bracketScrollView()
+	if n := len(lines) - capH; n > 0 {
+		return n
+	}
+	return 0
+}
+
+func (m Model) viewBracketTree() string {
+	overlaid, byNum := overlayEnteredR32(m.ko.Projected, r32Entered(m.ko))
+	leaves := standings.BracketLeaves(overlaid)
+	lines, cap := m.bracketScrollView()
 
 	sub := "  projected, if the group stage ended now"
 	switch {
@@ -391,14 +418,10 @@ func (m Model) viewBracketTree() string {
 		out += helpStyle.Render("←/→ trace a team's path to the final") + "\n\n"
 	}
 
-	// The entered R16→Final ties are listed BELOW the tree, outside the scroll
-	// window — so their height must come out of the tree's budget too, otherwise the
-	// combined frame overflows the terminal and clips the top of the tree.
-	later := m.viewEnteredLaterRounds()
-	cap := m.height - 9 - lineCount(later) // title, top margin, trace hint, markers, status, help + the games list below
-	if cap < 6 {
-		cap = 6
-	}
+	// lines + cap come from bracketScrollView above. The entered R16→Final games
+	// list is drawn BELOW the tree (outside the scroll window), so its height is
+	// already subtracted from cap there — otherwise the combined frame overflows and
+	// clips the top of the tree.
 	off := m.koScroll
 	if off > len(lines)-cap {
 		off = len(lines) - cap
@@ -420,7 +443,7 @@ func (m Model) viewBracketTree() string {
 	if end < len(lines) {
 		out += helpStyle.Render(fmt.Sprintf("  ↓ %d more", len(lines)-end)) + "\n"
 	}
-	out += later
+	out += m.viewEnteredLaterRounds()
 	return out
 }
 

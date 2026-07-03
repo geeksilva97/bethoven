@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
@@ -190,6 +191,40 @@ func TestBracketFrameFitsTerminalHeight(t *testing.T) {
 	// The games list must still be present (it wasn't dropped to fit).
 	if !strings.Contains(frame, "Round of 16") || !strings.Contains(frame, "Canada") {
 		t.Errorf("the entered R16 games list should still render below the tree")
+	}
+}
+
+// Scrolling down must stop at the last row: pressing j past the end can't keep
+// incrementing koScroll (else scrolling back up lags by every extra press). After
+// mashing j well past the end, one k must visibly move the window (koScroll drops).
+func TestBracketScrollClampsAtEnd(t *testing.T) {
+	var proj []standings.ProjMatch
+	for n := 73; n <= 88; n++ {
+		proj = append(proj, standings.ProjMatch{
+			Match: n, HomeTeam: fmt.Sprintf("Home%d", n), AwayTeam: fmt.Sprintf("Away%d", n),
+		})
+	}
+	pic := service.KnockoutPicture{Projected: proj}
+	m := Model{width: 120, height: 30, ko: pic, koView: koViewBracket, koTraceIdx: -1}
+
+	max := m.koMaxScroll()
+	if max <= 0 {
+		t.Fatalf("expected a scrollable tree, got max scroll %d", max)
+	}
+	// Mash "down" far past the end.
+	down := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+	for i := 0; i < max+50; i++ {
+		nm, _ := m.updateKnockouts(down)
+		m = nm.(Model)
+	}
+	if m.koScroll != max {
+		t.Fatalf("koScroll should clamp to max %d, got %d (runaway counter)", max, m.koScroll)
+	}
+	// One "up" must immediately move — not be swallowed catching up to a runaway value.
+	up := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+	nm, _ := m.updateKnockouts(up)
+	if got := nm.(Model).koScroll; got != max-1 {
+		t.Errorf("one 'up' should drop koScroll to %d, got %d", max-1, got)
 	}
 }
 
