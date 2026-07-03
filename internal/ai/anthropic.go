@@ -121,7 +121,7 @@ func (p *AnthropicPredictor) Predict(ctx context.Context, m models.Match) (Predi
 		case anthropic.StopReasonEndTurn:
 			// Ended without submitting — nudge once toward the tool.
 			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(
-				"Call submit_prediction now with your final regulation 90-minute scoreline.")))
+				"Call submit_prediction now with your final scoreline (knockouts: after extra time, penalties excluded).")))
 		}
 	}
 	record(false)
@@ -132,11 +132,11 @@ func (p *AnthropicPredictor) Predict(ctx context.Context, m models.Match) (Predi
 func (p *AnthropicPredictor) tools() []anthropic.ToolUnionParam {
 	submit := anthropic.ToolParam{
 		Name:        "submit_prediction",
-		Description: anthropic.String("Submit your final predicted regulation 90-minute scoreline for the match."),
+		Description: anthropic.String("Submit your final predicted scoreline for the match (knockouts: after extra time, penalties excluded)."),
 		InputSchema: anthropic.ToolInputSchemaParam{
 			Properties: map[string]any{
-				"score_a":    map[string]any{"type": "integer", "description": "Goals for the first team (TeamA) in regulation 90 minutes, 0-99."},
-				"score_b":    map[string]any{"type": "integer", "description": "Goals for the second team (TeamB) in regulation 90 minutes, 0-99."},
+				"score_a":    map[string]any{"type": "integer", "description": "Goals for the first team (TeamA) at the final whistle — knockouts include extra time but NOT penalties, 0-99."},
+				"score_b":    map[string]any{"type": "integer", "description": "Goals for the second team (TeamB) at the final whistle — knockouts include extra time but NOT penalties, 0-99."},
 				"rationale":  map[string]any{"type": "string", "description": "One short paragraph explaining the pick."},
 				"confidence": map[string]any{"type": "string", "enum": []string{"low", "medium", "high"}},
 			},
@@ -176,7 +176,7 @@ func (p *AnthropicPredictor) prompt(m models.Match) string {
 	} else {
 		b.WriteString("You are predicting BEFORE the tournament using only your own football knowledge. You do NOT know the result and must not assume one — predict as you would have beforehand. ")
 	}
-	b.WriteString("Predict the most likely REGULATION 90-minute scoreline. For knockout matches ignore extra time and penalties: a 1-1 after 90 minutes that is decided on penalties is still 1-1 here. ")
+	b.WriteString("Predict the most likely final scoreline. For knockout matches, count goals through extra time if it's played, but NOT penalties: a 1-1 after extra time that is decided on penalties is still 1-1 here. (Group games are just the 90-minute result.) ")
 	fmt.Fprintf(&b, "score_a is goals for %s; score_b is goals for %s. ", m.TeamA, m.TeamB)
 	b.WriteString("When ready, call submit_prediction with your scoreline, a one-paragraph rationale, and your confidence (low/medium/high).")
 	return b.String()

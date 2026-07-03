@@ -59,6 +59,38 @@ func TestLeaderboardFoldsPartials(t *testing.T) {
 	}
 }
 
+// TestPenaltiesPhaseDropsFromLive verifies a knockout in the PENALTIES phase is no
+// longer folded/overlaid as live (its 120' score is final; the shootout can't change
+// points), while a match in EXTRA TIME stays live (ET goals still count toward 120').
+func TestPenaltiesPhaseDropsFromLive(t *testing.T) {
+	svc, store, fc := newTestService(t)
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+
+	etMatch := addMatch(t, store, svc.tournamentID, base.Add(time.Hour))
+	penMatch := addMatch(t, store, svc.tournamentID, base.Add(2*time.Hour))
+	_ = svc.PlaceBet(alice.ID, etMatch, 2, 1)  // matches the ET live score → provisional points
+	_ = svc.PlaceBet(alice.ID, penMatch, 1, 1) // matches the pen match's 120' score, but it's excluded
+
+	fc.T = base.Add(3 * time.Hour)
+	svc.SetLiveStore(liveSnap{
+		etMatch:  {A: 2, B: 1, State: live.StateIn, Clock: "105'", Phase: live.PhaseExtraTime},
+		penMatch: {A: 1, B: 1, State: live.StateIn, Clock: "120'+2'", Phase: live.PhasePenalties},
+	})
+
+	// Only the extra-time match is live; the penalties one has dropped out.
+	lm, _ := svc.LiveMatches()
+	if len(lm) != 1 || lm[0].ID != etMatch {
+		t.Fatalf("LiveMatches = %+v, want only the extra-time match", lm)
+	}
+
+	// The ET match folds provisionally (exact 2-1 = 3); the penalties match does not,
+	// even though the bet matches the 120' score — it awaits the admin's final entry.
+	board, _ := svc.Leaderboard()
+	if got := liveFor(board, alice.ID); got != 3 {
+		t.Errorf("Alice live points = %d, want 3 (extra-time only; penalties excluded)", got)
+	}
+}
+
 // TestOverlayLiveOnlyInPlay verifies live fields are populated only for in-play
 // matches, and never for finished or pre-match ones.
 func TestOverlayLiveOnlyInPlay(t *testing.T) {

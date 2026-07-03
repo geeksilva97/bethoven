@@ -45,20 +45,26 @@ func ParseState(s string) State {
 // the model. ParsePhase derives them from ESPN's status.type.name.
 const (
 	PhaseHalftime  = "halftime"   // the interval — comment as a break, not live play
-	PhaseExtraTime = "extra_time" // knockout extra time (we still score regulation 90')
-	PhasePenalties = "penalties"  // shootout
+	PhaseExtraTime = "extra_time" // knockout extra time (goals here DO count — we score 120')
+	PhasePenalties = "penalties"  // shootout — the 120' score is final; pens never change points
 )
 
-// ParsePhase maps an ESPN status.type.name ("STATUS_HALFTIME", …) to one of our
-// controlled Phase labels, or "" for ordinary in-play. Substring matching keeps it
-// robust to ESPN's naming variants (e.g. "STATUS_HALFTIME_ET").
-func ParsePhase(name string) string {
+// ParsePhase maps an ESPN status to one of our controlled Phase labels, or "" for
+// ordinary in-play. It reads both status.type.name ("STATUS_HALFTIME", …) and the
+// human status.type.shortDetail ("AET-pens", "HT", …), because the earliest signal a
+// match is going to penalties is shortDetail "AET-pens" while name is still
+// STATUS_END_OF_EXTRATIME (which contains "EXTRA"). Penalties is therefore checked
+// BEFORE extra time, and across BOTH fields, so we detect the shootout the moment
+// ESPN flags it — not only once the name flips to STATUS_SHOOTOUT. Substring matching
+// (uppercased) keeps it robust to ESPN's naming variants.
+func ParsePhase(name, shortDetail string) string {
+	s := strings.ToUpper(name + " " + shortDetail)
 	switch {
-	case strings.Contains(name, "HALFTIME"):
+	case strings.Contains(s, "HALFTIME"):
 		return PhaseHalftime
-	case strings.Contains(name, "PENALT"), strings.Contains(name, "SHOOTOUT"):
+	case strings.Contains(s, "PEN"), strings.Contains(s, "SHOOTOUT"):
 		return PhasePenalties
-	case strings.Contains(name, "EXTRA"):
+	case strings.Contains(s, "EXTRA"):
 		return PhaseExtraTime
 	default:
 		return ""

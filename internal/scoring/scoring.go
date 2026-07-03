@@ -17,8 +17,9 @@
 //     statistical noise; below that it scores as plain Proximity. Scarcity is
 //     pool-relative, so it takes a Pool the caller (the service) computes.
 //
-// Knockout matches store the regulation 90-minute score, so the same rules
-// apply unchanged — a 1-1 that went to penalties scores as a 1-1 draw.
+// Knockout matches store the score at the final whistle — regulation plus extra
+// time if it was played, but NOT penalties — so the same rules apply unchanged: a
+// 1-1 after extra time that is decided on penalties scores as a 1-1 draw.
 package scoring
 
 import "bethoven/internal/models"

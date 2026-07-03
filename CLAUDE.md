@@ -65,8 +65,14 @@ directly, with a fake clock, no terminal).
       identically to plain Proximity. **Pool-relative**, so it takes a
       `scoring.Pool` (counts of same-result / same-exact bets + total) the
       **service** computes; the pure function never reads the DB.
-  Knockouts store the **regulation 90' score** in every mode, so ET/penalties are
-  ignored and a 1-1 a.e.t. scores as a 1-1 draw.
+  Knockouts store the **final-whistle score** in every mode — regulation **plus
+  extra time** if played, but **NOT penalties** — so ET goals count and only the
+  shootout is ignored: a 1-1 a.e.t. decided on penalties scores as a 1-1 draw. The
+  live feed keeps a match provisional through extra time (ET goals move points) and
+  **drops it from "live" once it reaches the penalties phase** (the 120' score is
+  then final; the shootout never changes points), detected via ESPN's
+  `status.type.shortDetail` ("AET-pens") — see `internal/live` `ParsePhase` and the
+  `liveSnapshot` penalties filter.
   **Plumbing:** the service builds a `scorer` (`service_scoring.go`) once per
   read; it carries the mode and, **only for Scarcity**, the per-match pick
   distribution (built from `AllBets`). All point-bearing reads — `Leaderboard`

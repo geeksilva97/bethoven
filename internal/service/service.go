@@ -187,11 +187,26 @@ func (s *Service) SetLiveLookahead(d time.Duration) { s.liveLookahead = d }
 func (s *Service) SetAnalyticsSink(a AnalyticsSink) { s.analytics = a }
 
 // liveSnapshot returns the current live scores, or nil when no feed is attached.
+//
+// A knockout that has reached PENALTIES is no longer live for us: we score the full
+// 120' (regulation + extra time), and once it's going to a shootout that 120' score
+// is final — a penalty shootout never changes points. So we drop penalties-phase
+// entries here, the single choke point every consumer reads, and the leaderboard
+// fold, the live match list, the read-time overlay and the commentary all stop
+// treating the match as in play; it simply awaits its final 120' result. Extra time
+// is deliberately KEPT live — ET goals still count toward the 120' score. Snapshot()
+// hands back a fresh copy, so deleting from it never touches the cache.
 func (s *Service) liveSnapshot() map[int64]live.Score {
 	if s.live == nil {
 		return nil
 	}
-	return s.live.Snapshot()
+	snap := s.live.Snapshot()
+	for id, ls := range snap {
+		if ls.Phase == live.PhasePenalties {
+			delete(snap, id)
+		}
+	}
+	return snap
 }
 
 // overlayLive fills a match's read-time Live* fields from the snapshot when the

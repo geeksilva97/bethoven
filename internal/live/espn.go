@@ -188,8 +188,9 @@ type espnResp struct {
 				DisplayClock string `json:"displayClock"`
 				Period       int    `json:"period"`
 				Type         struct {
-					State string `json:"state"`
-					Name  string `json:"name"` // e.g. "STATUS_HALFTIME", "STATUS_FIRST_HALF"
+					State       string `json:"state"`
+					Name        string `json:"name"`        // e.g. "STATUS_HALFTIME", "STATUS_FIRST_HALF"
+					ShortDetail string `json:"shortDetail"` // e.g. "AET-pens" — earliest going-to-penalties signal
 				} `json:"type"`
 			} `json:"status"`
 			Odds []struct {
@@ -385,7 +386,7 @@ func decodeEvents(r io.Reader) ([]Event, error) {
 			State:     ParseState(comp.Status.Type.State),
 			Minute:    comp.Status.Period,
 			Clock:     cleanClock(comp.Status.DisplayClock),
-			Phase:     ParsePhase(comp.Status.Type.Name),
+			Phase:     ParsePhase(comp.Status.Type.Name, comp.Status.Type.ShortDetail),
 			Odds:      odds,
 		})
 	}

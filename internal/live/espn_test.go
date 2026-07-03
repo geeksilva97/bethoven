@@ -197,19 +197,25 @@ func TestCleanEventTextTruncates(t *testing.T) {
 }
 
 func TestParsePhase(t *testing.T) {
-	cases := map[string]string{
-		"STATUS_HALFTIME":          PhaseHalftime,
-		"STATUS_HALFTIME_ET":       PhaseHalftime,
-		"STATUS_FIRST_HALF":        "",
-		"STATUS_IN_PROGRESS":       "",
-		"STATUS_PENALTIES":         PhasePenalties,
-		"STATUS_SHOOTOUT":          PhasePenalties,
-		"STATUS_SECOND_EXTRA_TIME": PhaseExtraTime,
-		"":                         "",
+	cases := []struct {
+		name, shortDetail, want string
+	}{
+		{"STATUS_HALFTIME", "HT", PhaseHalftime},
+		{"STATUS_HALFTIME_ET", "HT", PhaseHalftime},
+		{"STATUS_FIRST_HALF", "1st Half", ""},
+		{"STATUS_IN_PROGRESS", "67'", ""},
+		{"STATUS_PENALTIES", "PENs", PhasePenalties},
+		{"STATUS_SHOOTOUT", "", PhasePenalties},
+		{"STATUS_SECOND_EXTRA_TIME", "ET", PhaseExtraTime},
+		// The key case: at end of ET the name still says EXTRA, but shortDetail
+		// "AET-pens" tells us it's going to a shootout → penalties wins over extra.
+		{"STATUS_END_OF_EXTRATIME", "AET-pens", PhasePenalties},
+		{"STATUS_FULL_TIME", "FT-pens", PhasePenalties}, // a comp that skips ET
+		{"", "", ""},
 	}
-	for name, want := range cases {
-		if got := ParsePhase(name); got != want {
-			t.Errorf("ParsePhase(%q) = %q, want %q", name, got, want)
+	for _, c := range cases {
+		if got := ParsePhase(c.name, c.shortDetail); got != c.want {
+			t.Errorf("ParsePhase(%q, %q) = %q, want %q", c.name, c.shortDetail, got, c.want)
 		}
 	}
 }
