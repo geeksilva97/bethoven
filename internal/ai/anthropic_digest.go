@@ -112,7 +112,7 @@ func compactPrompt(notes []string, cfg CommentConfig) string {
 	b.WriteString("1. Ground every claim ONLY in the diary entries below. Never invent a result, a name, or a pick — if it isn't in the notes, it didn't happen.\n")
 	b.WriteString("2. Capture the playing DYNAMICS: who keeps nailing scorelines, who keeps whiffing, ongoing rivalries, streaks, climbs and collapses across the tournament — not a flat list of games.\n")
 	b.WriteString("3. WEIGHT RECENT EVENTS MORE: the latest entries describe the current state of the pool and matter most; older entries are background. Lead with where things stand now.\n")
-	b.WriteString("4. Condense hard — 4-8 sentences total, no matter how many entries there are. Keep the names and the standout moments; drop the rest.\n")
+	b.WriteString("4. Condense, but DON'T over-trim — aim for about 10-16 sentences, scaling up with how much has actually happened. Keep every player's through-line and the standout moments; drop only true redundancy. When in doubt, keep the context rather than lose it.\n")
 	b.WriteString("5. This is a shared situational snapshot for the pool, not a message to one person. No emojis, no markdown, no headings — just the sentences.\n")
 	b.WriteString("6. Each entry is tagged with the date it was played (e.g. [Jun 22]). KEEP these dates in your narrative — anchor each event to when it happened (\"on Jun 22\", \"by Jun 25\") so a game from days ago is never retold as if it just happened. Use the absolute dates from the tags, not \"today\"/\"yesterday\".\n\n")
 	b.WriteString(untrustedDataNote)
@@ -132,7 +132,7 @@ func compactTool() anthropic.ToolParam {
 			Properties: map[string]any{
 				"summary": map[string]any{
 					"type":        "string",
-					"description": "One consolidated narrative (4-8 sentences) of the pool's dynamics so far, weighting recent games most. No emojis or line breaks.",
+					"description": "One consolidated narrative (about 10-16 sentences, scaling with how much has happened) of the pool's dynamics so far, weighting recent games most but keeping each player's through-line. No emojis or line breaks.",
 				},
 			},
 			ExtraFields: map[string]any{"required": []string{"summary"}},
