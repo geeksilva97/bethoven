@@ -221,7 +221,7 @@ func (m Model) cycleTrace(dir int) Model {
 		m.koTraceIdx = n - 1
 	}
 	if m.koTraceIdx >= 0 {
-		cap := m.height - 9
+		cap := m.height - 9 - lineCount(m.viewEnteredLaterRounds()) // match viewBracketTree's window
 		if cap < 6 {
 			cap = 6
 		}
@@ -391,7 +391,11 @@ func (m Model) viewBracketTree() string {
 		out += helpStyle.Render("←/→ trace a team's path to the final") + "\n\n"
 	}
 
-	cap := m.height - 9 // title, top margin, trace hint, section header, markers, status, help
+	// The entered R16→Final ties are listed BELOW the tree, outside the scroll
+	// window — so their height must come out of the tree's budget too, otherwise the
+	// combined frame overflows the terminal and clips the top of the tree.
+	later := m.viewEnteredLaterRounds()
+	cap := m.height - 9 - lineCount(later) // title, top margin, trace hint, markers, status, help + the games list below
 	if cap < 6 {
 		cap = 6
 	}
@@ -416,7 +420,7 @@ func (m Model) viewBracketTree() string {
 	if end < len(lines) {
 		out += helpStyle.Render(fmt.Sprintf("  ↓ %d more", len(lines)-end)) + "\n"
 	}
-	out += m.viewEnteredLaterRounds()
+	out += later
 	return out
 }
 

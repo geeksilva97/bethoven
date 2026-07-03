@@ -150,6 +150,49 @@ func TestBracketTreePersistsWithEnteredMatches(t *testing.T) {
 	}
 }
 
+// The bracket frame must fit within the terminal height: the entered R16→Final
+// games list is drawn below the scrollable tree, so its height has to come out of
+// the tree's scroll budget — otherwise the combined frame overflows and clips the
+// top of the tree (the reported bug). Regression: full projection + a busy R16
+// list on a short terminal must still render ≤ m.height rows.
+func TestBracketFrameFitsTerminalHeight(t *testing.T) {
+	var proj []standings.ProjMatch
+	for n := 73; n <= 88; n++ {
+		proj = append(proj, standings.ProjMatch{
+			Match:    n,
+			HomeTeam: fmt.Sprintf("Home%d", n),
+			AwayTeam: fmt.Sprintf("Away%d", n),
+		})
+	}
+	fin := func(a, b string) models.Match {
+		sa, sb := 2, 1
+		return models.Match{TeamA: a, TeamB: b, Phase: models.PhaseRound16, Finished: true, ScoreA: &sa, ScoreB: &sb}
+	}
+	pic := service.KnockoutPicture{
+		Projected: proj,
+		Bracket: []service.BracketRound{
+			{Phase: models.PhaseRound32, Label: "Round of 32"},
+			{Phase: models.PhaseRound16, Label: "Round of 16", Matches: []models.Match{
+				fin("Canada", "Morocco"), fin("Paraguay", "France"), fin("Brazil", "Norway"),
+				fin("Mexico", "England"), fin("Portugal", "Spain"), fin("USA", "Belgium"),
+			}},
+			{Phase: models.PhaseRound8, Label: "Quarter-final"},
+			{Phase: models.PhaseSemi, Label: "Semi-final"},
+			{Phase: models.PhaseFinal, Label: "Final"},
+		},
+	}
+	const h = 30
+	m := Model{width: 120, height: h, ko: pic, koView: koViewBracket, koTraceIdx: -1}
+	frame := m.viewKnockouts()
+	if got := lineCount(frame); got > h {
+		t.Errorf("bracket frame is %d rows but terminal is %d — it overflows and clips the top\n%s", got, h, frame)
+	}
+	// The games list must still be present (it wasn't dropped to fit).
+	if !strings.Contains(frame, "Round of 16") || !strings.Contains(frame, "Canada") {
+		t.Errorf("the entered R16 games list should still render below the tree")
+	}
+}
+
 // overlayEnteredR32 places entered ties by exact pair, then by a single
 // determined non-third anchor (so a drawn winner-vs-third lands correctly even
 // when the projected third differs).
