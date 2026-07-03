@@ -187,7 +187,10 @@ func TestRivalryPromptCarriesHouseNotes(t *testing.T) {
 		Notes:       []string{"the pool splits into Rio vs Sao Paulo camps"},
 	}
 	p := rivalryPrompt(oneRound(), "", nil, cfg)
-	if !strings.Contains(p, "ADMIN HOUSE NOTES") {
+	// "real-world facts about the players" is unique to the rendered block header
+	// ("ADMIN HOUSE NOTES" also appears in rule 2, so it's not a reliable marker).
+	const houseBlockMarker = "real-world facts about the players"
+	if !strings.Contains(p, houseBlockMarker) {
 		t.Error("rivalry prompt must include the admin house-notes block")
 	}
 	if !strings.Contains(p, "About Joao: office nemesis of Ana") {
@@ -196,8 +199,14 @@ func TestRivalryPromptCarriesHouseNotes(t *testing.T) {
 	if !strings.Contains(p, "Rio vs Sao Paulo") {
 		t.Error("rivalry prompt must carry pool-wide general notes")
 	}
-	// With no notes set, the block is omitted entirely (no empty header).
-	if bare := rivalryPrompt(oneRound(), "", nil, CommentConfig{DefaultTone: "playful"}); strings.Contains(bare, "ADMIN HOUSE NOTES") {
+	// The prompt must invite building a rivalry from a CONTRAST between two players'
+	// separate individual facts (e.g. a soccer expert vs a novice), not only from a
+	// note that already names both players.
+	if !strings.Contains(p, "CONTRAST") {
+		t.Error("rivalry prompt must allow combining two players' separate facts into a contrast rivalry")
+	}
+	// With no notes set, the block is omitted entirely (rule 2's mention doesn't count).
+	if bare := rivalryPrompt(oneRound(), "", nil, CommentConfig{DefaultTone: "playful"}); strings.Contains(bare, houseBlockMarker) {
 		t.Error("rivalry prompt must omit the house-notes block when there are none")
 	}
 }
