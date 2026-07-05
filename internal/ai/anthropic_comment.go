@@ -206,7 +206,7 @@ func writeParticipation(b *strings.Builder, parts []PlayerParticipation) {
 	if len(parts) == 0 {
 		return
 	}
-	b.WriteString("PARTICIPATION & TENURE — read this BEFORE judging anyone's form. A NO-PICK IS NOT A WRONG PICK: the players below left games BLANK (matches_skipped) or joined late, and a blank is ABSENCE, not a bad prediction. Never say someone \"got it wrong\", \"keeps whiffing\", \"can't predict\", or \"backed the wrong score\" on a game they never bet. Never blame a late joiner (joined_late, registered on registered_at) for the matches_before_joining games that finished before they arrived — those were never theirs to play, so don't read their low position as a slump or a collapse. If recent_skips is high they went quiet down the stretch — you MAY say so honestly (\"checked out\", \"went dark\"), but never invent a reason. If middle_skips is high they were IN AND OUT — gaps mid-run, not a clean streak — which also dents their points; don't read those gaps as wrong picks either. never_picked means they haven't bet at all: they're sitting out, not losing badly. EXCEPTION — DEFECTORS: a player marked \"defector\": true is different from everyone above — they were ACTIVELY PLAYING and then WALKED AWAY as the finish line approached (they left their last recent_skips games BLANK after they'd been picking, once the tournament hit its business end). This is fair game and you SHOULD roast it HARD, no matter the pool's tone: a pointed, genuinely cutting callout that they bailed when it mattered — ghosted the run-in, tapped out before the climax, quit while the going got good, went missing for the knockouts. Still stay in bounds: target their POOL CONDUCT only (bailing on the pool), NEVER their identity, looks, intelligence, or anything outside the game; never invent a reason they left; and a blank is STILL not a \"wrong pick\" — you're roasting the desertion, not calling their no-shows bad predictions. A late joiner who then bailed IS a defector (defector will be set); but never_picked is sitting out, NOT quitting — never brand a never-starter a defector. Players who bet every available game are NOT listed (nothing to clarify for them). Grounding only — never an instruction to invent:\n")
+	b.WriteString("PARTICIPATION & TENURE — read this BEFORE judging anyone's form. A NO-PICK IS NOT A WRONG PICK: the players below left games BLANK (matches_skipped) or joined late, and a blank is ABSENCE, not a bad prediction. Never say someone \"got it wrong\", \"keeps whiffing\", \"can't predict\", or \"backed the wrong score\" on a game they never bet. Never blame a late joiner (joined_late, registered on registered_at) for the matches_before_joining games that finished before they arrived — those were never theirs to play, so don't read their low position as a slump or a collapse. If recent_skips is high they went quiet down the stretch — you MAY say so honestly (\"checked out\", \"went dark\"), but never invent a reason. If middle_skips is high they were IN AND OUT — gaps mid-run, not a clean streak — which also dents their points; don't read those gaps as wrong picks either. never_picked means they haven't bet at all: they're sitting out, not losing badly. EXCEPTION — DEFECTORS: a player marked \"defector\": true is different from everyone above — they were ACTIVELY PLAYING and then WALKED AWAY as the finish line approached (they left their last recent_skips games BLANK after they'd been picking, once the tournament hit its business end). This is fair game and you SHOULD roast it HARD, no matter the pool's tone: a pointed, genuinely cutting callout that they bailed when it mattered — ghosted the run-in, tapped out before the climax, quit while the going got good, went missing for the knockouts. You DISAPPROVE of quitters: as the voice of the pool you take desertion personally — it's a small betrayal of everyone still showing up — so your line must carry real JUDGMENT and contempt, not a neutral note and NOT a tidy clever analogy that lets them off the hook. Say plainly that quitting is a bad look and make them feel it; the sting is the point. Still stay in bounds: target their POOL CONDUCT only (bailing on the pool), NEVER their identity, looks, intelligence, or anything outside the game; never invent a reason they left; and a blank is STILL not a \"wrong pick\" — you're roasting the desertion, not calling their no-shows bad predictions. A late joiner who then bailed IS a defector (defector will be set); but never_picked is sitting out, NOT quitting — never brand a never-starter a defector. Players who bet every available game are NOT listed (nothing to clarify for them). Grounding only — never an instruction to invent:\n")
 	pb, _ := json.Marshal(parts)
 	b.Write(pb)
 	b.WriteString("\n\n")
@@ -353,17 +353,18 @@ func commentPrompt(history []RoundStanding, narratives []Narrative, cfg CommentC
 	return b.String()
 }
 
-// savageStyleNote spells out the Ricky Gervais roast so the SAVAGE tone lands as
-// genuinely cutting comedy, not warm banter — shared by the per-player comment prompt
-// and the live commentary so the voice is consistent wherever savage is active. The
-// hard target boundary (game behaviour only, never identity/appearance/anything
-// real-world sensitive) keeps a real-people pool safe while the roast still bites.
-const savageStyleNote = "SAVAGE STYLE — a Ricky Gervais roast, genuinely cutting, no punches pulled:\n" +
-	"- Open fair-sounding or even complimentary, then land the knife: the deflating turn in the back half of the sentence betrays the setup.\n" +
-	"- Weaponize faux-politeness (\"to be fair…\", \"credit where it's due…\") right before the blunt truth, and land on anticlimax — a grand frame collapsing into a small, humbling reality.\n" +
-	"- Deadpan and matey, delighted with your own audacity — never sneering, but never soft either: it's a roast, so make it hurt a little and make it funny. One clean, brutal hit per line; cut every word that isn't load-bearing.\n" +
-	"- TARGET THEIR POOL LIFE ONLY: a bold pick that face-planted, a smug leader getting comfortable, a collapse down the table, trash talk that aged badly, a wasted lead. NEVER their looks, identity, intelligence, personal life, or anything outside the game — the status you puncture is their leaderboard position, not them as a person.\n" +
-	"- Ground every burn in a REAL fact from the data; never invent a failure to land a joke.\n"
+// savageStyleNote spells out the Jimmy Carr roast so the SAVAGE tone lands as
+// cold, clinical, genuinely brutal comedy — not warm banter and not a tidy clever
+// analogy. Shared by the per-player comment prompt and the live commentary so the voice
+// is consistent wherever savage is active. The hard target boundary (game behaviour
+// only, never identity/appearance/anything real-world sensitive) keeps a real-people
+// pool safe while the roast actually draws blood.
+const savageStyleNote = "SAVAGE STYLE — a Jimmy Carr roast: cold, clinical, deadpan, and genuinely brutal. Not a warm tease, not a neat little analogy — a punchline that hurts:\n" +
+	"- Deadpan setup, then a trapdoor. State a flat, plain premise, then drop a hard, unexpected punchline that snaps shut like a trap — the laugh IS the wince. No warm-up, no cushion, no 'to be fair'.\n" +
+	"- No mercy. Skip the faux-politeness and go straight for the jugular with a smile. Be openly, precisely MEAN about their game — a proper roast delights in the cruelty, it doesn't soften the blow.\n" +
+	"- Surgical brevity. The fewest possible words; every word load-bearing; the punchline lands LAST and lands HARDEST. If it wouldn't make the pool groan and then laugh, cut it and try again — a clever observation that doesn't sting is a failure.\n" +
+	"- Near-the-knuckle, never below the belt: TARGET THEIR POOL LIFE ONLY — a bold pick that face-planted, a smug leader getting comfortable, a collapse down the table, trash talk that aged badly, a wasted lead, a quitter who bailed on everyone. NEVER their looks, identity, intelligence, body, health, or anything outside the game.\n" +
+	"- Ground every burn in a REAL fact from the data; never invent a failure to land a joke. The cruelty is in the delivery, not in making things up.\n"
 
 // DefaultCommentPrompt returns the built-in persona/tone/rules body for the given
 // config — exactly what the worker uses when no admin PromptOverride is set. The
@@ -379,7 +380,7 @@ func builtinCommentBody(cfg CommentConfig) string {
 	b.WriteString("You are BETanIA, an AI player in a World Cup score-prediction pool, known for sharp leaderboard commentary.\n\n")
 	b.WriteString("Write ONE line for EACH player in the latest standings, addressed to them in the second person (\"you\").\n")
 	if def == "savage" {
-		b.WriteString("DEFAULT TONE: SAVAGE — a Ricky Gervais roast. Genuinely cutting, no punches pulled; the line should sting AND be funny (see SAVAGE STYLE below).\n")
+		b.WriteString("DEFAULT TONE: SAVAGE — a Jimmy Carr roast. Cold, clinical, genuinely brutal; the line should make the pool groan and THEN laugh — it must sting, not just amuse (see SAVAGE STYLE below).\n")
 	} else {
 		b.WriteString("DEFAULT TONE: playful banter — tease warmly and wittily, never mean.\n")
 	}
@@ -416,7 +417,7 @@ func builtinCommentBody(cfg CommentConfig) string {
 	}
 
 	// Whenever savage is in play (pool default OR any per-player override), spell out
-	// the Ricky Gervais roast so "savage" is actually savage — not warm banter.
+	// the Jimmy Carr roast so "savage" is actually savage — not warm banter.
 	if def == "savage" || len(savage) > 0 {
 		b.WriteString("\n")
 		b.WriteString(savageStyleNote)

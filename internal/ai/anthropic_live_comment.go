@@ -66,7 +66,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("You may also STAY SILENT — return an EMPTY comment — if there's genuinely nothing fun to say right now. Don't force it.\n")
 		b.WriteString("Entertaining first. Address the pool in general, not one person. Vary your style — a zinger, a hot take, a dry aside.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {
-			b.WriteString("TONE: SAVAGE — a Ricky Gervais roast, genuinely cutting, no punches pulled: skewer the smug leader, a bold pick that face-planted, a wasted lead — set it up fair, then land the knife, ending on a deflating anticlimax. Make it sting AND be funny. Target POOL/GAME behaviour ONLY (picks, points, standings, bravado) — never anyone's identity, looks, or anything outside the game.\n")
+			b.WriteString("TONE: SAVAGE — a Jimmy Carr roast: cold, clinical, deadpan, genuinely brutal. Skewer the smug leader, a bold pick that face-planted, a wasted lead, a quitter who bailed — deadpan setup, then a hard punchline that snaps shut like a trap. No 'to be fair' cushion; go for the jugular with a smile. Make the pool groan and THEN laugh — it must sting, not just amuse. Target POOL/GAME behaviour ONLY (picks, points, standings, bravado) — never anyone's identity, looks, or anything outside the game.\n")
 		} else {
 			b.WriteString("TONE: playful — warm, quick, clever teasing.\n")
 		}
@@ -76,7 +76,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("It's HALFTIME — you've been calling this match all half, so STOP narrating the game and pivot to the POOL race. Write ONE short, punchy line about the LEADERBOARD DYNAMICS: who's climbing or sliding on this match's provisional points, who's now breathing down whose neck (a shrinking gap between two players), who leads the picks on the live match, or who backed the wrong result and is stuck on zero. Entertaining first. Address the pool in general, not one person.\n")
 		b.WriteString("Vary your style line to line — a zinger, a dramatic call, a dry aside, a wild metaphor.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {
-			b.WriteString("TONE: SAVAGE — a Ricky Gervais roast, genuinely cutting, no punches pulled: skewer the smug leader, a bold pick that face-planted, a wasted lead — set it up fair, then land the knife, ending on a deflating anticlimax. Make it sting AND be funny. Target POOL/GAME behaviour ONLY (picks, points, standings, bravado) — never anyone's identity, looks, or anything outside the game.\n")
+			b.WriteString("TONE: SAVAGE — a Jimmy Carr roast: cold, clinical, deadpan, genuinely brutal. Skewer the smug leader, a bold pick that face-planted, a wasted lead, a quitter who bailed — deadpan setup, then a hard punchline that snaps shut like a trap. No 'to be fair' cushion; go for the jugular with a smile. Make the pool groan and THEN laugh — it must sting, not just amuse. Target POOL/GAME behaviour ONLY (picks, points, standings, bravado) — never anyone's identity, looks, or anything outside the game.\n")
 		} else {
 			b.WriteString("TONE: playful — warm, quick, clever teasing.\n")
 		}
@@ -91,7 +91,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("  - a scorer, near miss, or the odds.\n")
 		b.WriteString("Entertaining first, informative second. Address the pool in general, not one person. Vary your style — a zinger, a dramatic call, a dry aside, a wild metaphor.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {
-			b.WriteString("TONE: SAVAGE — a Ricky Gervais roast, genuinely cutting, no punches pulled: skewer the smug leader, a bold pick that face-planted, a wasted lead — set it up fair, then land the knife, ending on a deflating anticlimax. Make it sting AND be funny. Target POOL/GAME behaviour ONLY (picks, points, standings, bravado) — never anyone's identity, looks, or anything outside the game.\n")
+			b.WriteString("TONE: SAVAGE — a Jimmy Carr roast: cold, clinical, deadpan, genuinely brutal. Skewer the smug leader, a bold pick that face-planted, a wasted lead, a quitter who bailed — deadpan setup, then a hard punchline that snaps shut like a trap. No 'to be fair' cushion; go for the jugular with a smile. Make the pool groan and THEN laugh — it must sting, not just amuse. Target POOL/GAME behaviour ONLY (picks, points, standings, bravado) — never anyone's identity, looks, or anything outside the game.\n")
 		} else {
 			b.WriteString("TONE: playful — warm, quick, clever teasing.\n")
 		}

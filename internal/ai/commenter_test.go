@@ -245,15 +245,15 @@ func TestRivalryPromptCarriesAdminRivalries(t *testing.T) {
 	}
 }
 
-// TestSavageStyleIsGervais verifies the SAVAGE tone injects the genuinely-cutting
-// Ricky Gervais roast style — whenever savage is the pool default OR any single player
+// TestSavageStyleIsJimmyCarr verifies the SAVAGE tone injects the cold, clinical
+// Jimmy Carr roast style — whenever savage is the pool default OR any single player
 // is overridden to savage — and stays absent for a purely playful pool.
-func TestSavageStyleIsGervais(t *testing.T) {
+func TestSavageStyleIsJimmyCarr(t *testing.T) {
 	history := oneRound()
 
 	// Pool default savage ⇒ style present.
-	if p := commentPrompt(history, nil, CommentConfig{DefaultTone: "savage"}); !strings.Contains(p, "SAVAGE STYLE") || !strings.Contains(p, "Ricky Gervais") {
-		t.Error("default-savage prompt must carry the Gervais SAVAGE STYLE block")
+	if p := commentPrompt(history, nil, CommentConfig{DefaultTone: "savage"}); !strings.Contains(p, "SAVAGE STYLE") || !strings.Contains(p, "Jimmy Carr") {
+		t.Error("default-savage prompt must carry the Jimmy Carr SAVAGE STYLE block")
 	}
 	// A single per-player savage override on an otherwise playful pool ⇒ still present.
 	perPlayer := CommentConfig{DefaultTone: "playful", ToneByName: map[string]string{"Joao": "savage"}}
