@@ -405,6 +405,10 @@ func cardDigest(c PlayerCard, totalPlayers int, story string) ai.CardDigestData 
 		JoinedLate:           c.JoinedLate,
 		RecentSkips:          c.RecentSkips,
 		MiddleSkips:          c.MiddleSkips,
+		// Cards are an end-of-tournament artifact, so the "business end" gate is
+		// trivially met — a defector is anyone who played and then left a real trailing
+		// tail (RecentSkips). A never-start (MatchesBet == 0) is sitting out, not quitting.
+		Defector: c.RecentSkips >= defectorMinTail && c.MatchesBet > 0,
 	}
 	if !c.User.CreatedAt.IsZero() {
 		d.RegisteredAt = c.User.CreatedAt.UTC().Format("Jan 2")

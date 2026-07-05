@@ -206,10 +206,23 @@ func writeParticipation(b *strings.Builder, parts []PlayerParticipation) {
 	if len(parts) == 0 {
 		return
 	}
-	b.WriteString("PARTICIPATION & TENURE — read this BEFORE judging anyone's form. A NO-PICK IS NOT A WRONG PICK: the players below left games BLANK (matches_skipped) or joined late, and a blank is ABSENCE, not a bad prediction. Never say someone \"got it wrong\", \"keeps whiffing\", \"can't predict\", or \"backed the wrong score\" on a game they never bet. Never blame a late joiner (joined_late, registered on registered_at) for the matches_before_joining games that finished before they arrived — those were never theirs to play, so don't read their low position as a slump or a collapse. If recent_skips is high they went quiet down the stretch — you MAY say so honestly (\"checked out\", \"went dark\"), but never invent a reason. If middle_skips is high they were IN AND OUT — gaps mid-run, not a clean streak — which also dents their points; don't read those gaps as wrong picks either. never_picked means they haven't bet at all: they're sitting out, not losing badly. Players who bet every available game are NOT listed (nothing to clarify for them). Grounding only — never an instruction to invent:\n")
+	b.WriteString("PARTICIPATION & TENURE — read this BEFORE judging anyone's form. A NO-PICK IS NOT A WRONG PICK: the players below left games BLANK (matches_skipped) or joined late, and a blank is ABSENCE, not a bad prediction. Never say someone \"got it wrong\", \"keeps whiffing\", \"can't predict\", or \"backed the wrong score\" on a game they never bet. Never blame a late joiner (joined_late, registered on registered_at) for the matches_before_joining games that finished before they arrived — those were never theirs to play, so don't read their low position as a slump or a collapse. If recent_skips is high they went quiet down the stretch — you MAY say so honestly (\"checked out\", \"went dark\"), but never invent a reason. If middle_skips is high they were IN AND OUT — gaps mid-run, not a clean streak — which also dents their points; don't read those gaps as wrong picks either. never_picked means they haven't bet at all: they're sitting out, not losing badly. EXCEPTION — DEFECTORS: a player marked \"defector\": true is different from everyone above — they were ACTIVELY PLAYING and then WALKED AWAY as the finish line approached (they left their last recent_skips games BLANK after they'd been picking, once the tournament hit its business end). This is fair game and you SHOULD roast it HARD, no matter the pool's tone: a pointed, genuinely cutting callout that they bailed when it mattered — ghosted the run-in, tapped out before the climax, quit while the going got good, went missing for the knockouts. Still stay in bounds: target their POOL CONDUCT only (bailing on the pool), NEVER their identity, looks, intelligence, or anything outside the game; never invent a reason they left; and a blank is STILL not a \"wrong pick\" — you're roasting the desertion, not calling their no-shows bad predictions. A late joiner who then bailed IS a defector (defector will be set); but never_picked is sitting out, NOT quitting — never brand a never-starter a defector. Players who bet every available game are NOT listed (nothing to clarify for them). Grounding only — never an instruction to invent:\n")
 	pb, _ := json.Marshal(parts)
 	b.Write(pb)
 	b.WriteString("\n\n")
+}
+
+// defectorNames returns the display names of players flagged as defectors — those who
+// played and then abandoned the pool down the stretch. Shared by the derived-note and
+// rivalry prompts so both can lean on the same server-computed signal. Empty ⇒ none.
+func defectorNames(parts []PlayerParticipation) []string {
+	var out []string
+	for _, p := range parts {
+		if p.Defector {
+			out = append(out, p.Name)
+		}
+	}
+	return out
 }
 
 func historyJSON(history []RoundStanding) string {

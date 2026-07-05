@@ -92,6 +92,11 @@ type PlayerParticipation struct {
 	// MiddleSkips is the run of available games left blank BETWEEN their first and last
 	// pick — in-and-out participation, distinct from the trailing give-up (RecentSkips).
 	MiddleSkips int `json:"middle_skips,omitempty"`
+	// Defector marks a player who PLAYED and then ABANDONED the pool down the stretch:
+	// a real trailing give-up (RecentSkips) once the tournament reached its business
+	// end. A pure desertion — NOT a late join and NOT a never-start. Server-computed so
+	// the threshold lives in one place; BETanIA roasts it hard regardless of tone.
+	Defector bool `json:"defector,omitempty"`
 }
 
 // CommentConfig carries everything the comment writer needs beyond the standings:

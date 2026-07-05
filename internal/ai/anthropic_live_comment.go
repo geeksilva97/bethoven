@@ -61,7 +61,8 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("No match is in play right now. Look at the slate below and write ONE short, punchy line about the SINGLE most interesting thing:\n")
 		b.WriteString("  - a game ABOUT TO KICK OFF (\"upcoming\"): set the scene, tease the matchup, or call out who in the pool is most exposed on it;\n")
 		b.WriteString("  - a game that JUST FINISHED (\"settled\"): react to the result and who NAILED it or backed the wrong score (\"picks\", with the points each scored);\n")
-		b.WriteString("  - the TITLE RACE shifting on a fresh result (\"standings\": positions + totals).\n")
+		b.WriteString("  - the TITLE RACE shifting on a fresh result (\"standings\": positions + totals);\n")
+		b.WriteString("  - a DEFECTOR who's abandoned the pool down the stretch (a player with \"defector\": true in participation) — call out that they bailed before the finish.\n")
 		b.WriteString("You may also STAY SILENT — return an EMPTY comment — if there's genuinely nothing fun to say right now. Don't force it.\n")
 		b.WriteString("Entertaining first. Address the pool in general, not one person. Vary your style — a zinger, a hot take, a dry aside.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {
@@ -86,6 +87,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 		b.WriteString("  - a RIVALRY heating up (see the rivalries list, if any);\n")
 		b.WriteString("  - a CLIMBER or FALLER on the live points (\"movers\");\n")
 		b.WriteString("  - who NAILED this match's scoreline, or who backed the wrong result and is stuck on zero (\"picks\");\n")
+		b.WriteString("  - a DEFECTOR who's gone dark for the run-in (a player with \"defector\": true in participation) — skewer them for abandoning the pool right as it heats up;\n")
 		b.WriteString("  - a scorer, near miss, or the odds.\n")
 		b.WriteString("Entertaining first, informative second. Address the pool in general, not one person. Vary your style — a zinger, a dramatic call, a dry aside, a wild metaphor.\n")
 		if normalizeTone(cfg.DefaultTone) == "savage" {

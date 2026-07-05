@@ -4,6 +4,16 @@ import (
 	"time"
 
 	"bethoven/internal/ai"
+	"bethoven/internal/models"
+)
+
+// Defector thresholds. A defector is a player who PLAYED and then abandoned the pool
+// down the stretch — a real trailing give-up (RecentSkips), NOT a late join or a
+// never-start — once the tournament reached its business end. Kept named so they're
+// easy to tune in one place.
+const (
+	defectorMinTail  = 3  // trailing available games left blank after the last pick
+	defectorLateFrac = 70 // percent of the schedule finished that counts as "the end"
 )
 
 // participation is one player's read-time participation/tenure summary over finished
@@ -82,6 +92,10 @@ func (s *Service) participationDigest() []ai.PlayerParticipation {
 	if err != nil {
 		return nil
 	}
+	// "The end is approaching?" — computed once for the whole pool, so a trailing tail
+	// is only branded desertion in the tournament's business end (else an early-round
+	// blip on someone who might still return would read as a defection).
+	late := s.tournamentLate()
 	var out []ai.PlayerParticipation
 	for _, u := range users {
 		rows, _, err := s.MyResults(u.ID)
@@ -102,6 +116,10 @@ func (s *Service) participationDigest() []ai.PlayerParticipation {
 			MatchesBeforeJoining: p.BeforeJoining,
 			RecentSkips:          p.RecentSkips,
 			MiddleSkips:          p.MiddleSkips,
+			// Played, then abandoned the pool down the stretch. Late joiner who then
+			// bailed still counts (Bet > 0); a never-start (Bet == 0) is sitting out,
+			// not quitting, so it's excluded.
+			Defector: late && p.RecentSkips >= defectorMinTail && p.Bet > 0,
 		}
 		if !u.CreatedAt.IsZero() {
 			pp.RegisteredAt = u.CreatedAt.UTC().Format("Jan 2")
@@ -109,4 +127,29 @@ func (s *Service) participationDigest() []ai.PlayerParticipation {
 		out = append(out, pp)
 	}
 	return out
+}
+
+// tournamentLate reports whether the tournament has reached its business end — the
+// "when the finish line is approaching" gate for branding a trailing give-up a
+// desertion. True once any knockout match has kicked off (a non-group game whose
+// StartsAt has passed) OR at least defectorLateFrac% of the schedule has finished.
+// Best-effort: a store error reads as "not late" (no false accusations).
+func (s *Service) tournamentLate() bool {
+	matches, err := s.store.ListMatches(s.tournamentID)
+	if err != nil || len(matches) == 0 {
+		return false
+	}
+	now := s.clock.Now().UTC()
+	total, finished := 0, 0
+	for _, m := range matches {
+		total++
+		if m.Finished {
+			finished++
+		}
+		// A knockout game that's already kicked off ⇒ we're in the closing stretch.
+		if m.Phase != models.PhaseGroup && !m.StartsAt.After(now) {
+			return true
+		}
+	}
+	return finished*100 >= total*defectorLateFrac
 }

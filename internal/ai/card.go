@@ -65,4 +65,8 @@ type CardDigestData struct {
 	// MiddleSkips is the count of available games left blank BETWEEN their first and
 	// last pick — in-and-out participation, distinct from the trailing give-up tail.
 	MiddleSkips int `json:"middle_skips,omitempty"`
+	// Defector marks a player who PLAYED and then ABANDONED the pool down the stretch
+	// (a real trailing give-up, not a late join or a never-start). Server-computed;
+	// the card roasts the desertion hard even under a warm tone.
+	Defector bool `json:"defector,omitempty"`
 }

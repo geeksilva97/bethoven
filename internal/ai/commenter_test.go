@@ -500,6 +500,65 @@ func TestCommentPromptParticipation(t *testing.T) {
 	}
 }
 
+// A defector (played, then abandoned the pool down the stretch) gets a hard,
+// tone-independent roast carve-out on every surface — while the "blank ≠ wrong pick"
+// protection and the never-start/late-join exemptions survive.
+func TestDefectorRoastAcrossPrompts(t *testing.T) {
+	history := oneRound()
+	defector := PlayerParticipation{Name: "Quitter", MatchesAvailable: 10, MatchesBet: 4, MatchesSkipped: 6, RecentSkips: 6, Defector: true}
+	cfg := CommentConfig{DefaultTone: "playful", Participation: []PlayerParticipation{defector}}
+
+	// Per-player comment: the DEFECTOR clause fires even in a PLAYFUL pool, and the flag
+	// reaches the model as JSON.
+	p := commentPrompt(history, nil, cfg)
+	if !strings.Contains(p, "EXCEPTION — DEFECTORS") {
+		t.Error("per-player prompt must carry the defector roast carve-out even under a playful tone")
+	}
+	if !strings.Contains(p, `"defector":true`) {
+		t.Error("per-player prompt must pass the defector flag as JSON")
+	}
+	// Still protects: a blank is never a wrong pick, and it survives an override.
+	if !strings.Contains(p, "NO-PICK IS NOT A WRONG PICK") {
+		t.Error("defector roast must not drop the blank-is-not-a-wrong-pick guard")
+	}
+	if !strings.Contains(commentPrompt(history, nil, CommentConfig{PromptOverride: "Talk like a pirate.", Participation: cfg.Participation}), "EXCEPTION — DEFECTORS") {
+		t.Error("defector carve-out must survive a prompt override (always appended)")
+	}
+
+	// Live director: same carve-out flows through the shared participation block.
+	sit := LiveSituation{Matches: []LiveMatchInfo{{TeamA: "A", TeamB: "B", ScoreA: 1, ScoreB: 0, Clock: "30'"}}}
+	if !strings.Contains(liveCommentPrompt(sit, nil, cfg), "EXCEPTION — DEFECTORS") {
+		t.Error("live prompt must carry the defector carve-out")
+	}
+
+	// Card: rule 7 roasts the desertion regardless of the card's (warm) tone.
+	card := cardPrompt(CardDigestData{Player: "Quitter", Defector: true, RecentSkips: 6, MatchesBet: 4}, cfg)
+	if !strings.Contains(card, "roast that desertion") || !strings.Contains(card, `"defector":true`) {
+		t.Error("card prompt must roast a defector's desertion and pass the flag")
+	}
+
+	// Derived per-game notes: the defector desertion callout, grounded in absence from picks.
+	dig := digestPrompt(ResultsDigestData{Matches: []FinishedMatchDigest{{TeamA: "A", TeamB: "B", Score: "1-0"}}}, cfg)
+	if !strings.Contains(dig, "DEFECTORS") || !strings.Contains(dig, "Quitter") {
+		t.Error("derived-note prompt must name defectors for the desertion callout")
+	}
+
+	// Derived rivalries: the loyalist-vs-deserter angle.
+	riv := rivalryPrompt(history, "", nil, cfg)
+	if !strings.Contains(riv, "loyalist vs deserter") || !strings.Contains(riv, "Quitter") {
+		t.Error("rivalry prompt must offer the loyalist-vs-deserter angle for defectors")
+	}
+
+	// No defectors ⇒ no defector-specific blocks in the surfaces gated on them.
+	plain := CommentConfig{DefaultTone: "playful", Participation: []PlayerParticipation{{Name: "Ghost", MatchesAvailable: 5, NeverPicked: true, MatchesSkipped: 5}}}
+	if strings.Contains(digestPrompt(ResultsDigestData{Matches: []FinishedMatchDigest{{TeamA: "A", TeamB: "B", Score: "1-0"}}}, plain), "DEFECTORS") {
+		t.Error("no defectors ⇒ no DEFECTORS block in the derived-note prompt")
+	}
+	if strings.Contains(rivalryPrompt(history, "", nil, plain), "loyalist vs deserter") {
+		t.Error("no defectors ⇒ no loyalist-vs-deserter block in the rivalry prompt")
+	}
+}
+
 // The live director gets the same no-pick/tenure grounding, so it never roasts a
 // bottom-of-table or zero-points player as a bad predictor when they're sitting out.
 func TestLiveCommentPromptParticipation(t *testing.T) {

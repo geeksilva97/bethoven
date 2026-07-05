@@ -48,6 +48,11 @@ func digestPrompt(data ResultsDigestData, cfg CommentConfig) string {
 	b.WriteString("4. THE LEADERBOARD DANCE (the best part): \"live_snapshots\" are frozen frames of the POOL standings captured as the goals went in, oldest first — each frame has the scoreline, the match clock, and every player's PROVISIONAL position/total at that instant. Trace how the table MOVED during the match and weave it in concretely: a gap shrinking goal by goal, a rival OVERTAKING another, someone sliding with each goal, the final margin between two close players (e.g. \"as Senegal pulled level Helton edged past Betânia, but a late goal restored a 4-point cushion\"). A LATE goal that flips who was winning is the best drama — name it with its clock and let the FINAL points say who actually came out ahead (e.g. \"Tony sat on the exact 3-1 into the 80th, then France's fourth ripped the exact away and left him on a single point\"). Ground every position, total and gap ONLY in the frames; if there are no snapshots, skip this.\n")
 	b.WriteString("5. This is a shared situational snapshot for the pool, not a message to one person. No emojis, no markdown, no headings — just the sentences.\n")
 	b.WriteString("6. Refer to players by their exact display names from the data.\n\n")
+	if defs := defectorNames(cfg.Participation); len(defs) > 0 {
+		b.WriteString("DEFECTORS — these players were actively playing and then ABANDONED the pool as the tournament reached its business end: ")
+		b.WriteString(strings.Join(defs, ", "))
+		b.WriteString(". If any of them is NOT among this game's \"picks\" (i.e. they left it blank), the diary MAY note their desertion pointedly as running pool context — they've gone missing for the run-in — but ONLY based on their absence from \"picks\"; never invent a reason and never call a blank a wrong pick. If a defector DID pick this game, don't call them absent.\n\n")
+	}
 	b.WriteString(untrustedDataNote)
 	b.WriteString("DATA (JSON). \"score\" + \"picks\" (with final \"points\") are the SETTLED result — the source of truth. \"live_story\" + \"live_snapshots\" are the PROVISIONAL in-play journey (may be overtaken by a late goal):\n")
 	if out, err := json.Marshal(data); err == nil {
