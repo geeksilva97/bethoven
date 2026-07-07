@@ -7,13 +7,21 @@ import (
 	"bethoven/internal/scoring"
 )
 
-// Achievements computes the badge board at read time. UNGATED, like
-// AllLeaderboardComments: badges are a shared, fun feature any player can view,
-// and every criterion derives from finished matches only, so nothing here can
-// leak a pick before kickoff (the same reveal boundary as MatchLeaderboard).
-// Nothing is stored — the board re-derives whenever a result lands or is
-// edited, so badges can change hands mid-tournament.
-func (s *Service) Achievements() (achievements.Board, error) {
+// Achievements computes the badge board at read time. ADMIN ONLY — the board is
+// an admin curiosity view; players meet their own badges on their player card,
+// which already gates on TournamentComplete (MyCard). Nothing is stored — the
+// board re-derives whenever a result lands or is edited, so badges can change
+// hands mid-tournament.
+func (s *Service) Achievements(by *models.User) (achievements.Board, error) {
+	if err := requireAdmin(by); err != nil {
+		return achievements.Board{}, err
+	}
+	return s.achievementsBoard()
+}
+
+// achievementsBoard is the ungated core, shared by the admin read and the
+// player-card badge fold (a card only reaches a player via the gated MyCard).
+func (s *Service) achievementsBoard() (achievements.Board, error) {
 	in, err := s.achievementsInput()
 	if err != nil {
 		return achievements.Board{}, err

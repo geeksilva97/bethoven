@@ -108,10 +108,11 @@ directly, with a fake clock, no terminal).
   **Timing integrity:** a bet with `created_at >= StartsAt` (ai-seed / `place-bet`
   escape hatch) never counts for timing badges, and BETanIA is ineligible for them
   (`IsAI`). The Quitter reuses the defector rule (`tournamentLate` gate +
-  trailing-skips tail). Surfaces: the **🏅 Achievements** menu screen
-  (`screenTrophies`, UNGATED like `AllLeaderboardComments` — everything derives
-  from finished matches, so no pre-kickoff pick can leak) and a badge row on the
-  player card (`PlayerCard.Badges`). Spec: `docs/achievements.md`.
+  trailing-skips tail). Surfaces: the **⚙ Admin: achievements** board
+  (`screenTrophies`, `service.Achievements` gated by `requireAdmin`) and a badge
+  row on the player card (`PlayerCard.Badges`) — players meet their badges there,
+  via the `TournamentComplete`-gated `MyCard`, never on a board of their own.
+  Spec: `docs/achievements.md`.
 - **Live scores (optional, `internal/live`).** A background `Poller` fetches ESPN's
   keyless scoreboard (`fifa.world`), resolves each event to a stored match (by
   team-pair + date, with an alias map), and writes an **in-memory** `Cache`

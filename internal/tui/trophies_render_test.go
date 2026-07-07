@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"bethoven/internal/achievements"
+	"bethoven/internal/models"
 )
 
 // trophyModel builds a model on the trophies screen with a hand-made board:
@@ -42,8 +43,9 @@ func TestTrophiesRender(t *testing.T) {
 	}
 }
 
-// TestTrophiesMenuEntry: the Achievements menu item exists for everyone and
-// enter loads the board (empty pool ⇒ all-unclaimed, not an error).
+// TestTrophiesMenuEntry: the Achievements board is ADMIN-ONLY — the entry shows
+// for an admin (and enter loads the board; empty pool ⇒ all-unclaimed, not an
+// error) and never for a player, who meets their badges on their card instead.
 func TestTrophiesMenuEntry(t *testing.T) {
 	m := adminModel(t)
 	m.buildMenu()
@@ -54,7 +56,7 @@ func TestTrophiesMenuEntry(t *testing.T) {
 		}
 	}
 	if idx < 0 {
-		t.Fatal("no Achievements entry in the menu")
+		t.Fatal("no Achievements entry in the admin menu")
 	}
 	m.menuCursor = idx
 	next, _ := m.updateMenu(keyMsg("enter"))
@@ -64,6 +66,16 @@ func TestTrophiesMenuEntry(t *testing.T) {
 	}
 	if len(m.trophies.Standings) != len(achievements.Catalog) {
 		t.Fatalf("board rows = %d, want the whole catalog (%d)", len(m.trophies.Standings), len(achievements.Catalog))
+	}
+
+	// A plain player never sees the entry.
+	p := m
+	p.user = &models.User{ID: 9, DisplayName: "Player", Role: models.RolePlayer}
+	p.buildMenu()
+	for _, it := range p.menuItems {
+		if it.target == screenTrophies {
+			t.Fatal("players must not get the Achievements menu entry")
+		}
 	}
 }
 

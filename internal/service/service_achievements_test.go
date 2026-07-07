@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -8,10 +9,11 @@ import (
 	"bethoven/internal/models"
 )
 
-// boardHolders returns the holder names for one badge on the computed board.
-func boardHolders(t *testing.T, svc *Service, badge achievements.Badge) []string {
+// boardHolders returns the holder names for one badge on the computed board,
+// read as the given admin.
+func boardHolders(t *testing.T, svc *Service, by *models.User, badge achievements.Badge) []string {
 	t.Helper()
-	board, err := svc.Achievements()
+	board, err := svc.Achievements(by)
 	if err != nil {
 		t.Fatalf("Achievements: %v", err)
 	}
@@ -58,7 +60,7 @@ func TestAchievementsOracleFromRealBets(t *testing.T) {
 	enterResult(t, svc, admin, m1, 2, 1)
 	enterResult(t, svc, admin, m2, 0, 0)
 
-	got := boardHolders(t, svc, achievements.Oracle)
+	got := boardHolders(t, svc, admin, achievements.Oracle)
 	if len(got) != 1 || got[0] != "Alice" {
 		t.Fatalf("Oracle holders = %v, want [Alice]", got)
 	}
@@ -109,10 +111,10 @@ func TestAchievementsTimingFromClock(t *testing.T) {
 		enterResult(t, svc, admin, mid, 1, 0)
 	}
 
-	if got := boardHolders(t, svc, achievements.DeadlineJunkie); len(got) != 1 || got[0] != "Rush" {
+	if got := boardHolders(t, svc, admin, achievements.DeadlineJunkie); len(got) != 1 || got[0] != "Rush" {
 		t.Fatalf("Deadline Junkie holders = %v, want [Rush]", got)
 	}
-	if got := boardHolders(t, svc, achievements.EarlyBird); len(got) != 1 || got[0] != "Calm" {
+	if got := boardHolders(t, svc, admin, achievements.EarlyBird); len(got) != 1 || got[0] != "Calm" {
 		t.Fatalf("Early Bird holders = %v, want [Calm]", got)
 	}
 }
@@ -140,7 +142,7 @@ func TestAchievementsIgnoreEscapeHatchTiming(t *testing.T) {
 		enterResult(t, svc, admin, mid, 1, 0)
 	}
 
-	if got := boardHolders(t, svc, achievements.DeadlineJunkie); len(got) != 0 {
+	if got := boardHolders(t, svc, admin, achievements.DeadlineJunkie); len(got) != 0 {
 		t.Fatalf("Deadline Junkie holders = %v, want unclaimed (post-kickoff inserts)", got)
 	}
 }
@@ -161,7 +163,7 @@ func TestAchievementsQuitterNeedsTheBusinessEnd(t *testing.T) {
 	// Only the first match finished (25% < defectorLateFrac): tail, but not late.
 	fc.T = base.Add(10 * time.Hour)
 	enterResult(t, svc, admin, mids[0], 1, 0)
-	if got := boardHolders(t, svc, achievements.Quitter); len(got) != 0 {
+	if got := boardHolders(t, svc, admin, achievements.Quitter); len(got) != 0 {
 		t.Fatalf("Quitter holders = %v, want none before the business end", got)
 	}
 
@@ -169,7 +171,20 @@ func TestAchievementsQuitterNeedsTheBusinessEnd(t *testing.T) {
 	for _, mid := range mids[1:] {
 		enterResult(t, svc, admin, mid, 2, 0)
 	}
-	if got := boardHolders(t, svc, achievements.Quitter); len(got) != 1 || got[0] != "Ghost" {
+	if got := boardHolders(t, svc, admin, achievements.Quitter); len(got) != 1 || got[0] != "Ghost" {
 		t.Fatalf("Quitter holders = %v, want [Ghost]", got)
+	}
+}
+
+// TestAchievementsRequireAdmin: the board is an admin view — players meet their
+// badges on their player card (MyCard, gated by TournamentComplete), never here.
+func TestAchievementsRequireAdmin(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	alice, _ := svc.Register("SHA256:alice", testInvite, "Alice")
+	if _, err := svc.Achievements(alice); !errors.Is(err, ErrForbidden) {
+		t.Errorf("Achievements by player = %v, want ErrForbidden", err)
+	}
+	if _, err := svc.Achievements(nil); !errors.Is(err, ErrForbidden) {
+		t.Errorf("Achievements by nil = %v, want ErrForbidden", err)
 	}
 }

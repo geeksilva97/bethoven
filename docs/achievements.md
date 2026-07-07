@@ -17,9 +17,10 @@ end-of-tournament player card, and fed to BETanIA as roast material.
   Oracle to Edy").
 - **Finished matches only.** Every criterion reads only `m.Finished` matches, so
   nothing leaks a pick before kickoff — same reveal boundary as
-  `MatchLeaderboard` / `public_bets`. The Trophy Room is therefore **ungated**
-  (any player), like `AllLeaderboardComments`: badges are shared fun; individual
-  upcoming picks stay private.
+  `MatchLeaderboard` / `public_bets`. The board itself is **admin-only**
+  (`requireAdmin`, like `PlayerCards`): players meet their own badges on their
+  player card, which unlocks with `TournamentComplete` (MyCard) — no separate
+  player-facing screen.
 - **Active scoring mode applies.** Point-based criteria go through the same
   `scorer.points` the leaderboard uses, so badges agree with the board in
   Classic / Proximity / Scarcity.
@@ -136,8 +137,9 @@ in `Standings` with no holders — "unclaimed" renders in the UI and is motivati
 
 ### Service (`service_achievements.go`)
 
-- `func (s *Service) Achievements() (achievements.Board, error)` — **ungated**
-  read (see Principles). Builder does ONE pass: `AllUsers` + `ListMatches` +
+- `func (s *Service) Achievements(by *models.User) (achievements.Board, error)` —
+  **admin-only** read (see Principles); the ungated core `achievementsBoard()`
+  is shared with the player-card badge fold. Builder does ONE pass: `AllUsers` + `ListMatches` +
   `AllBets` + `StandingsHistory` + `newScorer` (all existing reads — same shape
   as `buildBetsGrid`/`StandingsHistory`), assembles `PlayerInput` per user,
   calls `Compute`. `ResultShare` reuses the same per-match pick-distribution

@@ -147,7 +147,7 @@ func (s *Service) buildPlayerCards() ([]PlayerCard, error) {
 		userByID[u.ID] = u
 	}
 	narratives, _ := s.store.AllPlayerCards() // best-effort overlay
-	board, _ := s.Achievements()              // best-effort too — a card without badges beats no card
+	board, _ := s.achievementsBoard()         // best-effort too — a card without badges beats no card
 
 	final := history[len(history)-1].Ranks
 	cards := make([]PlayerCard, 0, len(final))

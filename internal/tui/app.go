@@ -45,7 +45,7 @@ const (
 	screenAIPrompt        // admin-only: edit BETanIA's comment-prompt override
 	screenPlayerCards     // admin-only: end-of-tournament player-card list
 	screenPlayerCard      // admin-only: one player's full card
-	screenTrophies        // read-only: the achievements board (open to everyone)
+	screenTrophies        // admin-only: the achievements board (players see badges on their card)
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.

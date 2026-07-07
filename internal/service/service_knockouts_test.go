@@ -96,7 +96,7 @@ func TestEliminatedTeams(t *testing.T) {
 	// the penalty winner (PenWin) in it.
 	bracket := []BracketRound{
 		{Phase: models.PhaseRound32, Matches: []models.Match{
-			fin("WinA", "OutB", 2, 0),  // decisive: OutB out
+			fin("WinA", "OutB", 2, 0),      // decisive: OutB out
 			fin("PenWin", "PenLose", 1, 1), // draw: only resolvable once R16 is drawn
 		}},
 		{Phase: models.PhaseRound16, Matches: []models.Match{
