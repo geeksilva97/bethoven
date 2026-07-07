@@ -495,12 +495,12 @@ func bracketScores(leaves []standings.ProjMatch, byNum map[int]models.Match) map
 
 // bracketInput is everything bracketLines needs to draw the tree.
 type bracketInput struct {
-	leaves []standings.ProjMatch  // the 16 R32 ties in bracket position order
-	trace  int                    // team index whose path to light, or <0 for none
-	scores map[int]string         // teamIdx -> goals suffix for a played R32 leaf
-	elim   map[string]bool        // clubs that are out (dimmed)
-	r32    map[int]models.Match   // R32 match-number -> entered match (winner source)
-	later  [][]models.Match       // entered R16,QF,SF,Final ties (ladder order)
+	leaves []standings.ProjMatch // the 16 R32 ties in bracket position order
+	trace  int                   // team index whose path to light, or <0 for none
+	scores map[int]string        // teamIdx -> goals suffix for a played R32 leaf
+	elim   map[string]bool       // clubs that are out (dimmed)
+	r32    map[int]models.Match  // R32 match-number -> entered match (winner source)
+	later  [][]models.Match      // entered R16,QF,SF,Final ties (ladder order)
 }
 
 // flagOverlay is a winner token (flag emoji or abbreviation) spliced onto a row
@@ -549,7 +549,7 @@ func bracketLines(in bracketInput) []string {
 			c++
 		}
 	}
-	rowLevel := func(lvl, j int) int { return (1 << lvl) - 1 + j*(1 << (lvl + 1)) }
+	rowLevel := func(lvl, j int) int { return (1 << lvl) - 1 + j*(1<<(lvl+1)) }
 	xv := func(lvl int) int { return nameW + lvl*segW + 1 }
 
 	// Level-0 leaves: the two teams of each R32 tie, with a goals suffix once played.
@@ -887,4 +887,3 @@ func groupLetter(label string) string {
 	}
 	return label
 }
-

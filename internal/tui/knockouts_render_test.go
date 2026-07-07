@@ -237,7 +237,7 @@ func TestOverlayEnteredR32(t *testing.T) {
 		{Match: 74, HomeTeam: "WinE", HomeDesc: "Winner E", AwayTeam: "GuessThird", AwayDesc: "3rd C"},
 	}
 	entered := []models.Match{
-		{TeamA: "RunB", TeamB: "RunA"},     // exact pair (reversed) → slot 73
+		{TeamA: "RunB", TeamB: "RunA"},      // exact pair (reversed) → slot 73
 		{TeamA: "WinE", TeamB: "RealThird"}, // anchor on Winner E → slot 74, fixing the third
 	}
 	_, byNum := overlayEnteredR32(proj, entered)
@@ -348,11 +348,11 @@ func TestBracketAdvancesWinners(t *testing.T) {
 		want string
 		what string
 	}{
-		{2, flagFor("Brazil"), "Brazil advances R32→R16"},     // rowLevel(1,0)=1
-		{6, flagFor("Mexico"), "Mexico advances R32→R16"},     // rowLevel(1,1)=5
+		{2, flagFor("Brazil"), "Brazil advances R32→R16"},      // rowLevel(1,0)=1
+		{6, flagFor("Mexico"), "Mexico advances R32→R16"},      // rowLevel(1,1)=5
 		{10, "HOM", "flagless Home3 advances as abbreviation"}, // rowLevel(1,2)=9
-		{14, flagFor("Spain"), "Spain advances on penalties"}, // rowLevel(1,3)=13
-		{4, flagFor("Brazil"), "Brazil advances R16→QF"},      // rowLevel(2,0)=3
+		{14, flagFor("Spain"), "Spain advances on penalties"},  // rowLevel(1,3)=13
+		{4, flagFor("Brazil"), "Brazil advances R16→QF"},       // rowLevel(2,0)=3
 	}
 	for _, c := range checks {
 		if !strings.Contains(lines[c.line], c.want) {
