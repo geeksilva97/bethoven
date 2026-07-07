@@ -170,6 +170,7 @@ func (w *CommentWorker) pass(ctx context.Context) {
 	}
 
 	now := w.deps.Now()
+	defectors := defectorSet(cfg.Participation)
 	stamped := make([]Comment, 0, len(comments))
 	for _, c := range comments {
 		// Sanitize here, at the cache/log boundary, so the leaderboard and the log
@@ -183,6 +184,9 @@ func (w *CommentWorker) pass(ctx context.Context) {
 		if cfg.toneFor(c.Player) == "mute" {
 			continue // never cache a muted player's comment, even if one slipped through
 		}
+		if defectors[c.Player] {
+			continue // quitters get the canned form letter below, never a model line
+		}
 		c.At = now
 		c.ExpiresAt = time.Time{} // never expires on a clock — replaced by the next pass
 		stamped = append(stamped, c)
@@ -191,6 +195,9 @@ func (w *CommentWorker) pass(ctx context.Context) {
 		}
 		w.mon.record(CommentAction{At: now, Player: c.Player, Text: c.Text, Outcome: "written"})
 	}
+	// Defectors: the fixed, zero-token dismissal instead of a model line — BETanIA
+	// doesn't spend tokens on quitters, and the message says so.
+	stamped = append(stamped, w.cannedQuitterComments(cfg, defectors, history, now)...)
 	w.cache.Replace(stamped)
 	// Write through to the DB so the set survives a restart (best-effort — a persist
 	// fault must never blank the leaderboard the cache just got right).
@@ -222,6 +229,23 @@ func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64, extra s
 	cfg.Self = w.self
 	cfg.Steering = extra
 	cfg.PriorComments = w.priorComments()
+
+	// A quitter's line is fixed — regenerating contempt costs zero model calls.
+	// (Steering is ignored for them by design: the form letter is the message.)
+	if c, ok := w.cannedForUser(cfg, history, userID); ok {
+		w.cache.Upsert(c)
+		if w.deps.SaveComment != nil {
+			if err := w.deps.SaveComment(c); err != nil {
+				w.logger.Printf("ai: persist canned comment for %s: %v", c.Player, err)
+			}
+		}
+		if err := appendCommentLog(w.logPath, cannedTone, c.At, c); err != nil {
+			w.logger.Printf("ai: log canned comment for %s: %v", c.Player, err)
+		}
+		w.mon.record(CommentAction{At: c.At, Player: c.Player, Text: c.Text, Outcome: "written"})
+		w.logger.Printf("ai: canned quitter comment for %s (no model call)", c.Player)
+		return c, nil
+	}
 
 	narratives, err := w.cmt.DetectNarratives(ctx, history)
 	if err != nil {
@@ -261,6 +285,58 @@ func (w *CommentWorker) RegenerateOne(ctx context.Context, userID int64, extra s
 		return c, nil
 	}
 	return Comment{}, fmt.Errorf("model didn't write a comment for that player")
+}
+
+// cannedTone is the tone label logged with a fixed quitter dismissal, so the
+// comment log distinguishes form letters from model-written lines.
+const cannedTone = "canned"
+
+// cannedQuitterComments builds the fixed dismissal for every defector on the
+// board — zero model cost. Muted players still get nothing at all (mute wins
+// over the form letter), and BETanIA can't be branded a quitter. Each canned
+// comment is logged and recorded like a written one; the log's "canned" tone
+// marks it as a form letter.
+func (w *CommentWorker) cannedQuitterComments(cfg CommentConfig, defectors map[string]bool, history []RoundStanding, now time.Time) []Comment {
+	if len(defectors) == 0 || len(history) == 0 {
+		return nil
+	}
+	var out []Comment
+	for _, ps := range history[len(history)-1].Ranks {
+		if !defectors[ps.Name] || ps.Name == cfg.Self {
+			continue
+		}
+		if cfg.toneFor(ps.Name) == "mute" {
+			continue // mute is absolute: not even the form letter
+		}
+		c := Comment{UserID: ps.UserID, Player: ps.Name, Text: QuitterComment(ps.UserID), At: now}
+		out = append(out, c)
+		if err := appendCommentLog(w.logPath, cannedTone, now, c); err != nil {
+			w.logger.Printf("ai: log canned comment for %s: %v", c.Player, err)
+		}
+		w.mon.record(CommentAction{At: now, Player: c.Player, Text: c.Text, Outcome: "written"})
+	}
+	return out
+}
+
+// cannedForUser returns the fixed quitter dismissal for ONE player when (and only
+// when) they're a defector — the RegenerateOne short-circuit. ok=false means they
+// aren't a defector (or are muted / BETanIA / unknown) and the normal model path
+// should run.
+func (w *CommentWorker) cannedForUser(cfg CommentConfig, history []RoundStanding, userID int64) (Comment, bool) {
+	defectors := defectorSet(cfg.Participation)
+	if len(defectors) == 0 || len(history) == 0 {
+		return Comment{}, false
+	}
+	for _, ps := range history[len(history)-1].Ranks {
+		if ps.UserID != userID {
+			continue
+		}
+		if !defectors[ps.Name] || ps.Name == cfg.Self || cfg.toneFor(ps.Name) == "mute" {
+			return Comment{}, false
+		}
+		return Comment{UserID: ps.UserID, Player: ps.Name, Text: QuitterComment(ps.UserID), At: w.deps.Now()}, true
+	}
+	return Comment{}, false
 }
 
 // priorComments reads the current cached line per player (keyed by display name)

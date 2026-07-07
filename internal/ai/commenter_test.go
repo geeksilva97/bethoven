@@ -508,27 +508,32 @@ func TestDefectorRoastAcrossPrompts(t *testing.T) {
 	defector := PlayerParticipation{Name: "Quitter", MatchesAvailable: 10, MatchesBet: 4, MatchesSkipped: 6, RecentSkips: 6, Defector: true}
 	cfg := CommentConfig{DefaultTone: "playful", Participation: []PlayerParticipation{defector}}
 
-	// Per-player comment: the DEFECTOR clause fires even in a PLAYFUL pool, and the flag
-	// reaches the model as JSON.
+	// Per-player comment: the writer is told NOT to write for defectors — they get
+	// the pool's fixed form letter (zero tokens) — and to skip them by name in the
+	// submit_comments trailer. The roast clause must NOT be on this surface.
 	p := commentPrompt(history, nil, cfg)
-	if !strings.Contains(p, "EXCEPTION — DEFECTORS") {
-		t.Error("per-player prompt must carry the defector roast carve-out even under a playful tone")
+	if !strings.Contains(p, "form letter") || !strings.Contains(p, "skip the defectors: Quitter") {
+		t.Error("per-player prompt must tell the model to skip defectors (form letter, named in the trailer)")
+	}
+	if strings.Contains(p, "roast it HARD") {
+		t.Error("per-player prompt must not carry the defector roast clause — quitters get the canned line")
 	}
 	if !strings.Contains(p, `"defector":true`) {
 		t.Error("per-player prompt must pass the defector flag as JSON")
 	}
 	// Still protects: a blank is never a wrong pick, and it survives an override.
 	if !strings.Contains(p, "NO-PICK IS NOT A WRONG PICK") {
-		t.Error("defector roast must not drop the blank-is-not-a-wrong-pick guard")
+		t.Error("defector handling must not drop the blank-is-not-a-wrong-pick guard")
 	}
-	if !strings.Contains(commentPrompt(history, nil, CommentConfig{PromptOverride: "Talk like a pirate.", Participation: cfg.Participation}), "EXCEPTION — DEFECTORS") {
-		t.Error("defector carve-out must survive a prompt override (always appended)")
+	if !strings.Contains(commentPrompt(history, nil, CommentConfig{PromptOverride: "Talk like a pirate.", Participation: cfg.Participation}), "form letter") {
+		t.Error("defector skip must survive a prompt override (always appended)")
 	}
 
-	// Live director: same carve-out flows through the shared participation block.
+	// Live director: the roast carve-out still flows through the shared
+	// participation block — only the per-player line went canned.
 	sit := LiveSituation{Matches: []LiveMatchInfo{{TeamA: "A", TeamB: "B", ScoreA: 1, ScoreB: 0, Clock: "30'"}}}
-	if !strings.Contains(liveCommentPrompt(sit, nil, cfg), "EXCEPTION — DEFECTORS") {
-		t.Error("live prompt must carry the defector carve-out")
+	if !strings.Contains(liveCommentPrompt(sit, nil, cfg), "roast it HARD") {
+		t.Error("live prompt must keep the defector roast carve-out")
 	}
 
 	// Card: rule 7 roasts the desertion regardless of the card's (warm) tone.
@@ -613,5 +618,120 @@ func TestRegenerateOneUpsertsJustThatPlayer(t *testing.T) {
 	// Unknown player -> error, cache unchanged.
 	if _, err := w.RegenerateOne(context.Background(), 99, ""); err == nil {
 		t.Error("expected error for a player with no comment")
+	}
+}
+
+// twoPlayerRound is a standings round with a loyalist and a (soon-to-be) quitter.
+func twoPlayerRound() []RoundStanding {
+	return []RoundStanding{{
+		Label: "2026-06-11",
+		Ranks: []PlayerStanding{
+			{UserID: 1, Name: "Joao", Position: 1, Total: 3},
+			{UserID: 2, Name: "Ghost", Position: 2, Total: 1},
+		},
+	}}
+}
+
+// defectorCfg marks Ghost as a defector in the participation grounding.
+func defectorCfg(tones map[string]string) CommentConfig {
+	return CommentConfig{
+		DefaultTone: "savage",
+		ToneByName:  tones,
+		Participation: []PlayerParticipation{
+			{Name: "Ghost", MatchesAvailable: 10, MatchesBet: 4, MatchesSkipped: 6, RecentSkips: 6, Defector: true},
+		},
+	}
+}
+
+// TestCommentWorkerCansQuitters: a defector never keeps a model-written line —
+// the pass swaps in the fixed form letter — while everyone else's line survives.
+func TestCommentWorkerCansQuitters(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{
+		{UserID: 1, Player: "Joao", Text: "you lead"},
+		{UserID: 2, Player: "Ghost", Text: "a model roast that slipped through"},
+	}}
+	cache := NewCommentCache()
+	w := NewCommentWorker(CommentDeps{
+		History: func() ([]RoundStanding, error) { return twoPlayerRound(), nil },
+		Config:  func() CommentConfig { return defectorCfg(nil) },
+		Now:     func() time.Time { return now },
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", "")
+
+	w.pass(context.Background())
+
+	got := cache.All(now)
+	if c := got[1]; c.Text != "you lead" {
+		t.Errorf("loyalist's model line must survive, got %q", c.Text)
+	}
+	c, ok := got[2]
+	if !ok {
+		t.Fatal("the defector must still get a (canned) comment")
+	}
+	if c.Text != QuitterComment(2) {
+		t.Errorf("defector's line = %q, want the fixed form letter %q", c.Text, QuitterComment(2))
+	}
+}
+
+// TestCommentWorkerCannedRespectsMute: mute is absolute — a muted defector gets
+// nothing, not even the form letter.
+func TestCommentWorkerCannedRespectsMute(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{{UserID: 1, Player: "Joao", Text: "you lead"}}}
+	cache := NewCommentCache()
+	w := NewCommentWorker(CommentDeps{
+		History: func() ([]RoundStanding, error) { return twoPlayerRound(), nil },
+		Config:  func() CommentConfig { return defectorCfg(map[string]string{"Ghost": "mute"}) },
+		Now:     func() time.Time { return now },
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", "")
+
+	w.pass(context.Background())
+
+	if _, ok := cache.All(now)[2]; ok {
+		t.Error("a muted defector must get no comment at all — not even the form letter")
+	}
+}
+
+// TestRegenerateOneQuitterSpendsNoTokens: regenerating a defector's comment
+// short-circuits to the canned line without a single model call.
+func TestRegenerateOneQuitterSpendsNoTokens(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	fc := &fakeCommenter{comments: []Comment{{UserID: 2, Player: "Ghost", Text: "should never be asked for"}}}
+	cache := NewCommentCache()
+	saved := 0
+	w := NewCommentWorker(CommentDeps{
+		History:     func() ([]RoundStanding, error) { return twoPlayerRound(), nil },
+		Config:      func() CommentConfig { return defectorCfg(nil) },
+		Now:         func() time.Time { return now },
+		SaveComment: func(Comment) error { saved++; return nil },
+	}, fc, cache, NewCommentMonitor("t", time.Hour), "", "")
+
+	c, err := w.RegenerateOne(context.Background(), 2, "be extra mean")
+	if err != nil {
+		t.Fatalf("RegenerateOne: %v", err)
+	}
+	if fc.calls != 0 {
+		t.Errorf("model calls = %d, want 0 — quitters aren't worth tokens", fc.calls)
+	}
+	if c.Text != QuitterComment(2) {
+		t.Errorf("regenerated line = %q, want the fixed form letter", c.Text)
+	}
+	if got := cache.All(now)[2].Text; got != QuitterComment(2) {
+		t.Errorf("cache holds %q, want the canned line", got)
+	}
+	if saved != 1 {
+		t.Errorf("canned line must be persisted once, got %d", saved)
+	}
+}
+
+// TestQuitterCommentDeterministic: the pick is stable per user and in-bounds.
+func TestQuitterCommentDeterministic(t *testing.T) {
+	if QuitterComment(7) != QuitterComment(7) {
+		t.Error("same user must always get the same form letter")
+	}
+	for _, id := range []int64{0, 1, 5, 6, -3, 1 << 40} {
+		if QuitterComment(id) == "" {
+			t.Errorf("QuitterComment(%d) must return a line", id)
+		}
 	}
 }

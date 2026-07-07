@@ -91,8 +91,8 @@ type LiveStanding struct {
 type SnapStanding struct {
 	Player     string `json:"player"`
 	Position   int    `json:"position"`
-	Total      int    `json:"total"`                  // settled + provisional at this frame
-	LivePoints int    `json:"live_points,omitempty"`  // provisional gain from the live match
+	Total      int    `json:"total"`                 // settled + provisional at this frame
+	LivePoints int    `json:"live_points,omitempty"` // provisional gain from the live match
 }
 
 // LiveSnapshot is one frozen frame of the pool leaderboard captured DURING a live

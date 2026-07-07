@@ -140,7 +140,7 @@ func liveCommentPrompt(sit LiveSituation, recent []string, cfg CommentConfig) st
 
 	// No-pick / tenure grounding: a player low in the standings (or stuck on zero) may
 	// simply not be picking or have joined late — never roast them as a bad predictor.
-	writeParticipation(&b, cfg.Participation)
+	writeParticipation(&b, cfg.Participation, true) // live commentary still roasts deserters
 
 	// Admin-provided rivalries are real context the line may play up (never overrides
 	// "don't invent"); they feed the rivalry angle in both modes.

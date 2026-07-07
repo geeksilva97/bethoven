@@ -308,6 +308,15 @@ directly, with a fake clock, no terminal).
       (a tap isn't instantly overridden). **Muted players are the sole exception**
       (`service.IsMuted`, cached as `selfMuted` on entry): no comment of their own and
       no cycle at all (space/`c` are no-ops for them, and when comments are hidden).
+    - **Quitters get a canned form letter, not tokens (`ai/quitter.go`).** A player
+      flagged `Defector` in the participation digest never gets a model-written
+      per-player line: the writer prompt says to skip them, the worker drops any
+      line that slips through and swaps in a FIXED dismissal (`QuitterComment`,
+      deterministic by user id — disapproving, "you're not worth the tokens"), and
+      `RegenerateOne` short-circuits to it with ZERO model calls (steering ignored).
+      Mute still wins (no comment at all); logged with tone `"canned"`. Only the
+      per-player line is canned — live commentary, derived notes, rivalries, and
+      cards keep their model-written desertion angles.
     - **Tone** is the DB-backed `comment_tone` setting (default `playful`, or
       `savage`; absent ⇒ playful), like `scoring_mode`. Toggled with **`t`** on the
       admin panel (`SetCommentTone`). **Per-player override:** each player can be
