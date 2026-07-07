@@ -109,9 +109,9 @@ func (bd *Breakdown) explainScarcity(b models.Bet, m models.Match, pool Pool) {
 	if base == 0 {
 		return // wrong result: no bonus possible
 	}
-	if pool.Total < scarcityQuorum {
+	if pool.Total < ScarcityQuorum {
 		bd.add("Contrarian bonus", 0,
-			fmt.Sprintf("needs %d+ bets on the match, only %d", scarcityQuorum, pool.Total))
+			fmt.Sprintf("needs %d+ bets on the match, only %d", ScarcityQuorum, pool.Total))
 		return
 	}
 

@@ -13,7 +13,7 @@
 //   - Scarcity: Proximity, plus a contrarian bonus for picks few others made —
 //     +2 when a correct result was picked by <25% of the match's bets, and +2
 //     when a correct exact score was picked by <10%. The bonus only applies once
-//     a match has at least scarcityQuorum bets, so small fields don't reward
+//     a match has at least ScarcityQuorum bets, so small fields don't reward
 //     statistical noise; below that it scores as plain Proximity. Scarcity is
 //     pool-relative, so it takes a Pool the caller (the service) computes.
 //
@@ -46,13 +46,15 @@ const (
 	// floating point: a pick qualifies when count*denom < total*num.
 	scarcityResultNum, scarcityResultDenom = 1, 4  // < 25% of the match's bets
 	scarcityExactNum, scarcityExactDenom   = 1, 10 // < 10% of the match's bets
-	// scarcityQuorum is the minimum number of bets on a match before any
-	// contrarian bonus applies. Below it a percentage is just noise — being the
-	// lone "rare" picker in a 4-person field is luck, not contrarianism — and
-	// the +2/+4 swing it would create unfairly buries everyone else. Below
-	// quorum, Scarcity scores identically to plain Proximity.
-	scarcityQuorum = 8
 )
+
+// ScarcityQuorum is the minimum number of bets on a match before any
+// contrarian bonus applies. Below it a percentage is just noise — being the
+// lone "rare" picker in a 4-person field is luck, not contrarianism — and
+// the +2/+4 swing it would create unfairly buries everyone else. Below
+// quorum, Scarcity scores identically to plain Proximity. Exported so the
+// achievements Contrarian badge gates on the same quorum.
+const ScarcityQuorum = 8
 
 // Pool is the per-match pick distribution for the bet being scored. Counts
 // include the bet itself. Only ModeScarcity reads it; other modes ignore it, so
@@ -164,7 +166,7 @@ func ProximityPoints(b models.Bet, m models.Match) int {
 
 // ScarcityPoints returns the Proximity points plus a contrarian bonus for rare
 // correct picks. No bonus is added for a wrong result (base is already 0) or
-// when the match has fewer than scarcityQuorum bets (too few for "rare" to
+// when the match has fewer than ScarcityQuorum bets (too few for "rare" to
 // mean anything) — in both cases it returns the Proximity base.
 func ScarcityPoints(b models.Bet, m models.Match, pool Pool) int {
 	base := ProximityPoints(b, m)
@@ -173,7 +175,7 @@ func ScarcityPoints(b models.Bet, m models.Match, pool Pool) int {
 	}
 	// Too few bettors on the match for "rare" to be meaningful: no bonus, so
 	// Scarcity falls back to plain Proximity.
-	if pool.Total < scarcityQuorum {
+	if pool.Total < ScarcityQuorum {
 		return base
 	}
 	bonus := 0

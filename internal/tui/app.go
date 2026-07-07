@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"bethoven/internal/achievements"
 	"bethoven/internal/ai"
 	"bethoven/internal/analytics"
 	"bethoven/internal/models"
@@ -44,6 +45,7 @@ const (
 	screenAIPrompt        // admin-only: edit BETanIA's comment-prompt override
 	screenPlayerCards     // admin-only: end-of-tournament player-card list
 	screenPlayerCard      // admin-only: one player's full card
+	screenTrophies        // read-only: the achievements board (open to everyone)
 )
 
 // Model is the root Bubble Tea model. A new one is created per SSH session.
@@ -269,6 +271,12 @@ type Model struct {
 	// "My card" entry only once the tournament is over (mirrors the publicBets gate).
 	cardSolo  bool
 	cardReady bool
+
+	// 🏅 achievements board (open to everyone). trophyCursor moves the badge
+	// list; the board is loaded on entry and never ticks (it only changes when a
+	// result lands).
+	trophies     achievements.Board
+	trophyCursor int
 }
 
 // New builds the session model. user may be nil (unknown key → registration).
@@ -361,6 +369,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updatePlayerCards(msg)
 	case screenPlayerCard:
 		return m.updatePlayerCard(msg)
+	case screenTrophies:
+		return m.updateTrophies(msg)
 	}
 	return m, nil
 }
@@ -414,6 +424,8 @@ func (m Model) View() string {
 		return m.viewPlayerCards()
 	case screenPlayerCard:
 		return m.viewPlayerCard()
+	case screenTrophies:
+		return m.viewTrophies()
 	}
 	return ""
 }

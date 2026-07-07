@@ -370,6 +370,15 @@ func (m Model) viewPlayerCard() string {
 		b.WriteString(errStyle.Render("Worst miss ") + cardPickText(c.WorstPick) + "\n")
 	}
 
+	// Achievements: the player's badges, Trophy Room order (the box wraps them).
+	if len(c.Badges) > 0 {
+		names := make([]string, len(c.Badges))
+		for i, aw := range c.Badges {
+			names[i] = aw.Badge.Emoji + " " + aw.Badge.Name
+		}
+		b.WriteString("\n" + labelStyle.Render(strings.Join(names, helpStyle.Render(" · "))) + "\n")
+	}
+
 	b.WriteString("\n")
 	if c.Narrative != "" {
 		b.WriteString(commentStyle.Render(splitParagraphs(c.Narrative, 1)))

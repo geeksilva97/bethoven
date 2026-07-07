@@ -94,6 +94,24 @@ directly, with a fake clock, no terminal).
   matches the board. Per-match ranking, public-bets, and the admin grid keep
   name-only ordering — they aren't the overall leaderboard.
 - **Identity = SHA256 key fingerprint.** Set once at registration, immutable after.
+- **Achievements — the 🏅 Trophy Room (`internal/achievements`).** Badges computed
+  as pure functions mirroring `scoring` (`Compute(Input) Board`; the service builds
+  the input in `service_achievements.go`). NOTHING stored — a read-time fold of
+  finished matches + `StandingsHistory`, so badges re-derive (and change hands) when
+  a result lands. Two kinds: **superlatives** (one holder, ties share, each with a
+  minimum so a 2-bet fluke can't claim it — Oracle, Longest Streak, Top Round,
+  Comeback/Free Fall, Draw Whisperer, Goal Merchant/Accountant, Deadline
+  Junkie/Early Bird/Second-Guesser, Contrarian) and **thresholds** (anyone
+  qualifies — Perfect Round, Blackout, Hot Hand, Ever-Present, Quitter, Wire-to-
+  Wire). Points go through the active-mode `scorer.points`, so badges agree with
+  the board in every mode; the Contrarian share reuses `scoring.ScarcityQuorum`.
+  **Timing integrity:** a bet with `created_at >= StartsAt` (ai-seed / `place-bet`
+  escape hatch) never counts for timing badges, and BETanIA is ineligible for them
+  (`IsAI`). The Quitter reuses the defector rule (`tournamentLate` gate +
+  trailing-skips tail). Surfaces: the **🏅 Achievements** menu screen
+  (`screenTrophies`, UNGATED like `AllLeaderboardComments` — everything derives
+  from finished matches, so no pre-kickoff pick can leak) and a badge row on the
+  player card (`PlayerCard.Badges`). Spec: `docs/achievements.md`.
 - **Live scores (optional, `internal/live`).** A background `Poller` fetches ESPN's
   keyless scoreboard (`fifa.world`), resolves each event to a stored match (by
   team-pair + date, with an alias map), and writes an **in-memory** `Cache`

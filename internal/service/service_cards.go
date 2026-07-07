@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"bethoven/internal/achievements"
 	"bethoven/internal/ai"
 	"bethoven/internal/models"
 	"bethoven/internal/scoring"
@@ -49,7 +50,8 @@ type PlayerCard struct {
 	WorstPick      *MatchResult // a finished pick that scored 0, biggest goal-distance miss
 	Narrative      string
 	NarratedAt     time.Time
-	IsSelf         bool // BETanIA's own card
+	IsSelf         bool                 // BETanIA's own card
+	Badges         []achievements.Award // this player's achievements, Trophy Room order
 
 	// Participation & tenure — a NO-PICK is not a wrong pick, and a late joiner
 	// isn't accountable for games before they arrived. All over finished matches.
@@ -145,6 +147,7 @@ func (s *Service) buildPlayerCards() ([]PlayerCard, error) {
 		userByID[u.ID] = u
 	}
 	narratives, _ := s.store.AllPlayerCards() // best-effort overlay
+	board, _ := s.Achievements()              // best-effort too — a card without badges beats no card
 
 	final := history[len(history)-1].Ranks
 	cards := make([]PlayerCard, 0, len(final))
@@ -199,6 +202,7 @@ func (s *Service) buildPlayerCards() ([]PlayerCard, error) {
 			}
 		}
 		s.fillCardPicks(&card)
+		card.Badges = board.ByUser[ps.UserID]
 		if n, ok := narratives[ps.UserID]; ok {
 			card.Narrative = n.Text
 			card.NarratedAt = n.At

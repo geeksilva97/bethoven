@@ -23,6 +23,7 @@ func (m *Model) buildMenu() {
 		{"Leaderboard", screenLeaderboard},
 		{"Knockouts", screenKnockouts},
 		{"Per-game ranking", screenMatchRank},
+		{"🏅  Achievements", screenTrophies},
 		{"How scoring works", screenScoringRules},
 	}
 	isAdmin := m.user != nil && m.user.Role == models.RoleAdmin
@@ -197,6 +198,13 @@ func (m Model) enterMenuItem(target screen) (tea.Model, tea.Cmd) {
 		m.scoringMode, _ = m.svc.ScoringMode()
 		m.roundWeights, _ = m.svc.RoundWeights()
 		m.screen = screenScoringRules
+	case screenTrophies:
+		board, err := m.svc.Achievements()
+		if err != nil {
+			m.setStatus(err.Error(), true)
+			return m, nil
+		}
+		m.trophies, m.trophyCursor, m.screen = board, 0, screenTrophies
 	case screenAnalytics:
 		m.anDisabled = false
 		ov, err := m.svc.AnalyticsOverview(m.user)
@@ -285,6 +293,8 @@ func screenName(s screen) string {
 		return "admin_player_cards"
 	case screenPlayerCard:
 		return "my_card"
+	case screenTrophies:
+		return "trophies"
 	default:
 		return "menu"
 	}
