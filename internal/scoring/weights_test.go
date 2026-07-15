@@ -41,6 +41,13 @@ func TestWeightScheme(t *testing.T) {
 		{WeightLinear, models.PhaseSemi, 4},
 		{WeightLinear, models.PhaseFinal, 5},
 
+		// Third-place play-off is intrinsically ×4 under EVERY scheme — including
+		// Flat — since its weight is pinned in Weight, not table-derived.
+		{WeightFlat, models.PhaseThird, 4},
+		{WeightKnockout, models.PhaseThird, 4},
+		{WeightDoubling, models.PhaseThird, 4},
+		{WeightLinear, models.PhaseThird, 4},
+
 		// Unknown phase ⇒ ×1 under any scheme.
 		{WeightDoubling, models.Phase("nonsense"), 1},
 		{WeightLinear, models.Phase(""), 1},
@@ -79,7 +86,8 @@ func TestParseWeightScheme(t *testing.T) {
 
 func TestWeightLadder(t *testing.T) {
 	got := WeightDoubling.Ladder()
-	want := []int{1, 2, 2, 4, 8, 16}
+	// Third-place play-off (×4, pinned) sits between the semi (×8) and the final (×16).
+	want := []int{1, 2, 2, 4, 8, 4, 16}
 	if len(got) != len(want) {
 		t.Fatalf("Ladder len = %d, want %d", len(got), len(want))
 	}

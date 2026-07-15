@@ -15,7 +15,7 @@ import (
 
 // phaseCycle is the order the admin toggles through when adding a match.
 var phaseCycle = []models.Phase{
-	models.PhaseGroup, models.PhaseRound32, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseFinal,
+	models.PhaseGroup, models.PhaseRound32, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseThird, models.PhaseFinal,
 }
 
 // --- add match -----------------------------------------------------------

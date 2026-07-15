@@ -59,6 +59,8 @@ func (m Model) viewScoringRules() string {
 
 	if m.roundWeights != scoring.WeightFlat {
 		out += "\n" + ruleLadder(m.roundWeights)
+	} else {
+		out += "\n" + helpStyle.Render("The third-place play-off counts ×4; every other match ×1.") + "\n"
 	}
 
 	out += "\n" + helpStyle.Render("Knockouts use the 90-minute score (a 1-1 a.e.t. counts as a 1-1 draw).") + "\n"

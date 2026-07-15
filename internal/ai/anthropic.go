@@ -192,6 +192,8 @@ func phaseLabel(p models.Phase) string {
 		return "Quarter-final"
 	case models.PhaseSemi:
 		return "Semi-final"
+	case models.PhaseThird:
+		return "Third-place play-off"
 	case models.PhaseFinal:
 		return "Final"
 	default:

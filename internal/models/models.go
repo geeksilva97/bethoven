@@ -23,6 +23,7 @@ const (
 	PhaseRound16 Phase = "round_16"
 	PhaseRound8  Phase = "round_8"
 	PhaseSemi    Phase = "semi"
+	PhaseThird   Phase = "third_place" // third-place play-off (semi losers), before the final
 	PhaseFinal   Phase = "final"
 )
 
@@ -40,6 +41,8 @@ func (p Phase) Label() string {
 		return "Quarter-final"
 	case PhaseSemi:
 		return "Semi-final"
+	case PhaseThird:
+		return "Third-place play-off"
 	case PhaseFinal:
 		return "Final"
 	default:

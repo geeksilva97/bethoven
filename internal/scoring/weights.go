@@ -20,10 +20,12 @@ const (
 )
 
 // phaseOrder lists phases earliest-to-latest; Ladder renders in this order and
-// every weight table below is keyed by these phases. The Round of 32 is the first
-// knockout round under the 48-team format, weighted like the Round of 16.
+// every weight table below is keyed by these phases — EXCEPT the third-place
+// play-off, which Weight pins to ×4 under every scheme (see Weight), so it needs
+// no table entry. The Round of 32 is the first knockout round under the 48-team
+// format, weighted like the Round of 16.
 var phaseOrder = []models.Phase{
-	models.PhaseGroup, models.PhaseRound32, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseFinal,
+	models.PhaseGroup, models.PhaseRound32, models.PhaseRound16, models.PhaseRound8, models.PhaseSemi, models.PhaseThird, models.PhaseFinal,
 }
 
 // weightTables holds the explicit per-phase multiplier for each non-flat scheme.
@@ -92,7 +94,15 @@ func (w WeightScheme) Label() string {
 // Weight is the whole-number multiplier a match in phase p earns under the
 // scheme. The group stage and any unknown phase are always ×1; WeightFlat is ×1
 // for every phase.
+//
+// The third-place play-off is the one phase whose weight is intrinsic, not
+// scheme-derived: it's a one-off, high-stakes knockout, so it's always ×4 — even
+// on the default Flat scheme — landing the bump without reweighting every other
+// round the way switching schemes would.
 func (w WeightScheme) Weight(p models.Phase) int {
+	if p == models.PhaseThird {
+		return 4
+	}
 	if tbl, ok := weightTables[w]; ok {
 		if mult, ok := tbl[p]; ok {
 			return mult
